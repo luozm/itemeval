@@ -120,7 +120,7 @@ identical results; raw logs allow full re-derivation of every number.
 ## Install (development)
 
 ```bash
-git clone https://github.com/brianluo/itemeval && cd itemeval
+git clone https://github.com/luozm/itemeval && cd itemeval
 uv sync                              # creates ./.venv from pyproject.toml + uv.lock
 ./.venv/bin/python -m pytest
 ```

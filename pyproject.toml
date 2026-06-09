@@ -26,7 +26,7 @@ dependencies = [
 itemeval = "itemeval.cli:main"
 
 [project.urls]
-Repository = "https://github.com/brianluo/itemeval"
+Repository = "https://github.com/luozm/itemeval"
 
 [build-system]
 requires = ["hatchling"]
