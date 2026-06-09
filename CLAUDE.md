@@ -2,7 +2,10 @@
 
 Publishable Python package: item-level LLM evaluation on inspect_ai.
 `README.md` is the spec; `ROADMAP.md` is the milestone plan — keep it updated
-as milestones complete. The USAMO study consuming this package lives in
+as milestones complete. `DEVELOPMENT.md` defines the inspect_ai upgrade
+pipeline and the versioning/release process — follow it for any dependency
+bump or release; update `CHANGELOG.md` ([Unreleased]) in the same change that
+makes a user-visible difference. The USAMO study consuming this package lives in
 `~/Projects/g_theory` (separate repo); never put study-specific content
 (USAMO, G-theory, rubric texts) in this package.
 
