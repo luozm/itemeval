@@ -6,7 +6,7 @@ A thin, design-driven evaluation package built on [inspect_ai](https://inspect.a
 Define a benchmark source and a facet grid in YAML; itemeval expands the grid, runs
 generation and grading as two decoupled stages, and exports a long-format
 item-response table plus full raw logs — built for item-response-level analysis
-(psychometrics, G-theory, IRT), never just aggregate scores.
+(psychometrics, IRT, mixed-model), never just aggregate scores.
 
 **Status: v0.1.0 — first public release.**
 See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).

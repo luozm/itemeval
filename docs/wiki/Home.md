@@ -4,7 +4,7 @@
 
 **Item-level LLM evaluation over any API, with built-in budget control** — a
 thin layer on [inspect_ai](https://inspect.aisi.org.uk) for studies that need
-every individual grading event (psychometrics, G-theory, IRT), never just
+every individual grading event (psychometrics, IRT, mixed-model), never just
 aggregate scores.
 
 ```

@@ -69,7 +69,7 @@ The left-join of gradings onto solutions: 45 columns, grouped as
   created_at`
 
 Never aggregated; parse failures present with `parse_ok=false`. This is the
-input to G-theory / IRT / mixed-model analysis.
+input to IRT / mixed-model analysis.
 
 ## `ledger.parquet` (key: run_id, stage, condition_id, model)
 
