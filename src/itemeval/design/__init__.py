@@ -1,1 +1,1 @@
-"""itemeval.design (skeleton — see ROADMAP.md)."""
+"""itemeval.design — internal; no stability guarantees. Import from the _modules."""
