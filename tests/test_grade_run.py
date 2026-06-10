@@ -42,6 +42,20 @@ def test_judge_e2e(study):
     assert solutions_after.equals(solutions_before)
 
 
+def test_grade_manifest_records_endpoints(study):
+    import json
+
+    _, prep = study
+    run_generate(prep)
+    result = run_grade(prep)
+    manifest = json.loads((prep.paths.study_dir / result.manifest_path).read_text())
+    endpoints = manifest["endpoints_effective"]
+    cond = prep.grid.grade[0]  # judge condition
+    assert cond.id in endpoints
+    assert endpoints[cond.id]["provider"] == "mockllm"
+    assert set(endpoints[cond.id]) == {"provider", "base_url", "served_model"}
+
+
 def test_grade_resume_skips(study):
     _, prep = study
     run_generate(prep)

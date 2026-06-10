@@ -6,13 +6,14 @@ import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._errors import StoreError
-from itemeval._manifest import build_manifest, write_manifest
+from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.design._grid import GradeCondition
 from itemeval.generate._run import (
     ConditionRunReport,
     ModelFactory,
+    endpoint_info,
     ledger_row,
     log_index_row,
     matches_filter,
@@ -202,6 +203,7 @@ def run_grade(
     manifest_path = write_manifest(manifest, prep.paths)
 
     reports: list[ConditionRunReport] = []
+    endpoints_effective: dict[str, Any] = {}
     rows_written = 0
     parse_failures = 0
     total_usd = 0.0
@@ -278,6 +280,7 @@ def run_grade(
                 )
                 continue
             rows = _judge_rows(prep, cond, pending, log, run_id)
+            endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model)
             log_file = rel_to_study(prep.paths, log.location)
             usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
             cond_usd = sum(usd_vals) if usd_vals else None
@@ -311,6 +314,9 @@ def run_grade(
                 log_file=log_file,
             )
         )
+
+    if endpoints_effective:
+        finalize_manifest(manifest_path, endpoints_effective=endpoints_effective)
 
     return GradeResult(
         run_id=run_id,

@@ -70,6 +70,9 @@ class Manifest(BaseModel):
     graders: dict[str, dict]
     sampling_requested: dict
     sampling_effective: dict[str, Any] | None = None  # backfilled post-run, per condition
+    # backfilled post-run, per condition: {provider, base_url, served_model} — the
+    # endpoint/account/version that actually answered (which dashboard billed it).
+    endpoints_effective: dict[str, Any] | None = None
     seed: int | None
     policy: str
     replications_requested: int
@@ -177,9 +180,17 @@ def write_manifest(manifest: Manifest, paths: "StudyPaths") -> Path:
     return path
 
 
-def finalize_manifest(manifest_path: Path, sampling_effective: "dict[str, Any]") -> None:
-    """Backfill per-condition effective sampling params after the run completes."""
+def finalize_manifest(
+    manifest_path: Path,
+    sampling_effective: "dict[str, Any] | None" = None,
+    endpoints_effective: "dict[str, Any] | None" = None,
+) -> None:
+    """Backfill per-condition effective values after the run completes:
+    sampling params (generate) and/or the resolved endpoint per condition."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    data["sampling_effective"] = sampling_effective
+    if sampling_effective is not None:
+        data["sampling_effective"] = sampling_effective
+    if endpoints_effective is not None:
+        data["endpoints_effective"] = endpoints_effective
     payload = json.dumps(data, indent=2, ensure_ascii=False)
     atomic_write_bytes(manifest_path, (payload + "\n").encode("utf-8"))

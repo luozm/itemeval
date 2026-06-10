@@ -73,9 +73,10 @@ input to G-theory / IRT / mixed-model analysis.
 
 ## `ledger.parquet` (key: run_id, stage, condition_id, model)
 
-`calls`, token totals, `usd`, `priced` (was a price known), `batch` (was
-batch mode on), `created_at`. `export` checks ledger totals equal row sums
-per stage (`internally reconciled`). Null `usd` on a row means "model
+`provider` (the inspect prefix of `model` — which provider's billing the row
+belongs to), `calls`, token totals, `usd`, `priced` (was a price known),
+`batch` (was batch mode on), `created_at`. `export` checks ledger totals equal
+row sums per stage (`internally reconciled`). Null `usd` on a row means "model
 unpriced"; `0.0` with empty tokens means the call was served by the response
 cache (free).
 
@@ -88,6 +89,9 @@ revisions and an items content hash; solver/rubric templates each as
 `{name, source, path, sha256}` (`source` is `local` or `builtin`; built-in
 templates record a package-relative, machine-independent `path`);
 resolved graders; requested sampling params (+ `sampling_effective` per
-condition, backfilled after the run); policy, effective replications/items
+condition, backfilled after the run); `endpoints_effective` per condition
+(`{provider, base_url, served_model}`, backfilled after the run — the endpoint
+and provider-returned model snapshot that actually answered; `base_url` is null
+on the provider's default endpoint); policy, effective replications/items
 limit/batch; the complete condition grid with payloads; the condition ids
 this run selected; and the estimate the run was approved under.

@@ -64,6 +64,13 @@ All notable changes to itemeval are documented here. Format follows
   `generate`, `grade` sends them to the judge as-is. They are always surfaced —
   `grade` reports the count and stop-reason breakdown, and `status` gains an
   `empty` column — never silently folded into a green "complete".
+- Provider/endpoint provenance for cost attribution: `ledger.parquet` gains a
+  `provider` column (the inspect prefix of `model`), and run manifests gain
+  `endpoints_effective` per condition (`{provider, base_url, served_model}`,
+  backfilled after the run) — recording which provider, endpoint, and
+  provider-returned model snapshot actually answered. `base_url` is null on the
+  provider's default endpoint; a non-null value flags traffic routed elsewhere
+  (Azure/proxy/gateway).
 
 ### Changed
 - **Path resolution split by intent** (behavior change). Inputs (`prompts_dir`,

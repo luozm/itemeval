@@ -14,6 +14,7 @@ LEDGER_SCHEMA = pa.schema(
         pa.field("stage", pa.string(), nullable=False),
         pa.field("condition_id", pa.string(), nullable=False),
         pa.field("model", pa.string(), nullable=False),
+        pa.field("provider", pa.string()),  # inspect provider prefix; which dashboard billed
         pa.field("calls", pa.int64(), nullable=False),
         pa.field("input_tokens", pa.int64()),
         pa.field("output_tokens", pa.int64()),

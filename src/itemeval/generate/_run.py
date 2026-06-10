@@ -159,6 +159,7 @@ def ledger_row(
         "stage": stage,
         "condition_id": condition_id,
         "model": model,
+        "provider": provider_of(model),
         "calls": len(rows),
         "input_tokens": total("input_tokens"),
         "output_tokens": total("output_tokens"),
@@ -170,6 +171,20 @@ def ledger_row(
         "batch": batch is not None,
         "created_at": utc_now_iso(),
     }
+
+
+def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
+    """Resolved endpoint for a condition's eval: which provider/account/version
+    actually answered. `base_url` is None on the provider's default endpoint;
+    a non-null value means traffic was routed elsewhere (Azure/proxy/gateway).
+    `served_model` is the provider-returned snapshot id (e.g. a dated version)."""
+    base_url = getattr(log.eval, "model_base_url", None)
+    served_model = None
+    for sample in log.samples or []:
+        if sample.output and sample.output.model:
+            served_model = sample.output.model
+            break
+    return {"provider": provider_of(model), "base_url": base_url, "served_model": served_model}
 
 
 def rows_from_generate_log(
@@ -250,6 +265,7 @@ def run_generate(
     rows_written = 0
     total_usd = 0.0
     sampling_effective: dict[str, Any] = {}
+    endpoints_effective: dict[str, Any] = {}
     factory = model_factory or resolve_model
     item_ids = [it.id for it in prep.items_effective]
 
@@ -326,6 +342,7 @@ def run_generate(
             continue
 
         rows = rows_from_generate_log(log, cond, prep, run_id)
+        endpoints_effective[cond.id] = endpoint_info(log, cond.model)
         n = _solutions.upsert_solutions(prep.paths, rows)
         rows_written += n
 
@@ -364,8 +381,12 @@ def run_generate(
             )
         )
 
-    if sampling_effective:
-        finalize_manifest(manifest_path, sampling_effective)
+    if sampling_effective or endpoints_effective:
+        finalize_manifest(
+            manifest_path,
+            sampling_effective=sampling_effective or None,
+            endpoints_effective=endpoints_effective or None,
+        )
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,

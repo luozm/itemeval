@@ -37,8 +37,10 @@ def test_generate_e2e(study):
     ledger = read_ledger(prep.paths)
     assert len(ledger) == 2
     assert ledger["usd"].sum() == df["usd"].sum()
+    # provider column = the inspect prefix that determines which dashboard billed
+    assert (ledger["provider"] == "mockllm").all()
 
-    # manifest written and backfilled with effective params
+    # manifest written and backfilled with effective params + endpoints
     manifest_file = prep.paths.study_dir / result.manifest_path
     manifest = json.loads(manifest_file.read_text())
     assert manifest["stage"] == "generate"
@@ -47,6 +49,12 @@ def test_generate_e2e(study):
     assert manifest["datasets"][0]["revision_resolved"]
     assert manifest["config_sha256"] == cfg.config_sha256
     assert manifest["sampling_effective"]  # backfilled post-run
+    # endpoints backfilled per condition: provider/base_url/served_model
+    endpoints = manifest["endpoints_effective"]
+    assert set(endpoints) == {c.id for c in prep.grid.generate}
+    one = endpoints[prep.grid.generate[0].id]
+    assert one["provider"] == "mockllm"
+    assert set(one) == {"provider", "base_url", "served_model"}
 
 
 def test_generate_resume_skips_complete(study):
