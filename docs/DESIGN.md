@@ -42,6 +42,13 @@ inline). Python `>=3.10` syntax only (PEP 604 unions OK; **no** `tomllib`,
 10. `prepare_study(config, refresh_pricing_table=...)` (renamed kwarg);
     conftest fixtures route the `hf` adapter to an offline fake for all
     non-network tests.
+11. **Public API expanded by user decision (supersedes requirement §1 and
+    §15.3)**: `itemeval/__init__.py` additionally exports the pipeline
+    façade — `prepare_study`, `estimate_study`, `run_generate`, `run_grade`,
+    `export_study`, `build_status` — via lazy module `__getattr__` (PEP 562)
+    so `import itemeval` does not pull inspect_ai/pandas. The budget gate
+    stays CLI-only. `estimate_study(prep)` now auto-reads the solutions
+    store when `solutions_df` is not passed.
 
 ---
 

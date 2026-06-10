@@ -39,4 +39,9 @@ All notable changes to itemeval are documented here. Format follows
   resumability and grid-completion reporting.
 - `mockllm/*` pass-through: any mock model id runs the full pipeline free and
   deterministically (used by all demos and tests; `configs/usamo_demo.yaml`).
+- Public Python API: the pipeline is drivable programmatically as well as via
+  the CLI — `prepare_study`, `estimate_study`, `run_generate`, `run_grade`,
+  `export_study`, `build_status` exported from `itemeval` (lazily, so
+  `import itemeval` stays light). The budget confirmation gate remains a
+  CLI-layer feature.
 - Dependency: `datasets` (HuggingFace) for the HF adapter.

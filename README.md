@@ -105,6 +105,29 @@ itemeval export   configs/my_study.yaml      # long-format parquet + CSV + cost 
 itemeval status   configs/my_study.yaml      # grid completion matrix
 ```
 
+## Python API
+
+The same pipeline, programmatically (one public function per CLI command):
+
+```python
+import itemeval
+
+cfg  = itemeval.load_config("configs/my_study.yaml")
+prep = itemeval.prepare_study(cfg)           # datasets + templates + grid + plan + pricing
+
+est = itemeval.estimate_study(prep)          # projected $ per stage, no model API calls
+itemeval.run_generate(prep)                  # stage 1 -> solutions store
+itemeval.run_grade(prep)                     # stage 2 -> gradings store
+itemeval.export_study(cfg)                   # long-format parquet + CSV + ledger
+itemeval.build_status(cfg, prep)             # grid completion report
+```
+
+Every call returns a pydantic result object. One difference from the CLI:
+the budget **confirmation gate is a CLI feature** — programmatic callers
+should check `estimate_study(...)` totals against their own threshold before
+paid runs. Anything not exported from `itemeval` (the `_`-prefixed modules)
+is internal with no stability promise.
+
 ## Cost controls
 
 - `estimate` before every run; runs projected above `confirm_above_usd` require

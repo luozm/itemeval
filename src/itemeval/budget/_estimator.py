@@ -97,7 +97,15 @@ def _condition_estimate(
 
 
 def estimate_study(prep: "PreparedStudy", solutions_df: "pd.DataFrame | None" = None) -> Estimate:
-    """Project the full policy-effective grid; resume state is NOT subtracted."""
+    """Project the full policy-effective grid; resume state is NOT subtracted.
+
+    When solutions_df is None, the study's solutions store is read so judge
+    input sizing uses real stored solutions where they exist.
+    """
+    if solutions_df is None:
+        from itemeval.store._solutions import read_solutions
+
+        solutions_df = read_solutions(prep.paths)
     items = prep.items_effective
     reps = prep.plan.replications
     warnings: list[str] = []

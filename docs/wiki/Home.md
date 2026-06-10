@@ -24,6 +24,7 @@ row per grading event with scores, judge reasoning, tokens, and dollars.
 | [Pipeline Concepts](Pipeline-Concepts.md) | Items, facets, conditions, replications, two-stage design, resume & caching |
 | [Configuration](Configuration.md) | Complete YAML reference for every config field |
 | [CLI](CLI.md) | The five commands, options, and exit codes |
+| [Python API](Python-API.md) | The same pipeline from `import itemeval` — functions, results, kwargs |
 | [Outputs and Schemas](Outputs-and-Schemas.md) | Study directory layout, parquet stores, export table, manifests |
 | [Budget and Costs](Budget-and-Costs.md) | Estimation, confirmation gate, policies, pricing, batch mode |
 | [Architecture](Architecture.md) | Module map: what each file does and why it exists |
@@ -41,12 +42,15 @@ itemeval status   configs/my_study.yaml   # grid completion matrix, spend, manif
 
 ## Stability promises
 
-Pre-1.0, exactly three surfaces are stable-ish (minor versions may still
+Pre-1.0, exactly four surfaces are stable-ish (minor versions may still
 break them, with changelog notice):
 
 1. The **CLI** commands and exit codes.
 2. The **config YAML** schema.
 3. The **on-disk outputs** (parquet schemas, manifest JSON, study layout).
+4. The **Python API** — everything in `itemeval.__all__`: `load_config`,
+   `prepare_study`, `estimate_study`, `run_generate`, `run_grade`,
+   `export_study`, `build_status`, `ExperimentConfig`, `Item`,
+   `__version__` ([Python API](Python-API.md)).
 
-The Python API exports only `Item`, `ExperimentConfig`, `load_config`, and
-`__version__`. Every `_`-prefixed module is internal and free to change.
+Every `_`-prefixed module is internal and free to change.

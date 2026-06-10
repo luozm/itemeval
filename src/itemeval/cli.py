@@ -76,10 +76,9 @@ def _print_estimate(est, stage: str) -> None:
 
 def _cmd_estimate(args) -> int:
     from itemeval.budget._estimator import estimate_study
-    from itemeval.store._solutions import read_solutions
 
     _, prep = _load(args)
-    est = estimate_study(prep, read_solutions(prep.paths))
+    est = estimate_study(prep)
     if args.json:
         print(est.model_dump_json(indent=2))
         return 0
@@ -115,10 +114,9 @@ def _print_reports(reports) -> None:
 def _cmd_generate(args) -> int:
     from itemeval.budget._estimator import estimate_study
     from itemeval.generate._run import run_generate
-    from itemeval.store._solutions import read_solutions
 
     cfg, prep = _load(args)
-    est = estimate_study(prep, read_solutions(prep.paths))
+    est = estimate_study(prep)
     print(
         f"projected generate cost: {_fmt_usd(est.generate.usd)} "
         f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
@@ -144,10 +142,9 @@ def _cmd_generate(args) -> int:
 def _cmd_grade(args) -> int:
     from itemeval.budget._estimator import estimate_study
     from itemeval.grade._run import run_grade
-    from itemeval.store._solutions import read_solutions
 
     cfg, prep = _load(args)
-    est = estimate_study(prep, read_solutions(prep.paths))
+    est = estimate_study(prep)
     print(
         f"projected grade cost: {_fmt_usd(est.grade.usd)} "
         f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"

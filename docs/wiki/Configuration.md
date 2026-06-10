@@ -93,11 +93,11 @@ budget:
 ## Python API
 
 ```python
-from itemeval import load_config, ExperimentConfig, Item
+from itemeval import load_config
 
 cfg = load_config("configs/my_study.yaml")   # ConfigError on any problem
 cfg.study_dir                                 # resolved output directory
 ```
 
-These four names (plus `__version__`) are the entire public Python surface;
-the pipeline itself is driven through the CLI.
+The whole pipeline is also drivable programmatically — see
+[Python API](Python-API.md).
