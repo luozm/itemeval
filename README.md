@@ -11,6 +11,9 @@ item-response table plus full raw logs — built for item-response-level analysi
 **Status: pre-alpha — M1–M6 implemented; first PyPI release pending (M7).**
 See [ROADMAP.md](ROADMAP.md).
 
+**User guide:** [docs/wiki/Home.md](docs/wiki/Home.md) — getting started,
+config reference, CLI, output schemas, budget controls, architecture, FAQ.
+
 ## Why this exists
 
 inspect_ai already provides the hard parts: async execution with per-provider
