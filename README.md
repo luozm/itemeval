@@ -2,17 +2,37 @@
 
 **Item-level LLM evaluation over any API, with built-in budget control.**
 
-A thin, design-driven evaluation package built on [inspect_ai](https://inspect.aisi.org.uk).
-Define a benchmark source and a facet grid in YAML; itemeval expands the grid, runs
-generation and grading as two decoupled stages, and exports a long-format
-item-response table plus full raw logs — built for item-response-level analysis
-(psychometrics, IRT, mixed-model), never just aggregate scores.
+Most eval harnesses give you a leaderboard number. itemeval gives you the
+**data behind the number**: you declare a benchmark and an experiment design
+(models × prompts × graders × rubrics × replications) in one YAML file, and it
+returns a long-format table with one row per grading event — every score,
+judge rationale, token count, and dollar — plus full raw logs. Built as a thin,
+design-driven layer on [inspect_ai](https://inspect.aisi.org.uk), it is made
+for item-response-level analysis (psychometrics, IRT, mixed-model, judge
+reliability), never just aggregate scores.
 
 **Status: v0.1.0 — first public release.**
 See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
 
-**User guide:** [the wiki](https://github.com/luozm/itemeval/wiki) — getting started,
-config reference, CLI, output schemas, budget controls, architecture, FAQ.
+## Who is this for
+
+- **Measurement / evaluation researchers** — you treat an LLM benchmark as a
+  measurement instrument and need every individual grading event as a row:
+  item × model × prompt × replication × grader × rubric, ready for IRT,
+  mixed-effects, or reliability analysis.
+- **LLM-as-judge methodologists** — you study how much the judge model and the
+  rubric matter. Solutions are generated once and stored; adding a new judge or
+  rubric re-grades them at **zero generation cost**.
+- **Benchmark builders and auditors** — you need per-item difficulty,
+  prompt sensitivity, and parse-failure visibility to find broken items, not a
+  single accuracy number.
+- **Practitioners comparing models for a task** — you want a model × prompt
+  comparison on your benchmark with per-item failure analysis, a dry-run cost
+  estimate before anything runs, and a hard dollar cap while it runs.
+- **Agent / CI pipelines** — declarative config, idempotent resumable commands,
+  deterministic exit codes, `--json` output, and a budget gate that can never be
+  talked past make itemeval safe for an AI agent to drive — see the
+  [Agent Guide](https://github.com/luozm/itemeval/wiki/Agent-Guide).
 
 ## Quickstart
 
@@ -62,8 +82,35 @@ one row per problem with its score (`1.0`/`0.0`), the answer the scorer
 extracted, the full solution text, token counts, and dollar cost. Stages are
 cached and resumable, so re-runs never re-pay for completed work. Swap in
 `scorer: multiple_choice` (letter answers) or `exact_match`, or declare a
-`grader` + `rubric` for LLM-judged benchmarks — see
-[the wiki](https://github.com/luozm/itemeval/wiki).
+`grader` + `rubric` for LLM-judged benchmarks — see the tutorials below.
+
+## Documentation
+
+The **[wiki](https://github.com/luozm/itemeval/wiki)** is the user guide.
+Start with the step-by-step tutorials — each is a complete, runnable use case:
+
+| Tutorial | What you learn |
+|---|---|
+| [1 — Score a verifiable benchmark](https://github.com/luozm/itemeval/wiki/Tutorial-Verifiable-Benchmark) | The full pipeline on AIME 2025 for ~2¢: estimate → generate → grade → export |
+| [2 — Grade with an LLM judge](https://github.com/luozm/itemeval/wiki/Tutorial-LLM-Judge) | Rubric-based judging of open-ended answers, the judge output contract, parse failures |
+| [3 — Compare models and prompts](https://github.com/luozm/itemeval/wiki/Tutorial-Experiment-Design) | A crossed design with replications, and analyzing the long-format export in pandas |
+| [4 — Add a second judge at $0 generation](https://github.com/luozm/itemeval/wiki/Tutorial-Second-Judge) | Fan new graders/rubrics out over stored solutions; judge-agreement analysis |
+| [5 — Scale up without surprises](https://github.com/luozm/itemeval/wiki/Tutorial-Budget-and-Scale) | dev → full-batch, the cost gate, hard caps, batch APIs, resume, the savings report |
+
+Reference pages: [Getting Started](https://github.com/luozm/itemeval/wiki/Getting-Started) ·
+[Pipeline Concepts](https://github.com/luozm/itemeval/wiki/Pipeline-Concepts) ·
+[Configuration](https://github.com/luozm/itemeval/wiki/Configuration) ·
+[CLI](https://github.com/luozm/itemeval/wiki/CLI) ·
+[Python API](https://github.com/luozm/itemeval/wiki/Python-API) ·
+[Outputs and Schemas](https://github.com/luozm/itemeval/wiki/Outputs-and-Schemas) ·
+[Budget and Costs](https://github.com/luozm/itemeval/wiki/Budget-and-Costs) ·
+[Error Handling](https://github.com/luozm/itemeval/wiki/Error-Handling) ·
+[FAQ](https://github.com/luozm/itemeval/wiki/FAQ).
+
+**Driving itemeval from an AI agent** (Claude Code, Codex, custom agents):
+point the agent at the [Agent Guide](https://github.com/luozm/itemeval/wiki/Agent-Guide) —
+a compact, contract-style page covering commands, exit codes, machine-readable
+outputs, and budget guardrails.
 
 ## Why this exists
 

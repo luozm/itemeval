@@ -4,8 +4,8 @@
 
 **Item-level LLM evaluation over any API, with built-in budget control** — a
 thin layer on [inspect_ai](https://inspect.aisi.org.uk) for studies that need
-every individual grading event (psychometrics, IRT, mixed-model), never just
-aggregate scores.
+every individual grading event (psychometrics, IRT, mixed-model, judge
+reliability), never just aggregate scores.
 
 ```
 benchmark source ─▶ adapter ─▶ items ─┐
@@ -18,7 +18,23 @@ file; itemeval expands the grid into conditions, runs generation and grading
 as two decoupled, resumable stages on inspect_ai, and exports one long-format
 row per grading event with scores, judge reasoning, tokens, and dollars.
 
-## Pages
+## Tutorials — learn by running
+
+Each tutorial is a complete, runnable use case, step by step. They build on
+each other but stand alone.
+
+| Tutorial | What you learn | Cost |
+|---|---|---|
+| [1 — Score a verifiable benchmark](Tutorial-Verifiable-Benchmark.md) | The full pipeline on AIME 2025: estimate → generate → grade → export | ~2¢ |
+| [2 — Grade with an LLM judge](Tutorial-LLM-Judge.md) | Rubric-based judging of open-ended answers; the judge output contract | a few ¢ |
+| [3 — Compare models and prompts](Tutorial-Experiment-Design.md) | A crossed design with replications; analyzing the export in pandas | tens of ¢ |
+| [4 — Add a second judge at $0 generation](Tutorial-Second-Judge.md) | New graders/rubrics over stored solutions; judge agreement | a few ¢ |
+| [5 — Scale up without surprises](Tutorial-Budget-and-Scale.md) | Policies, the cost gate, hard caps, batch mode, resume, savings | you decide |
+
+New here? Do [Getting Started](Getting-Started.md) first (free, no API key),
+then Tutorial 1.
+
+## Reference pages
 
 | Page | What it covers |
 |------|----------------|
@@ -30,6 +46,7 @@ row per grading event with scores, judge reasoning, tokens, and dollars.
 | [Outputs and Schemas](Outputs-and-Schemas.md) | Study directory layout, parquet stores, export table, manifests |
 | [Budget and Costs](Budget-and-Costs.md) | Estimation, confirmation gate, policies, pricing, batch mode |
 | [Error Handling](Error-Handling.md) | Failure channels, reporting, exit codes, retry & resume semantics |
+| [Agent Guide](Agent-Guide.md) | Driving itemeval from an AI agent: contract, guardrails, recovery |
 | [Architecture](Architecture.md) | Module map: what each file does and why it exists |
 | [FAQ](FAQ.md) | Common errors, troubleshooting, design rationale |
 

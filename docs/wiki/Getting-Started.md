@@ -93,3 +93,22 @@ Always run `estimate` before the first paid run, and refresh pricing first:
 ```bash
 itemeval estimate my_study/config.yaml --refresh-pricing
 ```
+
+## Where to next
+
+The tutorials walk every typical use case end to end, with real (cheap)
+runs:
+
+1. [Score a verifiable benchmark](Tutorial-Verifiable-Benchmark.md) — the full
+   pipeline on AIME 2025 for ~2¢. **Start here.**
+2. [Grade with an LLM judge](Tutorial-LLM-Judge.md) — rubric-based judging of
+   open-ended answers.
+3. [Compare models and prompts](Tutorial-Experiment-Design.md) — a crossed
+   design with replications, analyzed in pandas.
+4. [Add a second judge at $0 generation](Tutorial-Second-Judge.md) — the
+   two-stage payoff: judge-sensitivity studies.
+5. [Scale up without surprises](Tutorial-Budget-and-Scale.md) — policies,
+   gates, batch mode, and the savings report.
+
+Driving itemeval from an AI agent (or wiring it into one)? Hand the agent the
+[Agent Guide](Agent-Guide.md).

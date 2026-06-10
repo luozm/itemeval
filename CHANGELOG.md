@@ -6,6 +6,22 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Documentation
+- Five step-by-step tutorials in the wiki, each a complete runnable use case:
+  score a verifiable benchmark (~2¢), grade with an LLM judge, compare models ×
+  prompts with replications (+ pandas/mixed-model analysis), add a second
+  judge/rubric at $0 generation, and scale up under the budget layer.
+- New wiki **Agent Guide**: a contract-style page for driving itemeval from an
+  AI agent — command/exit-code contract, hard budget guardrails, standard
+  operating procedure, failure-triage table, and a drop-in block for a study
+  repo's `CLAUDE.md`/`AGENTS.md`.
+- README rewritten value-first: leads with what the data looks like, adds a
+  "Who is this for" section and a documentation hub linking the tutorials and
+  agent guide.
+- `docs/FUTURE.md`: the post-0.1 feature backlog with per-feature design notes
+  (motivation, sketch, implementation plan); ROADMAP's "Later" section is now a
+  tiered summary pointing at it.
+
 ### Added
 - Per-run savings report: `export` now reports spend against a plain-API list
   price (every input token at full rate, no batch discount) and breaks the

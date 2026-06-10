@@ -58,25 +58,41 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
 
 ## Later (post-0.1)
 
-- GitHub repo adapter; local jsonl adapter
+Design notes — motivation, sketch, implementation plan per feature — live in
+[docs/FUTURE.md](docs/FUTURE.md); this is the high-level list. Items graduate
+to a versioned section above when scheduled.
+
+**Tier 1 — adoption blockers** (front of the line for 0.2/0.3):
+
+- Local file adapter (jsonl/csv/parquet) — the most-requested on-ramp
+- GitHub repo adapter (pinned commit)
+- Item subset sampling — random/stratified, seeded, recorded in the manifest
+- Custom scorer plugin point + more built-in verifiable scorers (regex,
+  normalized exact match)
+- Reliability & agreement report (`itemeval report`) — descriptive judge
+  agreement / item difficulty / replication consistency over the export table
+
+**Tier 2 — measurement depth:**
+
+- Grader replication + judge sampling configs (judge as a replicated facet)
+- Import human ratings as a grade condition (human-vs-LLM-judge for free)
+- Pairwise / comparative judging (preference pairs over stored solutions)
 - Partial / nested crossing designs (items-in-tests as first-class)
+- Combine multiple runs on export (pilot + full run; refuse incompatible
+  manifests rather than silently pooling)
 - Wide-pivot export helpers
-- Grader replication (judge as replicated facet)
-- Savings report: count resume / response-cache reuse (the savings report ships
-  in 0.2 but covers prompt-cache + batch discounts only; cache-hit rows carry no
-  token usage, so reuse savings need a join back to the original run's tokens)
+
+**Tier 3 — scale and breadth:**
+
 - Multimodal items
-- Finer-grained resume — per-sample mid-cell checkpointing so a large cell that
-  dies near the end doesn't restart from zero (cell-level resume already exists
-  via the parquet + `.eval` store; lean on inspect's `eval_retry`/`.eval` logs).
-  An explicit pause/break command is deliberately *not* planned — Ctrl-C + re-run
-  already covers it
-- Combine multiple runs on export — pool a small pilot with a larger follow-up
-  run under the same setting into one export. Must verify the runs share a
-  compatible grid/manifest (models, prompts, rubrics, dataset revisions) and
-  refuse to merge incompatible runs rather than silently pooling them
-- PyPI publish approval gate — optionally add a GitHub `pypi` Environment with a
-  required-reviewer rule and reference it from `release.yml` (`environment: pypi`,
-  plus the matching Environment field on the PyPI trusted publisher) so a release
-  requires manual approval before the OIDC upload runs. Today `release.yml` has no
-  environment gate: publishing a GitHub Release uploads to PyPI immediately.
+- Finer-grained resume (mid-cell; lean on inspect's `eval_retry`/`.eval` logs;
+  an explicit pause/break command is deliberately *not* planned)
+- Savings report: count resume / response-cache reuse (needs a join back to
+  the original run's tokens)
+- Study card generator (shareable Markdown provenance card per study)
+
+**Ops:**
+
+- PyPI publish approval gate — GitHub `pypi` Environment + required reviewer
+  referenced from `release.yml`; today a published GitHub Release uploads to
+  PyPI immediately.
