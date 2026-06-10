@@ -94,3 +94,8 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
   run under the same setting into one export. Must verify the runs share a
   compatible grid/manifest (models, prompts, rubrics, dataset revisions) and
   refuse to merge incompatible runs rather than silently pooling them
+- PyPI publish approval gate — optionally add a GitHub `pypi` Environment with a
+  required-reviewer rule and reference it from `release.yml` (`environment: pypi`,
+  plus the matching Environment field on the PyPI trusted publisher) so a release
+  requires manual approval before the OIDC upload runs. Today `release.yml` has no
+  environment gate: publishing a GitHub Release uploads to PyPI immediately.
