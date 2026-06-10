@@ -1,5 +1,7 @@
 # itemeval Wiki
 
+> **Editing note:** This wiki is generated from [`docs/wiki/`](https://github.com/luozm/itemeval/tree/main/docs/wiki) in the main repo, which is the single source of truth. Always edit the pages there and push to `main` — a GitHub Action mirrors them here. Changes made directly in the wiki UI will be overwritten on the next sync.
+
 **Item-level LLM evaluation over any API, with built-in budget control** — a
 thin layer on [inspect_ai](https://inspect.aisi.org.uk) for studies that need
 every individual grading event (psychometrics, G-theory, IRT), never just
