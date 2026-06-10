@@ -8,7 +8,7 @@ generation and grading as two decoupled stages, and exports a long-format
 item-response table plus full raw logs — built for item-response-level analysis
 (psychometrics, G-theory, IRT), never just aggregate scores.
 
-**Status: pre-alpha — M1–M6 implemented; first PyPI release pending (M7).**
+**Status: v0.1.0 — first public release.**
 See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
 
 **User guide:** [the wiki](https://github.com/luozm/itemeval/wiki) — getting started,

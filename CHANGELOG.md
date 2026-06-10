@@ -6,6 +6,12 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-10
+
+First public release. Item-level LLM evaluation over any inspect_ai-supported
+provider, with a two-stage generate/grade pipeline, long-format item-response
+export, and a budget layer.
+
 ### Added
 - Core data model and config (M1): canonical `Item` model; full pydantic
   experiment-config schema validating the README YAML sketch as-is
@@ -106,3 +112,6 @@ All notable changes to itemeval are documented here. Format follows
   different (pandas 2.x) stack that was never tested. Floor now matches the
   tested stack; `uv.lock` reconciled to a single resolution (dropped the
   3.10-only `exceptiongroup`/`tomli`/`async-timeout`/`pytz` backports).
+
+[Unreleased]: https://github.com/luozm/itemeval/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/luozm/itemeval/releases/tag/v0.1.0

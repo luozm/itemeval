@@ -66,10 +66,13 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
 - [x] Pip/uv install path: built-in template library (`builtin:` refs) +
   `itemeval init` scaffold; outputs anchored to the working directory, inputs to
   the config dir
-- [ ] Test coverage for adapters, grid expansion, parsing, export schema
-- [ ] GitHub Actions CI (ruff + pytest, py3.11–3.13 matrix)
-- [ ] README quickstart against a public verifiable benchmark (no judge needed)
-- [ ] CHANGELOG.md; tag v0.1.0; publish to PyPI (`uv build && uv publish`)
+- [x] Test coverage for adapters, grid expansion, parsing, export schema
+  (96%→97% line coverage; the named areas at 100% bar export's defensive guards)
+- [x] GitHub Actions CI (ruff + pytest, py3.11–3.13 matrix)
+- [x] README quickstart against a public verifiable benchmark (no judge needed) —
+  AIME 2025 + `numeric` scorer; validated live on real generate output
+- [x] CHANGELOG.md; tag v0.1.0 — publish to PyPI (`uv build && uv publish`) is
+  the final manual step
 
 ## Later (post-0.1)
 
