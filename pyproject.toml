@@ -15,6 +15,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "datasets>=5.0.0",
     "inspect-ai>=0.3.239",
     "pandas>=2.3.3",
     "pyarrow>=24.0.0",
@@ -38,6 +39,7 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["network: hits the network (HF Hub, free); deselect with -m 'not network'"]
 
 [dependency-groups]
 dev = [
