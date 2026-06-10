@@ -29,6 +29,7 @@ row per grading event with scores, judge reasoning, tokens, and dollars.
 | [Python API](Python-API.md) | The same pipeline from `import itemeval` — functions, results, kwargs |
 | [Outputs and Schemas](Outputs-and-Schemas.md) | Study directory layout, parquet stores, export table, manifests |
 | [Budget and Costs](Budget-and-Costs.md) | Estimation, confirmation gate, policies, pricing, batch mode |
+| [Error Handling](Error-Handling.md) | Failure channels, reporting, exit codes, retry & resume semantics |
 | [Architecture](Architecture.md) | Module map: what each file does and why it exists |
 | [FAQ](FAQ.md) | Common errors, troubleshooting, design rationale |
 
