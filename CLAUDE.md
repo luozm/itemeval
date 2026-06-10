@@ -18,7 +18,8 @@ makes a user-visible difference. The USAMO study consuming this package lives in
   pip directly. `pyproject.toml` carries ranges; `uv.lock` pins exactly and is
   committed.
 - Recreate from scratch: `uv sync`. `./.venv` is disposable.
-- Supports Python >=3.10 (don't use 3.11+/3.12+ syntax); develop on 3.12.
+- Supports Python >=3.11 (don't use 3.12+ syntax); develop on 3.12. Floor is
+  3.11 because the tested stack pulls pandas 3.x, which requires >=3.11.
 
 ## Conventions
 

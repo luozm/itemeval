@@ -45,3 +45,10 @@ All notable changes to itemeval are documented here. Format follows
   `import itemeval` stays light). The budget confirmation gate remains a
   CLI-layer feature.
 - Dependency: `datasets` (HuggingFace) for the HF adapter.
+
+### Changed
+- Minimum Python is now 3.11 (was 3.10). The tested dependency stack resolves
+  pandas 3.x, which requires Python >=3.11, so 3.10 could only ever install a
+  different (pandas 2.x) stack that was never tested. Floor now matches the
+  tested stack; `uv.lock` reconciled to a single resolution (dropped the
+  3.10-only `exceptiongroup`/`tomli`/`async-timeout`/`pytz` backports).
