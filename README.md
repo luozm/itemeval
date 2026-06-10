@@ -8,7 +8,8 @@ generation and grading as two decoupled stages, and exports a long-format
 item-response table plus full raw logs — built for item-response-level analysis
 (psychometrics, G-theory, IRT), never just aggregate scores.
 
-**Status: pre-alpha skeleton — interfaces under construction.** See [ROADMAP.md](ROADMAP.md).
+**Status: pre-alpha — M1–M6 implemented; first PyPI release pending (M7).**
+See [ROADMAP.md](ROADMAP.md).
 
 ## Why this exists
 
@@ -29,9 +30,9 @@ extraction. itemeval adds the layer it doesn't have:
 4. **Item-response export** — long-format parquet/CSV with one row per grading
    event (item × model × prompt × replication × grader × rubric × ...), including
    scores, judge reasoning, token usage, and dollar costs. Never aggregated.
-5. **Budget layer** — dry-run cost estimation before launch, per-call cost
-   ledger after, hard token caps, and run policies (`dev` / `full-batch` /
-   `full-interactive`).
+5. **Budget layer** — dry-run cost estimation before launch, per-sample cost
+   attribution plus a per-run cost ledger after, hard token caps, and run
+   policies (`dev` / `full-batch` / `full-interactive`).
 
 ## Pipeline
 
@@ -79,7 +80,11 @@ solvers:
 facets:
   prompt: [minimal, standard]   # prompts/solver/*.md
   grader: [judge_a, judge_b]    # or scorer: exact_match for verifiable benchmarks
+  rubric: [standard]            # rubrics/*.md (judge grading only; default: [default])
   replications: 4
+graders:                        # resolves facet names; bare model ids also work
+  judge_a: {model: openai/gpt-5-mini}
+  judge_b: {model: anthropic/claude-haiku-4-5}
 crossing: full
 budget:
   policy: dev                   # small subset preset for pipeline validation
@@ -90,7 +95,7 @@ budget:
 ## CLI
 
 ```
-itemeval estimate configs/my_study.yaml      # projected $ per stage, no API calls
+itemeval estimate configs/my_study.yaml      # projected $ per stage, no model API calls
 itemeval generate configs/my_study.yaml      # stage 1 (resumable)
 itemeval grade    configs/my_study.yaml      # stage 2 (resumable, re-runnable per rubric/grader)
 itemeval export   configs/my_study.yaml      # long-format parquet + CSV + cost ledger
@@ -106,8 +111,10 @@ itemeval status   configs/my_study.yaml      # grid completion matrix
 - Prompt caching exploited in the grading stage (rubric + problem prefix repeats
   across solutions).
 - `max_tokens` caps on both stages; `dev` policy as the default for new configs.
-- Cost ledger appended per run: tokens and USD per call, attributed to
-  generation vs grading.
+- Cost ledger appended per run: tokens and USD per sample (and aggregated per
+  condition), attributed to generation vs grading. Exports check that ledger
+  totals match row sums; reconciliation against provider dashboards is a
+  documented manual step.
 
 ## Reproducibility
 
