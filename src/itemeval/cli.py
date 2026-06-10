@@ -377,7 +377,13 @@ def _build_parser() -> argparse.ArgumentParser:
             action="append",
             help="only conditions matching this id/prefix/slug (repeatable)",
         )
-        p.add_argument("--display", default="none", choices=["none", "plain", "rich", "full"])
+        p.add_argument(
+            "--display",
+            default=None,
+            choices=["none", "plain", "rich", "full"],
+            help="inspect progress display (default: rich live progress; honors "
+            "INSPECT_DISPLAY; use 'none' to silence)",
+        )
         if name == "grade":
             p.add_argument("--grader", action="append", help="only this grader (repeatable)")
             p.add_argument("--rubric", action="append", help="only this rubric (repeatable)")

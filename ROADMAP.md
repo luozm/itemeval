@@ -83,9 +83,11 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
 - Grader replication (judge as replicated facet)
 - Pricing auto-refresh; per-provider spend tracking
 - Multimodal items
-- Progress display on by default for `generate`/`grade` — pick a sensible
-  `--display` default (instead of `none`) and surface live progress through the
-  Python API too, not just the CLI
+- ✅ (2026-06-10) Progress display on by default for `generate`/`grade` — the
+  `--display` flag and the `run_generate`/`run_grade` `display` argument now
+  default to inspect's `rich` live display (honoring `INSPECT_DISPLAY`, degrading
+  off-TTY/Jupyter/threads) instead of `none`, surfacing live progress through the
+  Python API as well as the CLI; `none` is still available to silence it
 - Finer-grained resume — per-sample mid-cell checkpointing so a large cell that
   dies near the end doesn't restart from zero (cell-level resume already exists
   via the parquet + `.eval` store; lean on inspect's `eval_retry`/`.eval` logs).

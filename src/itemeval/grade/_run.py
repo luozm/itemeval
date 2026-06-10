@@ -17,6 +17,7 @@ from itemeval.generate._run import (
     ledger_row,
     log_index_row,
     matches_filter,
+    resolve_display,
     sum_usage,
     usage_columns,
     usd_for_usage,
@@ -157,7 +158,7 @@ def run_grade(
     condition_filter: "list[str] | None" = None,
     graders: "list[str] | None" = None,
     rubrics: "list[str] | None" = None,
-    display: str = "none",
+    display: "str | None" = None,
     model_factory: "ModelFactory | None" = None,
     estimate_usd: "float | None" = None,
 ) -> GradeResult:
@@ -251,7 +252,7 @@ def run_grade(
                 logs = inspect_ai.eval(
                     task,
                     model=factory(cond.grader_model, "grade"),
-                    display=display,
+                    display=resolve_display(display),
                     log_dir=str(prep.paths.logs_dir("grade", cond.id)),
                     log_format="eval",
                     fail_on_error=False,

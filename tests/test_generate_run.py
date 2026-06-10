@@ -4,10 +4,21 @@ import json
 
 import pandas as pd
 
-from itemeval.generate._run import run_generate
+from itemeval.generate._run import resolve_display, run_generate
 from itemeval.store._ledger import read_ledger
 from itemeval.store._logs import read_log_index
 from itemeval.store._solutions import read_solutions
+
+
+def test_resolve_display_precedence(monkeypatch):
+    """Explicit value wins, then INSPECT_DISPLAY, then the "rich" default."""
+    monkeypatch.delenv("INSPECT_DISPLAY", raising=False)
+    assert resolve_display(None) == "rich"  # itemeval default: live progress on
+    assert resolve_display("none") == "none"  # explicit opt-out is honored
+    assert resolve_display("full") == "full"
+    monkeypatch.setenv("INSPECT_DISPLAY", "plain")
+    assert resolve_display(None) == "plain"  # env fills in when arg omitted
+    assert resolve_display("full") == "full"  # explicit still beats the env
 
 
 def test_generate_e2e(study):

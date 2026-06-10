@@ -1,5 +1,6 @@
 """Generate-stage orchestrator: per-condition inspect evals -> solutions store."""
 
+import os
 from functools import reduce
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
@@ -54,6 +55,17 @@ class GenerateResult(BaseModel):
     rows_written: int
     total_usd: float
     manifest_path: str
+
+
+def resolve_display(display: "str | None") -> str:
+    """Resolve the inspect display mode for a generate/grade eval.
+
+    itemeval defaults to inspect's "rich" live progress — inline progress bars,
+    no full-screen takeover repeated across the per-condition loop. Precedence:
+    an explicit value wins, then the INSPECT_DISPLAY env var, then "rich".
+    inspect itself degrades the chosen mode off-TTY/Jupyter/background-thread.
+    """
+    return display or os.environ.get("INSPECT_DISPLAY") or "rich"
 
 
 def matches_filter(cond_id: str, slug: str, filters: "list[str] | None") -> bool:
@@ -249,7 +261,7 @@ def run_generate(
     run_id: "str | None" = None,
     force: bool = False,
     condition_filter: "list[str] | None" = None,
-    display: str = "none",
+    display: "str | None" = None,
     model_factory: "ModelFactory | None" = None,
     estimate_usd: "float | None" = None,
 ) -> GenerateResult:
@@ -312,7 +324,7 @@ def run_generate(
             logs = inspect_ai.eval(
                 task,
                 model=factory(cond.model, "generate"),
-                display=display,
+                display=resolve_display(display),
                 log_dir=str(prep.paths.logs_dir("generate", cond.id)),
                 log_format="eval",
                 fail_on_error=False,

@@ -158,6 +158,11 @@ itemeval export   configs/my_study.yaml      # long-format parquet + CSV + cost 
 itemeval status   configs/my_study.yaml      # grid completion matrix
 ```
 
+`generate`/`grade` show inspect's `rich` live progress by default; pass
+`--display none` (or set `INSPECT_DISPLAY=none`) to silence it, or
+`--display plain|rich|full` to pick a mode. The display degrades automatically
+off a TTY (CI, pipes).
+
 ## Python API
 
 The same pipeline, programmatically (one public function per CLI command):
@@ -178,8 +183,10 @@ itemeval.build_status(cfg, prep)             # grid completion report
 Every call returns a pydantic result object. One difference from the CLI:
 the budget **confirmation gate is a CLI feature** — programmatic callers
 should check `estimate_study(...)` totals against their own threshold before
-paid runs. Anything not exported from `itemeval` (the `_`-prefixed modules)
-is internal with no stability promise.
+paid runs. Like the CLI, `run_generate`/`run_grade` show inspect's `rich` live
+progress by default; pass `display="none"` (or set `INSPECT_DISPLAY=none`) to
+silence it. Anything not exported from `itemeval` (the `_`-prefixed modules) is
+internal with no stability promise.
 
 ## Cost controls
 

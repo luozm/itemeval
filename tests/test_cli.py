@@ -46,6 +46,49 @@ def test_generate_gate_declines_non_interactively(tmp_path, offline_adapter, cap
     assert cli.main(["generate", str(config), "--yes"]) == 0
 
 
+@pytest.mark.parametrize(
+    "stage, module, result_kwargs",
+    [
+        ("generate", "itemeval.generate._run", {"rows_written": 0, "total_usd": 0.0}),
+        (
+            "grade",
+            "itemeval.grade._run",
+            {"rows_written": 0, "parse_failures": 0, "total_usd": 0.0},
+        ),
+    ],
+)
+def test_display_defaults_to_live_and_forwards_override(
+    tmp_path, offline_adapter, monkeypatch, stage, module, result_kwargs
+):
+    """Omitting --display forwards None (inspect's own live default), not 'none';
+    an explicit value is forwarded verbatim. Holds for both generate and grade."""
+    import importlib
+
+    run_mod = importlib.import_module(module)
+    result_cls = run_mod.GenerateResult if stage == "generate" else run_mod.GradeResult
+    fn_name = f"run_{stage}"
+    captured = {}
+
+    def fake_run(prep, **kwargs):
+        captured["display"] = kwargs.get("display", "MISSING")
+        return result_cls(
+            run_id="r",
+            study=prep.config.study,
+            conditions=[],
+            manifest_path="m",
+            **result_kwargs,
+        )
+
+    monkeypatch.setattr(run_mod, fn_name, fake_run)
+    config = write_study_files(tmp_path)
+
+    assert cli.main([stage, str(config), "--yes"]) == 0
+    assert captured["display"] is None  # -> inspect renders live progress
+
+    assert cli.main([stage, str(config), "--yes", "--display", "plain"]) == 0
+    assert captured["display"] == "plain"
+
+
 def test_missing_template_exits_2(tmp_path, offline_adapter, capsys):
     config = write_study_files(tmp_path)
     (tmp_path / "prompts" / "solver" / "minimal.md").unlink()

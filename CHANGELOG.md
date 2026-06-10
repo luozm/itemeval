@@ -6,6 +6,15 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+- Live progress display is now on by default for `generate` and `grade`. The
+  `display` argument of `run_generate`/`run_grade` and the CLI `--display` flag
+  now default to inspect's `rich` live progress (inline bars; honoring
+  `INSPECT_DISPLAY` and degrading off-TTY/Jupyter/background-thread) instead of
+  `none`; progress is surfaced through the Python API as well as the CLI. Pass
+  `display="none"` (API) or `--display none` (CLI), or set `INSPECT_DISPLAY=none`,
+  to silence it.
+
 ## [0.1.0] - 2026-06-10
 
 First public release. Item-level LLM evaluation over any inspect_ai-supported

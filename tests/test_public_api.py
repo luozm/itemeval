@@ -38,6 +38,15 @@ def test_lazy_exports_resolve_to_the_real_functions():
     assert itemeval.build_status is build_status
 
 
+def test_run_functions_default_to_live_progress_display():
+    """display defaults to None, the sentinel that resolves to inspect's `rich`
+    live progress (or INSPECT_DISPLAY); "none" would silence it."""
+    import inspect
+
+    for fn in (itemeval.run_generate, itemeval.run_grade):
+        assert inspect.signature(fn).parameters["display"].default is None
+
+
 def test_unknown_attribute_raises():
     with pytest.raises(AttributeError, match="no attribute 'bogus'"):
         itemeval.bogus
