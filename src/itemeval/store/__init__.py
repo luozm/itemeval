@@ -1,1 +1,1 @@
-"""itemeval.store (skeleton — see ROADMAP.md)."""
+"""itemeval.store — internal; no stability guarantees. Import from the _modules."""
