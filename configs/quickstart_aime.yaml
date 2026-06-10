@@ -1,0 +1,30 @@
+# README quickstart: a verifiable benchmark, no judge needed.
+#
+# AIME 2025 answers are integers, so grading is a free `numeric` scorer — the
+# whole loop costs only the generation tokens. Outputs land in <cwd>/studies/.
+study: aime_quickstart
+benchmark:
+  adapter: hf
+  datasets:
+    - id: MathArena/aime_2025
+      revision: c94da77eb22bbd6439e62a323bec18493a421302  # pinned for reproducibility
+      split: train
+  mapping:
+    id: problem_idx
+    input: problem
+    target: answer          # clean integer -> maps straight to the numeric scorer
+solvers:
+  models: [openai/gpt-5-mini]
+  temperature: 1.0          # requested; gpt-5 reasoning models force 1.0 (recorded as temp_effective)
+  max_tokens: 8192          # cover hidden reasoning + the visible "ANSWER:" line
+facets:
+  prompt: [builtin:minimal] # packaged template: "...state your final answer on a line starting with ANSWER:"
+  scorer: numeric           # verifiable, $0 — no grader/rubric needed
+  replications: 1
+  model_config:
+    - name: low
+      reasoning_effort: low # keep the quickstart fast and cheap
+budget:
+  policy: dev               # dev preset; dev_items caps the run to the first few problems
+  dev_items: 5
+  confirm_above_usd: 1      # estimate gate trips if the projection exceeds $1

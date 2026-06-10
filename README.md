@@ -14,6 +14,57 @@ See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
 **User guide:** [the wiki](https://github.com/luozm/itemeval/wiki) — getting started,
 config reference, CLI, output schemas, budget controls, architecture, FAQ.
 
+## Quickstart
+
+Run a real evaluation end-to-end on a public, verifiable benchmark — no judge
+model, so grading is free and the only cost is a few cents of generation. This
+scores [AIME 2025](https://huggingface.co/datasets/MathArena/aime_2025)
+(integer answers → the built-in `numeric` scorer) with `openai/gpt-5-mini`.
+
+```bash
+pip install itemeval[openai]
+export OPENAI_API_KEY=sk-...
+```
+
+Save this as `aime.yaml`:
+
+```yaml
+study: aime_quickstart
+benchmark:
+  adapter: hf
+  datasets:
+    - id: MathArena/aime_2025    # dataset revision auto-pins at first run
+      split: train
+  mapping: {id: problem_idx, input: problem, target: answer}
+solvers:
+  models: [openai/gpt-5-mini]
+  max_tokens: 8192               # cover hidden reasoning + the visible "ANSWER:" line
+facets:
+  prompt: [builtin:minimal]      # packaged template: ends on a line starting "ANSWER:"
+  scorer: numeric                # verifiable, $0 — no grader or rubric needed
+  model_config: [{name: low, reasoning_effort: low}]
+budget:
+  policy: dev                    # first few problems only; raise dev_items or change policy to scale up
+  dev_items: 5
+```
+
+Then walk the pipeline — estimate first, generate, grade, export:
+
+```bash
+itemeval estimate aime.yaml   # projected $ per stage, no model calls
+itemeval generate aime.yaml   # stage 1 → solutions store (resumable)
+itemeval grade    aime.yaml   # stage 2 → numeric scores (free, no LLM)
+itemeval export   aime.yaml   # long-format parquet + CSV + cost ledger
+```
+
+`export` writes `studies/aime_quickstart/export/gradings_long.{parquet,csv}` —
+one row per problem with its score (`1.0`/`0.0`), the answer the scorer
+extracted, the full solution text, token counts, and dollar cost. Stages are
+cached and resumable, so re-runs never re-pay for completed work. Swap in
+`scorer: multiple_choice` (letter answers) or `exact_match`, or declare a
+`grader` + `rubric` for LLM-judged benchmarks — see
+[the wiki](https://github.com/luozm/itemeval/wiki).
+
 ## Why this exists
 
 inspect_ai already provides the hard parts: async execution with per-provider

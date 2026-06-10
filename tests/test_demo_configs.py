@@ -33,6 +33,24 @@ def test_gate_config_differs_only_in_gate():
     assert gate.study != demo.study
 
 
+def test_quickstart_config_verifiable_path():
+    """The README quickstart config loads and expands to a free numeric scorer."""
+    from itemeval.design._grid import expand_grade_grid
+
+    cfg = load_config(REPO / "configs" / "quickstart_aime.yaml")
+    assert cfg.benchmark.datasets[0].id == "MathArena/aime_2025"
+    assert cfg.benchmark.datasets[0].revision  # pinned in the file for reproducibility
+    assert cfg.benchmark.mapping.target == "answer"
+    assert cfg.facets.scorer == "numeric"
+    assert not cfg.facets.grader  # verifiable benchmark — no judge model
+    assert cfg.solvers.models == ["openai/gpt-5-mini"]
+    # grade grid is a single verifiable condition; no rubric templates needed.
+    grade = expand_grade_grid(cfg, {})
+    assert len(grade) == 1
+    assert grade[0].kind == "verifiable"
+    assert grade[0].scorer == "numeric"
+
+
 def test_demo_templates_exist():
     demo = load_config(REPO / "configs" / "usamo_demo.yaml")
     from itemeval._templates import rubric_registry, solver_registry
