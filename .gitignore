@@ -16,5 +16,8 @@ build/
 # Demo study outputs (itemeval generate/grade/export artifacts)
 studies/
 
+# Internal build-time design contract — kept locally, not published
+docs/DESIGN.md
+
 # OS
 .DS_Store
