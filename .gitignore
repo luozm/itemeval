@@ -12,6 +12,9 @@ build/
 # Tooling caches
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Demo study outputs (itemeval generate/grade/export artifacts)
 studies/

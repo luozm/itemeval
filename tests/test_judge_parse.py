@@ -35,6 +35,18 @@ def test_fenced_preferred_over_raw():
     assert parse_judge_output(completion).score == 8.0
 
 
+def test_malformed_fenced_block_is_skipped():
+    # An unparseable fenced block is skipped; parsing falls through to raw braces.
+    completion = '```json\n{bad json,,,}\n```\nFinal: {"score": 5}'
+    assert parse_judge_output(completion).score == 5.0
+
+
+def test_unparseable_brace_is_skipped():
+    # A stray '{' that doesn't begin a JSON object is skipped; an earlier object wins.
+    completion = '{"score": 5} then a stray { not-json'
+    assert parse_judge_output(completion).score == 5.0
+
+
 @pytest.mark.parametrize(
     "completion,code",
     [

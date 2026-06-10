@@ -106,6 +106,18 @@ def test_unresolvable_grader_raises():
         expand_grid(cfg, SOLVERS, RUBRICS)
 
 
+def test_duplicate_condition_ids_rejected(monkeypatch):
+    # Defensive guard: if id generation ever collides across the generate and
+    # grade sub-grids, expansion must refuse rather than silently drop rows.
+    from itemeval.design import _grid
+
+    monkeypatch.setattr(
+        _grid, "make_condition_id", lambda parts, payload: ("dup--000000000000", "dup")
+    )
+    with pytest.raises(ConfigError, match="duplicate condition ids"):
+        expand_grid(_cfg(), SOLVERS, RUBRICS)
+
+
 def test_verifiable_condition():
     data = yaml.safe_load(CONFIG)
     data["facets"].pop("grader")

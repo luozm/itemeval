@@ -68,5 +68,6 @@ markers = ["network: hits the network (HF Hub, free); deselect with -m 'not netw
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.16",
 ]
