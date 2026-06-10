@@ -61,7 +61,7 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
 - [x] Resumability + grid-completion reporting across interrupted runs
 - Exit: USAMO pilot pass criteria all green, driven only through the CLI
 
-## M7 — Publish v0.1.0
+## M7 — Publish v0.1.0 ✅ (2026-06-10)
 
 - [x] Pip/uv install path: built-in template library (`builtin:` refs) +
   `itemeval init` scaffold; outputs anchored to the working directory, inputs to
@@ -70,9 +70,10 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
   (96%→97% line coverage; the named areas at 100% bar export's defensive guards)
 - [x] GitHub Actions CI (ruff + pytest, py3.11–3.13 matrix)
 - [x] README quickstart against a public verifiable benchmark (no judge needed) —
-  AIME 2025 + `numeric` scorer; validated live on real generate output
-- [x] CHANGELOG.md; tag v0.1.0 — publish to PyPI (`uv build && uv publish`) is
-  the final manual step
+  AIME 2025 + `numeric` scorer; validated live on real generate output (5/5
+  correct, ~$0.014 generation, $0 grading)
+- [x] CHANGELOG.md; tagged v0.1.0; published to PyPI 2026-06-10 via GitHub
+  Actions trusted publishing (`.github/workflows/release.yml`, OIDC — no token)
 
 ## Later (post-0.1)
 
