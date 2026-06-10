@@ -6,6 +6,23 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- Per-run savings report: `export` now reports spend against a plain-API list
+  price (every input token at full rate, no batch discount) and breaks the
+  savings into a prompt-cache component and a batch-discount component, plus a
+  per-provider spend table. Exposed on `ExportResult.cost` (a `CostReport`).
+  Local response-cache / resume reuse is not represented (cache hits carry no
+  token usage), so the figure covers the prompt-cache and batch discounts only.
+- Pricing auto-refresh: `budget.pricing_max_age_days` (default `None` = off)
+  refreshes the cached OpenRouter pricing table when it is at least that many
+  days old. Best-effort — network/parse failures keep the existing table and
+  never break a run; ignored when `budget.pricing_path` pins an explicit table.
+- Pricing provenance: `estimate`, `generate`, `grade`, `export`, and `status`
+  print which pricing table the dollar figures came from (`source`, age, and
+  whether a refresh just ran). Exposed programmatically on `Estimate.pricing`
+  and `ExportResult.pricing` (a `PricingProvenance`) and on
+  `PreparedStudy.pricing_refreshed`.
+
 ### Changed
 - Live progress display is now on by default for `generate` and `grade`. The
   `display` argument of `run_generate`/`run_grade` and the CLI `--display` flag

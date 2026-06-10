@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 from itemeval._config import ExperimentConfig
 from itemeval._errors import StoreError
+from itemeval.budget._pricing import PricingProvenance, describe_pricing, load_pricing
+from itemeval.budget._report import CostReport, cost_report
 from itemeval.store._base import _coerce_to_schema, rel_to_study
 from itemeval.store._gradings import read_gradings
 from itemeval.store._layout import StudyPaths
@@ -76,6 +78,10 @@ class ExportResult(BaseModel):
     # Ledger-vs-row-sums self-consistency (tolerance 1e-6). Reconciliation
     # against provider dashboards is a separate, manual step.
     internally_reconciled: bool
+    # Per-provider spend + savings vs plain-API list price (current pricing).
+    cost: CostReport
+    # Which pricing table the cost figures were computed against.
+    pricing: PricingProvenance
 
 
 _SOLUTION_COLS = {
@@ -172,6 +178,10 @@ def export_study(config: ExperimentConfig) -> ExportResult:
         abs(ledger_gen - gen_rows_usd) <= 1e-6 and abs(ledger_grade - grade_rows_usd) <= 1e-6
     )
 
+    pricing = load_pricing(config.budget.pricing_path, config._input_base)
+    report = cost_report(ledger, pricing)
+    provenance = describe_pricing(pricing, refreshed=False)
+
     return ExportResult(
         rows=len(long),
         gradings_parquet=rel_to_study(paths, parquet_path),
@@ -180,4 +190,6 @@ def export_study(config: ExperimentConfig) -> ExportResult:
         generation_usd=ledger_gen,
         grading_usd=ledger_grade,
         internally_reconciled=reconciled,
+        cost=report,
+        pricing=provenance,
     )

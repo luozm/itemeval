@@ -9,7 +9,12 @@ from itemeval._item import Item
 from itemeval._templates import Template, rubric_registry, solver_registry
 from itemeval.adapters._base import LoadedDataset, load_items
 from itemeval.budget._policies import EffectivePlan, apply_items_limit, effective_plan
-from itemeval.budget._pricing import PricingTable, load_pricing, refresh_pricing
+from itemeval.budget._pricing import (
+    PricingTable,
+    load_pricing,
+    maybe_refresh_pricing,
+    refresh_pricing,
+)
 from itemeval.design._grid import Grid, expand_grid
 from itemeval.store._layout import StudyPaths
 
@@ -35,6 +40,7 @@ class PreparedStudy:
     grid: Grid
     plan: EffectivePlan
     pricing: PricingTable
+    pricing_refreshed: bool = False  # a live OpenRouter refresh ran during prepare
 
 
 def prepare_study(
@@ -64,11 +70,17 @@ def prepare_study(
     items_effective = apply_items_limit(items_all, plan.items_limit)
 
     grid = expand_grid(config, solver_templates, rubric_templates)
-    pricing = (
-        refresh_pricing()
-        if refresh_pricing_table
-        else load_pricing(config.budget.pricing_path, config._input_base)
-    )
+    pricing_refreshed = False
+    if refresh_pricing_table:
+        pricing = refresh_pricing()  # explicit --refresh-pricing: hard refresh
+        pricing_refreshed = True
+    elif config.budget.pricing_path is not None:
+        pricing = load_pricing(config.budget.pricing_path, config._input_base)  # pinned: as-is
+    else:
+        loaded = load_pricing(None, config._input_base)
+        pricing = maybe_refresh_pricing(loaded, config.budget.pricing_max_age_days)
+        # maybe_refresh returns the same object on a no-op; a new one means it refreshed.
+        pricing_refreshed = pricing is not loaded
     return PreparedStudy(
         config=config,
         paths=paths,
@@ -82,4 +94,5 @@ def prepare_study(
         grid=grid,
         plan=plan,
         pricing=pricing,
+        pricing_refreshed=pricing_refreshed,
     )

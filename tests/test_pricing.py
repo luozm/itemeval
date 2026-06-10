@@ -5,15 +5,23 @@ import urllib.request
 import pytest
 
 from itemeval._errors import BudgetError
+from itemeval._util import utc_now_iso
 from itemeval.budget._pricing import (
     ModelPrice,
+    PricingTable,
     cost_usd,
+    describe_pricing,
     load_pricing,
     lookup_price,
+    maybe_refresh_pricing,
     provider_of,
     refresh_pricing,
     seed_pricing,
 )
+
+
+def _table(updated_at: str) -> PricingTable:
+    return PricingTable(updated_at=updated_at, source="seed", models={})
 
 
 def test_seed_loads_and_prices_mockllm():
@@ -95,3 +103,45 @@ def test_refresh_pricing_network_failure(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     with pytest.raises(BudgetError, match="refresh failed"):
         refresh_pricing()
+
+
+def test_maybe_refresh_disabled_and_fresh(monkeypatch):
+    def explode(*a, **k):
+        raise AssertionError("refresh must not be attempted")
+
+    monkeypatch.setattr(urllib.request, "urlopen", explode)
+    fresh = _table(utc_now_iso())
+    # max_age_days=None disables auto-refresh; a fresh table is left untouched.
+    assert maybe_refresh_pricing(fresh, None) is fresh
+    assert maybe_refresh_pricing(fresh, 7) is fresh
+
+
+def test_maybe_refresh_stale_refreshes(monkeypatch, tmp_path):
+    monkeypatch.setenv("ITEMEVAL_PRICING_PATH", str(tmp_path / "user.json"))
+    payload = {
+        "data": [{"id": "x/y", "pricing": {"prompt": "0.0000005", "completion": "0.000001"}}]
+    }
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda url, timeout: io.BytesIO(json.dumps(payload).encode())
+    )
+    refreshed = maybe_refresh_pricing(_table("2000-01-01T00:00:00Z"), 7)
+    assert refreshed.source == "merged"
+
+
+def test_maybe_refresh_stale_offline_keeps_table(monkeypatch):
+    def boom(url, timeout):
+        raise OSError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    stale = _table("2000-01-01T00:00:00Z")
+    # Best-effort: a failed refresh falls back to the stale table, never raises.
+    assert maybe_refresh_pricing(stale, 7) is stale
+
+
+def test_describe_pricing():
+    fresh = describe_pricing(_table(utc_now_iso()), refreshed=True)
+    assert fresh.source == "seed" and fresh.refreshed is True
+    assert fresh.age_days is not None and fresh.age_days < 1
+    # Unparseable timestamp -> age is None, not a crash.
+    unknown = describe_pricing(_table("t"))
+    assert unknown.age_days is None and unknown.refreshed is False

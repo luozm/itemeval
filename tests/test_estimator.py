@@ -22,6 +22,28 @@ def test_estimate_demo_arithmetic(study):
     assert est.grade.output_tokens == est.grade.calls * 256
     assert est.total_usd == est.generate.usd + est.grade.usd
     assert est.generate.unpriced_models == []
+    # Provenance travels with the estimate (the demo uses the bundled seed).
+    assert est.pricing.source == "seed" and est.pricing.refreshed is False
+
+
+def test_auto_refresh_marks_provenance(study, monkeypatch):
+    import io as _io
+    import json as _json
+    import urllib.request as _ur
+
+    from itemeval._prepare import prepare_study
+
+    cfg, _ = study
+    cfg.budget.pricing_max_age_days = 0  # treat any table as stale -> refresh
+    payload = {
+        "data": [{"id": "x/y", "pricing": {"prompt": "0.0000005", "completion": "0.000001"}}]
+    }
+    monkeypatch.setattr(
+        _ur, "urlopen", lambda url, timeout: _io.BytesIO(_json.dumps(payload).encode())
+    )
+    prep = prepare_study(cfg)
+    assert prep.pricing_refreshed is True
+    assert estimate_study(prep).pricing.refreshed is True
 
 
 def test_estimate_uncapped_warns(study, tmp_path):

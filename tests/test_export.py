@@ -24,6 +24,16 @@ def test_export_schema_and_mirrors(study):
     assert result.internally_reconciled
     assert result.generation_usd > 0 and result.grading_usd > 0
 
+    # Cost report: recomputed actual matches the stored ledger spend; mockllm has
+    # no batch/cache discount so there are no savings, but the provider is tracked.
+    cost = result.cost
+    assert cost.actual_usd == pytest.approx(result.generation_usd + result.grading_usd)
+    assert cost.total_savings_usd == pytest.approx(0.0)
+    assert {p.provider for p in cost.by_provider} == {"mockllm"}
+    assert sum(p.calls for p in cost.by_provider) > 0
+    # Pricing provenance accompanies the report (export never auto-refreshes).
+    assert result.pricing.source == "seed" and result.pricing.refreshed is False
+
     parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
     assert list(parquet.columns) == list(EXPORT_SCHEMA.names)
     assert len(parquet.columns) == 45

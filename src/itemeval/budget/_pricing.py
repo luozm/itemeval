@@ -3,6 +3,7 @@
 import json
 import os
 import urllib.request
+from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 
@@ -92,6 +93,59 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
         (merged.model_dump_json(indent=2) + "\n").encode("utf-8"),
     )
     return merged
+
+
+class PricingProvenance(BaseModel):
+    """Where the prices behind a projection/report came from, and how fresh."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str  # "seed" | "openrouter" | "merged" | "file"
+    updated_at: str
+    age_days: float | None  # None when updated_at is unparseable
+    refreshed: bool  # a live OpenRouter refresh ran during this load
+
+
+def _table_age_days(table: PricingTable) -> "float | None":
+    """Age of the table in days from its `updated_at`; None if unparseable."""
+    try:
+        stamped = datetime.strptime(table.updated_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - stamped).total_seconds() / 86400.0
+
+
+def maybe_refresh_pricing(
+    table: PricingTable, max_age_days: "float | None", *, timeout: float = 30.0
+) -> PricingTable:
+    """Best-effort staleness refresh used for `budget.pricing_max_age_days`.
+
+    Returns a freshly merged OpenRouter table when `table` is at least
+    `max_age_days` old and the API is reachable; otherwise returns `table`
+    unchanged. Network/parse failures are swallowed (the caller keeps the stale
+    table) so a no-network run never breaks. `max_age_days=None` disables it.
+    """
+    if max_age_days is None:
+        return table
+    age = _table_age_days(table)
+    if age is not None and age < max_age_days:
+        return table
+    try:
+        return refresh_pricing(timeout=timeout)
+    except BudgetError:
+        return table
+
+
+def describe_pricing(table: PricingTable, *, refreshed: bool = False) -> PricingProvenance:
+    """Provenance for `table` (source, age, whether it was just refreshed)."""
+    return PricingProvenance(
+        source=table.source,
+        updated_at=table.updated_at,
+        age_days=_table_age_days(table),
+        refreshed=refreshed,
+    )
 
 
 def lookup_price(table: PricingTable, model: str) -> "ModelPrice | None":

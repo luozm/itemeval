@@ -9,7 +9,9 @@ from itemeval._templates import render_template
 from itemeval._util import estimate_tokens
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
+    PricingProvenance,
     cost_usd,
+    describe_pricing,
     lookup_price,
     provider_of,
 )
@@ -61,6 +63,7 @@ class Estimate(BaseModel):
     grade: StageEstimate
     total_usd: float
     warnings: list[str]
+    pricing: PricingProvenance  # which prices these projections used
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
@@ -192,4 +195,5 @@ def estimate_study(prep: "PreparedStudy", solutions_df: "pd.DataFrame | None" = 
         grade=grade,
         total_usd=gen.usd + grade.usd,
         warnings=warnings,
+        pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
     )

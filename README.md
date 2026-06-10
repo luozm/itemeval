@@ -201,6 +201,17 @@ internal with no stability promise.
   condition), attributed to generation vs grading. Exports check that ledger
   totals match row sums; reconciliation against provider dashboards is a
   documented manual step.
+- `export` reports per-provider spend and the savings the package delivered
+  versus a plain-API list price (no caching, no batch discount), split into
+  prompt-cache and batch-discount components. Resume / response-cache reuse is
+  not counted — cache hits carry no token usage — so it reflects the prompt-cache
+  and batch discounts only.
+- Pricing stays current automatically: set `budget.pricing_max_age_days` to
+  refresh the cached OpenRouter pricing table once it ages past the threshold
+  (best-effort; a failed refresh keeps the existing table).
+- Every cost-bearing command prints its pricing provenance (`source`, age, and
+  whether a refresh just ran), so the dollar figures are never anonymous; the
+  same is on `Estimate.pricing` / `ExportResult.pricing` for the Python API.
 
 ## Reproducibility
 

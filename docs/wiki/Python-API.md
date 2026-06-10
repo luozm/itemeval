@@ -66,10 +66,10 @@ freely:
 
 | Call | Returns | Key fields |
 |---|---|---|
-| `estimate_study` | `Estimate` | `generate`/`grade` (`.calls`, `.input_tokens`, `.output_tokens`, `.usd`, `.unpriced_models`, per-condition list), `total_usd`, `warnings` |
+| `estimate_study` | `Estimate` | `generate`/`grade` (`.calls`, `.input_tokens`, `.output_tokens`, `.usd`, `.unpriced_models`, per-condition list), `total_usd`, `warnings`, `pricing` (provenance) |
 | `run_generate` | `GenerateResult` | `run_id`, `conditions` (per-condition `status` run/skipped/error, `rows_written`, `errors`, `usd`), `rows_written`, `total_usd`, `manifest_path` |
 | `run_grade` | `GradeResult` | as above plus `parse_failures` |
-| `export_study` | `ExportResult` | `rows`, output paths, `generation_usd`, `grading_usd`, `internally_reconciled` |
+| `export_study` | `ExportResult` | `rows`, output paths, `generation_usd`, `grading_usd`, `internally_reconciled`, `cost` (savings + per-provider `CostReport`), `pricing` (provenance) |
 | `build_status` | `StatusReport` | datasets, item counts, per-condition `expected/completed/errors/parse_failures`, spend, manifests |
 
 ## Useful keyword arguments

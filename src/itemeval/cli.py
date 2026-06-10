@@ -76,6 +76,35 @@ def _print_estimate(est, stage: str) -> None:
     print("(estimate projects the full policy-effective grid; completed work is not subtracted)")
 
 
+def _print_pricing(prov) -> None:
+    age = f", {prov.age_days:.0f}d old" if prov.age_days is not None else ""
+    suffix = " — just refreshed from OpenRouter" if prov.refreshed else ""
+    print(f"pricing: {prov.source} (updated {prov.updated_at}{age}){suffix}")
+
+
+def _print_cost_report(rep) -> None:
+    print(
+        f"savings vs list price: {_fmt_usd(rep.total_savings_usd)} "
+        f"({rep.savings_pct:.0f}%) — cache {_fmt_usd(rep.cache_savings_usd)}, "
+        f"batch {_fmt_usd(rep.batch_savings_usd)} "
+        f"(estimated; excludes resume / response-cache reuse)"
+    )
+    if rep.by_provider:
+        rows = [
+            [
+                p.provider,
+                str(p.calls),
+                _fmt_usd(p.usd),
+                _fmt_usd(p.baseline_usd),
+                _fmt_usd(p.savings_usd),
+            ]
+            for p in rep.by_provider
+        ]
+        print(_fmt_table(["provider", "calls", "spend", "list_price", "saved"], rows))
+    if rep.unpriced_models:
+        print(f"unpriced models (excluded from savings): {', '.join(rep.unpriced_models)}")
+
+
 def _cmd_estimate(args) -> int:
     from itemeval.budget._estimator import estimate_study
 
@@ -85,6 +114,7 @@ def _cmd_estimate(args) -> int:
         print(est.model_dump_json(indent=2))
         return 0
     print(f"study: {est.study}  (policy: {est.policy})")
+    _print_pricing(est.pricing)
     _print_estimate(est, args.stage)
     return 0
 
@@ -119,6 +149,7 @@ def _cmd_generate(args) -> int:
 
     cfg, prep = _load(args)
     est = estimate_study(prep)
+    _print_pricing(est.pricing)
     print(
         f"projected generate cost: {_fmt_usd(est.generate.usd)} "
         f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
@@ -147,6 +178,7 @@ def _cmd_grade(args) -> int:
 
     cfg, prep = _load(args)
     est = estimate_study(prep)
+    _print_pricing(est.pricing)
     print(
         f"projected grade cost: {_fmt_usd(est.grade.usd)} "
         f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
@@ -196,6 +228,8 @@ def _cmd_export(args) -> int:
     print(
         f"spend: generate {_fmt_usd(result.generation_usd)} | grade {_fmt_usd(result.grading_usd)}"
     )
+    _print_pricing(result.pricing)
+    _print_cost_report(result.cost)
     print(
         f"internally reconciled (ledger vs row sums): "
         f"{'yes' if result.internally_reconciled else 'NO'}"
@@ -208,6 +242,7 @@ def _cmd_export(args) -> int:
 
 def _cmd_status(args) -> int:
     from itemeval._status import build_status
+    from itemeval.budget._pricing import describe_pricing
 
     cfg, prep = _load(args)
     report = build_status(cfg, prep)
@@ -216,6 +251,7 @@ def _cmd_status(args) -> int:
         return 0
     print(f"study: {report.study}  (policy: {report.policy})")
     print(f"config: {report.config_path}")
+    _print_pricing(describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed))
     ds_bits = ", ".join(f"{d.id}@{d.revision[:8]}: {d.n_items}" for d in report.datasets)
     print(
         f"items: {report.n_items_total} loaded ({ds_bits}) | "

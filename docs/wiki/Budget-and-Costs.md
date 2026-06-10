@@ -66,6 +66,45 @@ only cost attribution is missing.
 `mockllm/*` models are deliberately priced (at claude-sonnet-class rates) so
 demos and tests exercise the full dollar pipeline at $0 actual spend.
 
+### Why OpenRouter as the refresh source
+
+OpenRouter's `/models` endpoint is the only practical way to keep the long
+tail fresh from a single call: it lists hundreds of models across providers in
+one **public, keyless** response with a **uniform** `prompt`/`completion`
+per-token schema. Native providers (OpenAI, Anthropic, Google) publish prices
+on docs pages, not a stable machine-readable API, and would each need their own
+auth and parser. Crucially, a refresh does **not** clobber curated native
+prices: it writes `openrouter/<id>` keys and only fills a bare native id when
+the seed lacks it (`seed wins for native ids`). The refresh is an estimate for
+planning — the **provider invoice is authoritative**.
+
+### Auto-refresh
+
+Set `budget.pricing_max_age_days` to refresh the cached table automatically
+once it ages past the threshold — no manual `--refresh-pricing`. It is:
+
+- **opt-in** (default `None` = off), so no command makes a surprise network
+  call and offline/CI runs are unaffected;
+- **best-effort** — a failed fetch (offline, API change) keeps the existing
+  table and never breaks a run;
+- **ignored** when `budget.pricing_path` pins an explicit table (you chose it
+  deliberately).
+
+### Provenance (knowing which prices you got)
+
+Because prices can come from a pinned file, a months-old seed, or a fresh
+refresh, every cost-bearing command states where its numbers came from:
+
+```
+pricing: merged (updated 2026-06-08T00:00:00Z, 2d old) — just refreshed from OpenRouter
+```
+
+`estimate`, `generate`, `grade`, `export`, and `status` all print this line.
+Programmatically the same provenance is on `Estimate.pricing` and
+`ExportResult.pricing` (a `PricingProvenance`: `source`, `updated_at`,
+`age_days`, `refreshed`), and `PreparedStudy.pricing_refreshed` flags whether a
+live refresh ran during preparation.
+
 ## Where actual costs come from
 
 Per-sample token usage from inspect logs × the pricing table, recorded on
@@ -74,3 +113,48 @@ condition × model) in the ledger. Cache-served calls record `usd = 0.0`.
 `export` verifies ledger totals equal row sums; checking the totals against
 your provider dashboards is a manual step (expect the batch approximation
 delta).
+
+## Savings and per-provider spend
+
+`export` re-prices the ledger's stored tokens at the current table to report
+what the package saved versus a plain-API list price, plus a per-provider
+breakdown (`ExportResult.cost`, a `CostReport`):
+
+```
+spend: generate $1.20 | grade $2.92
+savings vs list price: $5.68 (58%) — cache $3.10, batch $2.58 (estimated; excludes resume / response-cache reuse)
+provider   calls  spend   list_price  saved
+anthropic  640    $2.92   $6.30       $3.38
+openai     320    $1.20   $3.50       $2.30
+```
+
+Three cost points are computed per ledger row and summed:
+
+| point | input pricing | batch | meaning |
+|-------|---------------|-------|---------|
+| `baseline` | every input token at the **full** rate | none | plain API, no caching/batch |
+| `after_cache` | cached tokens at their discounted rates | none | caching on, batch off |
+| `actual` | discounted cache rates | ×0.5 if batched | what you paid |
+
+The savings decompose exactly: `cache_savings = baseline − after_cache`,
+`batch_savings = after_cache − actual`, and the two sum to
+`total_savings = baseline − actual`. This relies on inspect's accounting that
+`input_tokens` **excludes** cached tokens (true input is
+`input + cache_read + cache_write`), so the baseline re-adds the cache buckets
+at the full rate.
+
+**Scope and caveats:**
+
+- **Cache writes are a surcharge, not a saving** (the first call pays ~1.25×
+  input on the cached prefix); savings only accrue on later reads, so
+  `cache_savings` can be negative on a run with little reuse.
+- **Batch savings inherit the flat 0.5 approximation** — provider invoice is
+  authoritative.
+- **Resume / response-cache reuse is NOT counted.** A local-cache hit carries
+  no usage object, so its ledger row holds null tokens and contributes zero to
+  both `actual` and `baseline`. The figure therefore covers the prompt-cache
+  and batch discounts only; counting reuse savings (a join back to the original
+  run's tokens) is a planned follow-up.
+- Reasoning tokens need no special handling — they sit inside `output_tokens`
+  in both `baseline` and `actual`, so they cancel (a cost, not a saving).
+- `unpriced` models are excluded from the figures and listed separately.

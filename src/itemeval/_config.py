@@ -148,6 +148,10 @@ class BudgetConfig(BaseModel):
     dev_items: int = Field(default=2, ge=1)  # dev preset: first N items
     dev_replications: int | None = Field(default=None, ge=1)  # None = keep config reps
     pricing_path: str | None = None
+    # Auto-refresh the cached pricing table from OpenRouter when it is at least
+    # this many days old (best-effort; failures keep the stale table). None
+    # disables it; ignored when pricing_path pins an explicit table.
+    pricing_max_age_days: float | None = Field(default=None, ge=0.0)
 
 
 class ExperimentConfig(BaseModel):

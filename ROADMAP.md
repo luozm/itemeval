@@ -47,6 +47,14 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
   degrading off-TTY/Jupyter/threads) instead of `none`, surfacing live progress
   through the Python API as well as the CLI; `none` is still available to
   silence it.
+- ✅ 2026-06-10 — Pricing auto-refresh + per-provider spend tracking + savings
+  report + pricing provenance: `budget.pricing_max_age_days` refreshes the
+  cached OpenRouter pricing table when stale (best-effort, opt-in); `export`
+  reports per-provider spend and the savings vs a plain-API list price, split
+  into prompt-cache and batch-discount components (`ExportResult.cost`); every
+  cost-bearing command (CLI + Python) states which pricing table it used
+  (`source`/age/refreshed). Resume / response-cache reuse is not yet counted
+  (cache hits carry no usage).
 
 ## Later (post-0.1)
 
@@ -54,7 +62,9 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
 - Partial / nested crossing designs (items-in-tests as first-class)
 - Wide-pivot export helpers
 - Grader replication (judge as replicated facet)
-- Pricing auto-refresh; per-provider spend tracking
+- Savings report: count resume / response-cache reuse (the savings report ships
+  in 0.2 but covers prompt-cache + batch discounts only; cache-hit rows carry no
+  token usage, so reuse savings need a join back to the original run's tokens)
 - Multimodal items
 - Finer-grained resume — per-sample mid-cell checkpointing so a large cell that
   dies near the end doesn't restart from zero (cell-level resume already exists
