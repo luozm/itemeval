@@ -68,14 +68,23 @@ branch-test-commit flow, less scrutiny.
 user-visible changes are added to the `[Unreleased]` section in the same PR
 that makes them — never reconstructed at release time.
 
+PyPI publishing uses **trusted publishing** (OIDC from GitHub Actions — no API
+token stored). One-time setup: on PyPI, add a trusted publisher for the project
+(owner `luozm`, repo `itemeval`, workflow `release.yml`, environment blank). The
+publish itself runs in `.github/workflows/release.yml`, triggered when a GitHub
+release is published; locally you only build/tag.
+
 **Release checklist** (applies from v0.1.0, ROADMAP M7):
 
 1. Tests and lint green: `./.venv/bin/python -m pytest && ./.venv/bin/python -m ruff check .`
 2. Move `[Unreleased]` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading.
 3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`).
-4. Commit `release: vX.Y.Z`, then tag: `git tag vX.Y.Z && git push --tags`.
-5. Build and publish: `uv build && uv publish` (PyPI token via `UV_PUBLISH_TOKEN`).
-6. GitHub release from the tag, body = the changelog section.
+4. Optionally verify the build locally: `uv build` (the same command CI runs).
+5. Commit `release: vX.Y.Z`; tag and push: `git tag vX.Y.Z && git push origin main --tags`.
+6. Create a GitHub release from the tag (body = the changelog section). Publishing
+   to PyPI is automatic: the `release: published` event triggers `release.yml`,
+   which runs `uv build && uv publish` via trusted publishing. Watch the Actions
+   run and confirm the new version appears on PyPI.
 7. Bump to the next dev version (e.g. `0.2.0.dev0`) in a follow-up commit.
 
 Consuming studies pin itemeval like any dependency: editable path source during

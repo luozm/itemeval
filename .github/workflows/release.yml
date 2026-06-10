@@ -1,0 +1,32 @@
+name: Release
+
+# Publishes to PyPI via trusted publishing (OIDC) — no API token stored.
+# Triggered when a GitHub Release is published; the workflow is taken from the
+# default branch, so it fires for tags created before this file existed.
+#
+# One-time PyPI setup (project settings -> Publishing -> add a trusted publisher):
+#   Owner: luozm | Repository: itemeval | Workflow: release.yml | Environment: (blank)
+on:
+  release:
+    types: [published]
+
+jobs:
+  pypi-publish:
+    name: Build + publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # mint the OIDC token PyPI trusted publishing verifies
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      # --trusted-publishing always: fail loudly if OIDC isn't available rather
+      # than silently falling back to looking for credentials.
+      - name: Publish
+        run: uv publish --trusted-publishing always
