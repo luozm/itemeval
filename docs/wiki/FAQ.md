@@ -30,11 +30,15 @@ graders:
   judge_a: {model: openai/gpt-5-mini}
 ```
 
-## `solver template 'x' not found in .../prompts/solver`
+## `local template 'x' not found in .../prompts/solver`
 
-Template paths resolve **relative to the config file's directory**. A config
-in `configs/` with prompts at the repo root needs `prompts_dir: ../prompts`
-(see `configs/usamo_demo.yaml`). The error message lists what was found.
+A **bare** template name (`x`) resolves to a local file under `prompts_dir`/
+`rubrics_dir`, anchored to the **config file's directory**. Either create
+`<config dir>/prompts/solver/x.md`, point `prompts_dir` at the right directory,
+or — if you meant a packaged template — reference it as `builtin:x`. The error
+lists the local templates found and suggests `builtin:` when a built-in of that
+name exists. (Outputs are separate: they anchor to the working directory, not
+the config dir — see [Configuration](Configuration.md).)
 
 ## Exit code 3 in CI / scripts
 

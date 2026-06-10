@@ -40,6 +40,15 @@ class PreparedStudy:
 def prepare_study(
     config: ExperimentConfig, *, refresh_pricing_table: bool = False
 ) -> PreparedStudy:
+    # Resolve + validate every template reference first: this is cheap, has no
+    # side effects, and a bad reference must fail before any study dir is created.
+    solvers = solver_registry(config)
+    solver_templates = {name: solvers.get(name) for name in config.facets.prompt}
+    rubric_templates: dict[str, Template] = {}
+    if config.facets.grader:
+        rubrics = rubric_registry(config)
+        rubric_templates = {name: rubrics.get(name) for name in config.facets.rubric}
+
     paths = StudyPaths(config.study_dir)
     paths.ensure()
     datasets = load_items(config, paths.dataset_locks)
@@ -54,18 +63,11 @@ def prepare_study(
     plan = effective_plan(config.budget, config.facets.replications)
     items_effective = apply_items_limit(items_all, plan.items_limit)
 
-    solvers = solver_registry(config)
-    solver_templates = {name: solvers.get(name) for name in config.facets.prompt}
-    rubric_templates: dict[str, Template] = {}
-    if config.facets.grader:
-        rubrics = rubric_registry(config)
-        rubric_templates = {name: rubrics.get(name) for name in config.facets.rubric}
-
     grid = expand_grid(config, solver_templates, rubric_templates)
     pricing = (
         refresh_pricing()
         if refresh_pricing_table
-        else load_pricing(config.budget.pricing_path, config.base_dir)
+        else load_pricing(config.budget.pricing_path, config._input_base)
     )
     return PreparedStudy(
         config=config,

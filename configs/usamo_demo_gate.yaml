@@ -1,7 +1,4 @@
 study: usamo_demo_gate
-output_dir: ../studies
-prompts_dir: ../prompts
-rubrics_dir: ../rubrics
 benchmark:
   adapter: hf
   datasets:
@@ -19,9 +16,9 @@ solvers:
   temperature: 0.7
   max_tokens: 1024
 facets:
-  prompt: [minimal, standard]
+  prompt: [builtin:minimal, builtin:standard]
   grader: [mock_judge]
-  rubric: [standard]
+  rubric: [builtin:standard]
   replications: 2
 graders:
   mock_judge:

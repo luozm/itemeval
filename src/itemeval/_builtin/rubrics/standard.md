@@ -1,4 +1,5 @@
-You are grading a candidate solution to a mathematics problem.
+You are grading a candidate solution against a reference solution and a grading
+scheme.
 
 Problem:
 {input}

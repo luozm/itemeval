@@ -81,9 +81,9 @@ solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5, openrouter/deepseek/deepseek-v3.2]
   temperature: 0.7              # recorded; provider-forced values recorded as-is
 facets:
-  prompt: [minimal, standard]   # prompts/solver/*.md
+  prompt: [builtin:minimal, builtin:standard]   # packaged templates; bare name -> prompts/solver/*.md
   grader: [judge_a, judge_b]    # or scorer: exact_match for verifiable benchmarks
-  rubric: [standard]            # rubrics/*.md (judge grading only; default: [default])
+  rubric: [builtin:standard]    # packaged; bare name -> rubrics/*.md (judge only; default: [builtin:standard])
   replications: 4
 graders:                        # resolves facet names; bare model ids also work
   judge_a: {model: openai/gpt-5-mini}
@@ -98,6 +98,7 @@ budget:
 ## CLI
 
 ```
+itemeval init     my_study                   # scaffold config.yaml (--with-templates also copies prompts/rubrics)
 itemeval estimate configs/my_study.yaml      # projected $ per stage, no model API calls
 itemeval generate configs/my_study.yaml      # stage 1 (resumable)
 itemeval grade    configs/my_study.yaml      # stage 2 (resumable, re-runnable per rubric/grader)
@@ -150,16 +151,29 @@ sampling params (effective values, including provider-forced ones), seeds where
 supported, package versions, and condition grid. Same manifest + cache ⇒
 identical results; raw logs allow full re-derivation of every number.
 
-## Install (development)
+## Install
+
+```bash
+pip install itemeval        # or: uv add itemeval (in a project) / uv tool install itemeval (as a CLI)
+itemeval init my_study      # scaffold a runnable study (config.yaml only; templates resolve from the package)
+cd my_study && itemeval status config.yaml
+```
+
+`init` writes just `config.yaml`; its `builtin:` prompt/rubric references resolve
+from templates packaged inside itemeval, so the study runs with no local files.
+Add `--with-templates` to also copy those templates locally as editable starters.
+Outputs land under the current working directory (`./studies/<study>/`).
+
+API keys are read from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`OPENROUTER_API_KEY`, ...) following inspect_ai's provider conventions.
+
+### From source (development)
 
 ```bash
 git clone https://github.com/luozm/itemeval && cd itemeval
 uv sync                              # creates ./.venv from pyproject.toml + uv.lock
 ./.venv/bin/python -m pytest
 ```
-
-API keys are read from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`OPENROUTER_API_KEY`, ...) following inspect_ai's provider conventions.
 
 ## License
 

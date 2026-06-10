@@ -45,8 +45,29 @@ All notable changes to itemeval are documented here. Format follows
   `import itemeval` stays light). The budget confirmation gate remains a
   CLI-layer feature.
 - Dependency: `datasets` (HuggingFace) for the HF adapter.
+- Built-in template library: prompts `minimal`/`standard` and rubric `standard`
+  ship inside the package and are referenced as `builtin:<name>`. A bare name
+  still resolves to a local file under `prompts_dir`/`rubrics_dir`; the two
+  namespaces are distinct and never silently shadow each other — each template
+  is recorded in the run manifest with its `source` (`local`/`builtin`) and
+  content hash, and built-in templates record a machine-independent path.
+- `itemeval init DIR [--with-templates] [--force]`: scaffold a runnable starter
+  study (`config.yaml`). `--with-templates` also copies the referenced built-in
+  prompts/rubrics locally as editable starters. Makes `pip install itemeval`
+  usable without cloning the repo.
 
 ### Changed
+- **Path resolution split by intent** (behavior change). Inputs (`prompts_dir`,
+  `rubrics_dir`, `budget.pricing_path`) still anchor to the config file's
+  directory; outputs (`output_dir`, i.e. the study tree) now anchor to a **work
+  directory** defaulting to the current directory, never the config dir or the
+  installed package. New `-C/--base-dir` (CLI) and `load_config(work_dir=...)`
+  (Python) override the output anchor. The example configs drop their `../`
+  prefixes accordingly.
+- Default `facets.prompt` / `facets.rubric` are now `[builtin:standard]`
+  (were `[default]`, which referenced a template that never existed).
+- Template references and validation moved ahead of study-directory creation:
+  an unresolved template now fails before any output directory is written.
 - Minimum Python is now 3.11 (was 3.10). The tested dependency stack resolves
   pandas 3.x, which requires Python >=3.11, so 3.10 could only ever install a
   different (pandas 2.x) stack that was never tested. Floor now matches the

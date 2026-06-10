@@ -1,12 +1,18 @@
 # CLI Reference
 
 ```
+itemeval init DIR [options]
 itemeval {estimate,generate,grade,export,status} CONFIG [options]
 ```
 
-Every command takes the config YAML path as its argument. `itemeval` is
-installed as a console script (`./.venv/bin/itemeval`); `python -m
-itemeval.cli` is equivalent.
+`init` scaffolds a new study into `DIR`; every other command takes the config
+YAML path as its argument. `itemeval` is installed as a console script;
+`python -m itemeval.cli` is equivalent.
+
+The run/report commands (`estimate|generate|grade|export|status`) accept
+`-C/--base-dir DIR` to set the **work directory** that anchors outputs (the
+`studies/` tree). It defaults to the current directory; inputs (prompts/rubrics)
+always resolve relative to the config file, independent of `-C`.
 
 ## Exit codes (all commands)
 
@@ -17,6 +23,19 @@ itemeval.cli` is equivalent.
 | 2 | config / template / adapter error (and argparse usage errors) |
 | 3 | cost gate declined, or confirmation required in a non-interactive shell |
 | 4 | projected cost exceeds `budget.max_usd` (hard cap; `--yes` does not override) |
+
+## `init` — scaffold a new study
+
+```
+itemeval init DIR [--with-templates] [--force]
+```
+
+Writes `DIR/config.yaml` — a runnable starter study (mock provider, the USAMO
+demo dataset, `builtin:` template references) named after `DIR`. Refuses to
+overwrite an existing `config.yaml` unless `--force`. With `--with-templates`,
+also copies the referenced built-in prompts/rubrics into `DIR/prompts/` and
+`DIR/rubrics/` and rewrites the config to reference those local copies (bare
+names). Then `cd DIR && itemeval status config.yaml`.
 
 ## `estimate` — projected cost, no model API calls
 

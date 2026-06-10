@@ -66,6 +66,9 @@ def _inspect_hermetic_env(tmp_path, monkeypatch):
     monkeypatch.setenv("INSPECT_LOG_DIR", str(tmp_path / "inspect_logs"))
     monkeypatch.delenv("INSPECT_EVAL_MODEL", raising=False)
     monkeypatch.setenv("ITEMEVAL_PRICING_PATH", str(tmp_path / "no_user_pricing.json"))
+    # Outputs anchor to work_dir (CWD); chdir into tmp_path so every test's study
+    # tree lands in its own sandbox, never the repo root.
+    monkeypatch.chdir(tmp_path)
 
 
 class FakeHFAdapter:

@@ -51,3 +51,37 @@ def test_missing_template_exits_2(tmp_path, offline_adapter, capsys):
     (tmp_path / "prompts" / "solver" / "minimal.md").unlink()
     assert cli.main(["status", str(config)]) == 2
     assert "template" in capsys.readouterr().err
+
+
+def test_init_creates_runnable_study(tmp_path, offline_adapter, capsys):
+    target = tmp_path / "mystudy"
+    assert cli.main(["init", str(target)]) == 0
+    cfg_path = target / "config.yaml"
+    assert cfg_path.is_file()
+    text = cfg_path.read_text()
+    assert "study: mystudy" in text and "builtin:standard" in text
+    assert not (target / "prompts").exists()  # no local templates by default
+    capsys.readouterr()
+    # the scaffolded study resolves built-in templates and runs with zero local files
+    assert cli.main(["status", str(cfg_path)]) == 0
+
+
+def test_init_with_templates_copies_local(tmp_path):
+    target = tmp_path / "ej"
+    assert cli.main(["init", str(target), "--with-templates"]) == 0
+    assert (target / "prompts" / "solver" / "minimal.md").is_file()
+    assert (target / "prompts" / "solver" / "standard.md").is_file()
+    assert (target / "rubrics" / "standard.md").is_file()
+    lines = (target / "config.yaml").read_text().splitlines()
+    prompt_line = next(line for line in lines if line.lstrip().startswith("prompt:"))
+    rubric_line = next(line for line in lines if line.lstrip().startswith("rubric:"))
+    assert "builtin:" not in prompt_line and "[minimal, standard]" in prompt_line
+    assert "builtin:" not in rubric_line and "[standard]" in rubric_line
+
+
+def test_init_refuses_overwrite(tmp_path, capsys):
+    target = tmp_path / "x"
+    assert cli.main(["init", str(target)]) == 0
+    assert cli.main(["init", str(target)]) == 2
+    assert "already exists" in capsys.readouterr().err
+    assert cli.main(["init", str(target), "--force"]) == 0

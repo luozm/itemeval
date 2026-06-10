@@ -16,9 +16,9 @@ solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5, openrouter/deepseek/deepseek-v3.2]
   temperature: 0.7
 facets:
-  prompt: [minimal, standard]
+  prompt: [builtin:minimal, builtin:standard]
   grader: [judge_a, judge_b]
-  rubric: [standard]
+  rubric: [builtin:standard]
   replications: 4
 graders:
   judge_a: {model: openai/gpt-5-mini}
@@ -36,11 +36,22 @@ def test_readme_sketch_validates():
 
     cfg = ExperimentConfig.model_validate(yaml.safe_load(README_SKETCH))
     assert cfg.facets.scorer is None
-    assert cfg.facets.rubric == ["standard"]
+    assert cfg.facets.rubric == ["builtin:standard"]
     assert cfg.budget.batch == "auto"
     assert cfg.facets.replications == 4
     assert [m.name for m in cfg.facets.model_config_facet] == ["default"]
     assert cfg.grader_spec("judge_a").model == "openai/gpt-5-mini"
+
+
+def test_facets_default_to_builtin_standard():
+    import yaml
+
+    data = yaml.safe_load(README_SKETCH)
+    data["facets"] = {"grader": ["judge_a"]}  # omit prompt/rubric -> defaults apply
+    data["graders"] = {"judge_a": {"model": "mockllm/judge"}}
+    cfg = ExperimentConfig.model_validate(data)
+    assert cfg.facets.prompt == ["builtin:standard"]
+    assert cfg.facets.rubric == ["builtin:standard"]
 
 
 def test_grader_unresolved_raises_config_error():
@@ -107,8 +118,9 @@ def test_load_config_missing_file(tmp_path):
 def test_load_config_sets_private_state(tmp_path):
     p = tmp_path / "c.yaml"
     p.write_text(README_SKETCH)
-    cfg = load_config(p)
-    assert cfg.base_dir == tmp_path
+    cfg = load_config(p, work_dir=tmp_path)
+    assert cfg.config_dir == tmp_path
+    assert cfg.work_dir == tmp_path
     assert cfg.config_path == p
     assert len(cfg.config_sha256) == 64
     assert cfg.study_dir == (tmp_path / "studies" / "my_study").resolve()

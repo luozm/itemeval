@@ -35,8 +35,9 @@ class DatasetManifest(BaseModel):
 class TemplateManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    path: str  # relative to config.base_dir where possible
+    name: str  # the reference as written, e.g. "standard" or "builtin:standard"
+    source: str  # "local" | "builtin"
+    path: str  # local path (relative to config_dir where possible), or "builtin:<subdir>/<name>.md"
     sha256: str
 
 
@@ -101,6 +102,13 @@ def _rel_path(path: str, base: Path) -> str:
         return path
 
 
+def _template_manifest(t, base: Path) -> "TemplateManifest":
+    # built-in templates keep their package-relative id (machine-independent);
+    # local templates are recorded relative to config_dir where possible.
+    path = t.path if t.source == "builtin" else _rel_path(t.path, base)
+    return TemplateManifest(name=t.name, source=t.source, path=path, sha256=t.sha256)
+
+
 def build_manifest(
     prep: "PreparedStudy",
     stage: str,
@@ -109,7 +117,7 @@ def build_manifest(
     estimate_usd: "float | None",
 ) -> Manifest:
     cfg = prep.config
-    base = cfg.base_dir
+    base = cfg.config_dir or cfg.work_dir
     used_graders = {
         name: cfg.grader_spec(name).model_dump(mode="json") for name in cfg.facets.grader
     }
@@ -139,14 +147,8 @@ def build_manifest(
             )
             for ds in prep.datasets
         ],
-        solver_templates=[
-            TemplateManifest(name=t.name, path=_rel_path(t.path, base), sha256=t.sha256)
-            for t in prep.solver_templates.values()
-        ],
-        rubric_templates=[
-            TemplateManifest(name=t.name, path=_rel_path(t.path, base), sha256=t.sha256)
-            for t in prep.rubric_templates.values()
-        ],
+        solver_templates=[_template_manifest(t, base) for t in prep.solver_templates.values()],
+        rubric_templates=[_template_manifest(t, base) for t in prep.rubric_templates.values()],
         models=list(cfg.solvers.models),
         graders=used_graders,
         sampling_requested=sampling,

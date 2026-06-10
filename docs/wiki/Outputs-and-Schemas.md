@@ -1,7 +1,8 @@
 # Outputs and Schemas
 
 Everything a study produces lives under one directory:
-`<config dir>/<output_dir>/<study>/`.
+`<work_dir>/<output_dir>/<study>/`, where `work_dir` is the current directory by
+default (override with `-C/--base-dir`, or `work_dir=` in `load_config`).
 
 ```
 studies/<study>/
@@ -83,7 +84,9 @@ cache (free).
 Per run: `run_id, stage, created_at`; `itemeval_version, python_version,
 packages` (inspect-ai, pandas, pyarrow, pydantic, pyyaml, datasets);
 `config_path, config_sha256` + the full parsed config; per-dataset resolved
-revisions and an items content hash; solver/rubric template content hashes;
+revisions and an items content hash; solver/rubric templates each as
+`{name, source, path, sha256}` (`source` is `local` or `builtin`; built-in
+templates record a package-relative, machine-independent `path`);
 resolved graders; requested sampling params (+ `sampling_effective` per
 condition, backfilled after the run); policy, effective replications/items
 limit/batch; the complete condition grid with payloads; the condition ids

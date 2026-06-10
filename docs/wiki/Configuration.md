@@ -2,17 +2,23 @@
 
 One YAML file fully describes a study. Validation is strict
 (`extra="forbid"`): unknown or misspelled keys are rejected at load time with
-a pydantic error naming the field. Relative paths (`output_dir`,
-`prompts_dir`, `rubrics_dir`, `budget.pricing_path`) resolve **relative to
-the config file's directory**.
+a pydantic error naming the field.
+
+Paths resolve by **intent**: **input** paths (`prompts_dir`, `rubrics_dir`,
+`budget.pricing_path`) resolve relative to the **config file's directory**, so a
+config always finds its own templates; the **output** path (`output_dir`)
+resolves relative to the **working directory** — the current directory by
+default, override with `-C/--base-dir` (CLI) or `work_dir=` (`load_config`).
+Outputs never land next to the config or inside the installed package. Absolute
+paths are used as-is.
 
 ## Complete annotated example
 
 ```yaml
 study: my_study                # required; ^[a-z0-9][a-z0-9_-]{0,63}$
-output_dir: studies            # study dir = <config dir>/<output_dir>/<study>
-prompts_dir: prompts           # solver templates at <prompts_dir>/solver/<name>.md
-rubrics_dir: rubrics           # rubric templates at <rubrics_dir>/<name>.md
+output_dir: studies            # output study dir = <work_dir (CWD)>/<output_dir>/<study>
+prompts_dir: prompts           # local solver templates at <config dir>/<prompts_dir>/solver/<name>.md
+rubrics_dir: rubrics           # local rubric templates at <config dir>/<rubrics_dir>/<name>.md
 cache: true                    # inspect local response cache, both stages
 
 benchmark:
@@ -38,9 +44,9 @@ solvers:
   seed: null                   # optional; recorded; only some providers honor it
 
 facets:
-  prompt: [minimal, standard]  # default: [default]
+  prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]
   grader: [judge_a]            # judge grading; [] if using scorer only
-  rubric: [standard]           # default: [default]; used only with graders
+  rubric: [builtin:standard]   # same rule; used only with graders. default: [builtin:standard]
   scorer: null                 # or: exact_match | multiple_choice | numeric
   replications: 4              # default 1; = inspect epochs
   model_config:                # sampling/reasoning variants as a facet; default one "default" cell
@@ -79,11 +85,22 @@ budget:
   pydantic field is internally aliased). Each cell's non-null fields override
   the matching `solvers.*` value for that condition; `reasoning_effort` /
   `reasoning_tokens` exist only on cells.
-- **Templates** are content-hashed; required placeholders are validated at
-  grid expansion. Solver prompts must contain `{input}` (optional `{id}`).
-  Rubrics must contain `{input}` and `{solution}` (optional `{target}`,
-  `{grading_scheme}`, `{id}`). Rendering replaces only known placeholders —
-  LaTeX/JSON braces in templates and item text are safe.
+- **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
+  template in one of two namespaces, never mixed or silently shadowed:
+  `builtin:NAME` resolves to a template packaged inside itemeval (run
+  `itemeval init --with-templates` to see/copy them); a **bare** `NAME` resolves
+  to a local file under `prompts_dir`/`rubrics_dir`. A local `standard` and
+  `builtin:standard` are distinct references — each is content-hashed and
+  recorded with its `source` (`local`/`builtin`) in the run manifest, so two
+  same-named templates with different content never collide. A bare name with no
+  local file errors at load (before any output is written) and, if a built-in of
+  that name exists, suggests the `builtin:` form. Built-in templates ship today:
+  prompts `minimal`, `standard`; rubric `standard`.
+- **Templates** are content-hashed; required placeholders are validated before
+  any run. Solver prompts must contain `{input}` (optional `{id}`). Rubrics must
+  contain `{input}` and `{solution}` (optional `{target}`, `{grading_scheme}`,
+  `{id}`). Rendering replaces only known placeholders — LaTeX/JSON braces in
+  templates and item text are safe.
 - **`policy: dev`** trims the run to the first `dev_items` items and forces
   batch off — the recommended default until your pipeline looks right.
 - **`batch: auto`** enables batch-API mode only under `policy: full-batch`

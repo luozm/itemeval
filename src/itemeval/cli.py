@@ -1,7 +1,9 @@
-"""itemeval CLI: estimate | generate | grade | export | status."""
+"""itemeval CLI: init | estimate | generate | grade | export | status."""
 
 import argparse
+import re
 import sys
+from pathlib import Path
 
 from itemeval._errors import (
     AdapterError,
@@ -37,7 +39,7 @@ def _load(args) -> "tuple":
     from itemeval._config import load_config
     from itemeval._prepare import prepare_study
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, work_dir=getattr(args, "base_dir", None))
     refresh = getattr(args, "refresh_pricing", False)
     prep = prepare_study(cfg, refresh_pricing_table=refresh)
     return cfg, prep
@@ -174,7 +176,7 @@ def _cmd_export(args) -> int:
     from itemeval._config import load_config
     from itemeval.store._export import export_study
 
-    result = export_study(load_config(args.config))
+    result = export_study(load_config(args.config, work_dir=getattr(args, "base_dir", None)))
     if args.json:
         print(result.model_dump_json(indent=2))
         return 0
@@ -258,6 +260,61 @@ def _cmd_status(args) -> int:
     return 0
 
 
+def _cmd_init(args) -> int:
+    import yaml
+
+    from itemeval._templates import BUILTIN_PREFIX, _builtin_root, read_builtin
+    from itemeval.design._ids import slugify
+
+    target = Path(args.dir).expanduser()
+    config_path = target / "config.yaml"
+    if config_path.exists() and not args.force:
+        print(f"itemeval: {config_path} already exists (use --force to overwrite)", file=sys.stderr)
+        return 2
+
+    text = _builtin_root().joinpath("config.yaml").read_text(encoding="utf-8")
+    study = slugify(target.resolve().name)
+    text = re.sub(r"(?m)^study:.*$", f"study: {study}", text, count=1)
+
+    copied = []
+    if args.with_templates:
+        spec = yaml.safe_load(text)
+        for ref in spec["facets"].get("prompt", []):
+            if ref.startswith(BUILTIN_PREFIX):
+                name = ref[len(BUILTIN_PREFIX) :]
+                dest = target / "prompts" / "solver" / f"{name}.md"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(read_builtin("prompts/solver", name) or "", encoding="utf-8")
+                copied.append(dest)
+        for ref in spec["facets"].get("rubric", []):
+            if ref.startswith(BUILTIN_PREFIX):
+                name = ref[len(BUILTIN_PREFIX) :]
+                dest = target / "rubrics" / f"{name}.md"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(read_builtin("rubrics", name) or "", encoding="utf-8")
+                copied.append(dest)
+        # drop the `builtin:` prefix only on the facet ref lines, so refs now point
+        # at the local copies; comments elsewhere are left untouched.
+        text = "".join(
+            line.replace(BUILTIN_PREFIX, "")
+            if line.lstrip().startswith(("prompt:", "rubric:"))
+            else line
+            for line in text.splitlines(keepends=True)
+        )
+
+    target.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(text, encoding="utf-8")
+
+    print(f"created {config_path}")
+    for dest in copied:
+        print(f"  + {dest.relative_to(target)}")
+    print("\nnext steps (runs free on the mock provider):")
+    for cmd in ("status", "generate", "grade", "export"):
+        suffix = " --yes" if cmd in ("generate", "grade") else ""
+        print(f"  itemeval {cmd:<8} {config_path}{suffix}")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="itemeval",
@@ -265,9 +322,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    init = sub.add_parser("init", help="scaffold a new study (writes config.yaml)")
+    init.add_argument("dir", help="target directory for the new study")
+    init.add_argument(
+        "--with-templates",
+        action="store_true",
+        help="also copy the referenced built-in prompts/rubrics as editable local files",
+    )
+    init.add_argument("--force", action="store_true", help="overwrite an existing config.yaml")
+    init.set_defaults(fn=_cmd_init)
+
     def add(name: str, fn, help_text: str):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("config", help="experiment config YAML")
+        p.add_argument(
+            "-C",
+            "--base-dir",
+            default=None,
+            metavar="DIR",
+            help="work directory anchoring outputs (the studies/ tree); default: current directory",
+        )
         p.set_defaults(fn=fn)
         return p
 

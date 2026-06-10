@@ -32,7 +32,8 @@ def test_estimate_uncapped_warns(study, tmp_path):
     data = yaml.safe_load(cfg.config_path.read_text())
     del data["solvers"]["max_tokens"]
     cfg2 = ExperimentConfig.model_validate(data)
-    cfg2._base_dir = cfg.base_dir
+    cfg2._config_dir = cfg.config_dir
+    cfg2._work_dir = cfg.work_dir
     prep2 = prepare_study(cfg2)
     est = estimate_study(prep2)
     assert any("uncapped-generation" in w for w in est.warnings)
@@ -83,7 +84,8 @@ def test_judge_default_output_tokens(study):
     data["graders"]["judge"].pop("max_tokens")
     data["graders"]["judge"]["max_tokens"] = None
     cfg2 = ExperimentConfig.model_validate(data)
-    cfg2._base_dir = cfg.base_dir
+    cfg2._config_dir = cfg.config_dir
+    cfg2._work_dir = cfg.work_dir
     prep2 = prepare_study(cfg2)
     est = estimate_study(prep2)
     assert est.grade.output_tokens == est.grade.calls * DEFAULT_OUTPUT_TOKENS_JUDGE

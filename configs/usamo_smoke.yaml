@@ -1,0 +1,31 @@
+study: usamo_smoke             # outputs: <cwd>/studies/usamo_smoke (gitignored)
+benchmark:
+  adapter: hf
+  datasets:
+    - id: MathArena/usamo_2025
+      revision: 0a2c60f2249e07b8ee76c942bca4f5f87aa959df
+      split: train
+  mapping:
+    id: problem_idx
+    input: problem
+    target: sample_solution
+    grading_scheme: grading_scheme
+    metadata: [points]
+solvers:
+  models: [openai/gpt-5-mini]   # real provider — first live-API exercise
+  temperature: 0.7             # requested; temp_effective records what the model actually used
+  max_tokens: 1024
+facets:
+  prompt: [builtin:minimal, builtin:standard]  # 2 prompts → exercises grid expansion
+  grader: [gpt5_mini_judge]
+  rubric: [builtin:standard]
+  replications: 2
+graders:
+  gpt5_mini_judge:
+    model: openai/gpt-5-mini
+    max_tokens: 512
+crossing: full
+budget:
+  policy: dev                  # dev: first 2 items; replications kept
+  confirm_above_usd: 5         # estimate gate trips if projection exceeds $5
+  batch: auto

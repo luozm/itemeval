@@ -35,7 +35,9 @@ graders:
 
 
 def _template(name: str, text: str) -> Template:
-    return Template(name=name, path=f"/t/{name}.md", text=text, sha256=sha256_hex(text.encode()))
+    return Template(
+        name=name, source="local", path=f"/t/{name}.md", text=text, sha256=sha256_hex(text.encode())
+    )
 
 
 def _cfg() -> ExperimentConfig:

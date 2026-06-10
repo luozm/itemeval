@@ -63,8 +63,11 @@ src layout, pyproject + uv, skeleton subpackages, CI-ready test stub, docs.
 
 ## M7 — Publish v0.1.0
 
+- [x] Pip/uv install path: built-in template library (`builtin:` refs) +
+  `itemeval init` scaffold; outputs anchored to the working directory, inputs to
+  the config dir
 - [ ] Test coverage for adapters, grid expansion, parsing, export schema
-- [ ] GitHub Actions CI (ruff + pytest, py3.10–3.13 matrix)
+- [ ] GitHub Actions CI (ruff + pytest, py3.11–3.13 matrix)
 - [ ] README quickstart against a public verifiable benchmark (no judge needed)
 - [ ] CHANGELOG.md; tag v0.1.0; publish to PyPI (`uv build && uv publish`)
 

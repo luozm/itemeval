@@ -91,9 +91,9 @@ class FacetsConfig(BaseModel):
     # `model_config_facet` with alias "model_config" (the YAML key).
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    prompt: list[str] = Field(default_factory=lambda: ["default"], min_length=1)
+    prompt: list[str] = Field(default_factory=lambda: ["builtin:standard"], min_length=1)
     grader: list[str] = Field(default_factory=list)
-    rubric: list[str] = Field(default_factory=lambda: ["default"], min_length=1)
+    rubric: list[str] = Field(default_factory=lambda: ["builtin:standard"], min_length=1)
     scorer: Literal["exact_match", "multiple_choice", "numeric"] | None = None
     replications: int = Field(default=1, ge=1)
     model_config_facet: list[ModelConfigFacet] = Field(
@@ -142,9 +142,13 @@ class ExperimentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     study: str = Field(pattern=STUDY_RE)
-    output_dir: str = "studies"  # resolved relative to the config file's dir
-    prompts_dir: str = "prompts"  # solver templates: <prompts_dir>/solver/<name>.md
-    rubrics_dir: str = "rubrics"  # rubric templates: <rubrics_dir>/<name>.md
+    output_dir: str = "studies"  # outputs: resolved relative to work_dir (CWD)
+    prompts_dir: str = (
+        "prompts"  # solver templates: <prompts_dir>/solver/<name>.md (relative to config_dir)
+    )
+    rubrics_dir: str = (
+        "rubrics"  # rubric templates: <rubrics_dir>/<name>.md (relative to config_dir)
+    )
     cache: bool = True  # inspect local response cache, both stages
     benchmark: BenchmarkConfig
     solvers: SolversConfig
@@ -153,13 +157,22 @@ class ExperimentConfig(BaseModel):
     crossing: Literal["full"] = "full"
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
-    _base_dir: Path = PrivateAttr(default_factory=Path.cwd)
+    # Two resolution anchors (see docs/wiki/Configuration.md):
+    #   config_dir — the loaded YAML's directory; anchors INPUTS (prompts/rubrics/pricing).
+    #                None for in-memory configs, which then anchor inputs to work_dir.
+    #   work_dir   — defaults to CWD; anchors OUTPUTS (the study directory). Never the package.
+    _config_dir: Path | None = PrivateAttr(default=None)
+    _work_dir: Path = PrivateAttr(default_factory=Path.cwd)
     _config_path: Path | None = PrivateAttr(default=None)
     _config_sha256: str | None = PrivateAttr(default=None)
 
     @property
-    def base_dir(self) -> Path:
-        return self._base_dir
+    def config_dir(self) -> Path | None:
+        return self._config_dir
+
+    @property
+    def work_dir(self) -> Path:
+        return self._work_dir
 
     @property
     def config_path(self) -> Path | None:
@@ -170,8 +183,21 @@ class ExperimentConfig(BaseModel):
         return self._config_sha256
 
     @property
+    def _input_base(self) -> Path:
+        """Anchor for input dirs: the config's directory, or work_dir for in-memory configs."""
+        return self._config_dir if self._config_dir is not None else self._work_dir
+
+    def resolve_input_dir(self, rel: str) -> Path:
+        """Resolve an input dir (prompts/rubrics/pricing) under config_dir; absolute paths pass through."""
+        p = Path(rel).expanduser()
+        return (p if p.is_absolute() else self._input_base / p).resolve()
+
+    @property
     def study_dir(self) -> Path:
-        return (self._base_dir / self.output_dir / self.study).resolve()
+        """Output study directory, anchored to work_dir (CWD); absolute output_dir passes through."""
+        out = Path(self.output_dir).expanduser()
+        base = out if out.is_absolute() else self._work_dir / out
+        return (base / self.study).resolve()
 
     def grader_spec(self, name: str) -> GraderSpec:
         """Resolve a facets.grader entry. Raises ConfigError if unresolvable."""
@@ -182,8 +208,12 @@ class ExperimentConfig(BaseModel):
         raise ConfigError(f"grader '{name}' is not defined under graders: and is not a model id")
 
 
-def load_config(path: "str | Path") -> ExperimentConfig:
-    """Load and validate an experiment config YAML file."""
+def load_config(path: "str | Path", *, work_dir: "str | Path | None" = None) -> ExperimentConfig:
+    """Load and validate an experiment config YAML file.
+
+    Inputs (prompts/rubrics) anchor to the config file's directory; outputs (the
+    study dir) anchor to `work_dir`, defaulting to the current working directory.
+    """
     p = Path(path).expanduser().resolve()
     if not p.is_file():
         raise ConfigError(f"config file not found: {p}")
@@ -198,7 +228,8 @@ def load_config(path: "str | Path") -> ExperimentConfig:
         cfg = ExperimentConfig.model_validate(data)
     except ValidationError as e:
         raise ConfigError(f"invalid config {p}:\n{e}") from e
-    cfg._base_dir = p.parent
+    cfg._config_dir = p.parent
+    cfg._work_dir = Path(work_dir).expanduser().resolve() if work_dir is not None else Path.cwd()
     cfg._config_path = p
     cfg._config_sha256 = sha256_hex(raw)
     return cfg

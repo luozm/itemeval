@@ -101,7 +101,8 @@ def test_verifiable_grading_no_model(study, tmp_path):
     data["facets"]["scorer"] = "exact_match"
     data.pop("graders")
     cfg2 = ExperimentConfig.model_validate(data)
-    cfg2._base_dir = cfg.base_dir
+    cfg2._config_dir = cfg.config_dir
+    cfg2._work_dir = cfg.work_dir
     prep2 = prepare_study(cfg2)
 
     def forbidden_factory(model, stage):

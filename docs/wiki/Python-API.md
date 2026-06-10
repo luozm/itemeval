@@ -11,7 +11,7 @@ on-disk outputs.
 ```python
 import itemeval
 
-itemeval.load_config(path)        # YAML -> ExperimentConfig (raises ConfigError)
+itemeval.load_config(path, work_dir=None)  # YAML -> ExperimentConfig (raises ConfigError)
 itemeval.prepare_study(cfg)       # config -> PreparedStudy (datasets, templates, grid, plan, pricing)
 itemeval.estimate_study(prep)     # -> Estimate (projected calls/tokens/$ per stage)
 itemeval.run_generate(prep)       # -> GenerateResult (stage 1; writes solutions store)
@@ -111,6 +111,12 @@ itemeval.estimate_study(prep)            # reads the solutions store automatical
 
 ## Notes
 
+- **Output location.** `load_config(path)` anchors inputs (prompts/rubrics) to
+  the config file's directory and outputs (the `studies/` tree) to the current
+  working directory. Pass `load_config(path, work_dir="/some/dir")` to anchor
+  outputs elsewhere — the analogue of the CLI's `-C/--base-dir`. An in-memory
+  `ExperimentConfig` (no file) has no config directory, so it anchors *both*
+  inputs and outputs to `work_dir` (CWD by default).
 - `import itemeval` is lightweight — heavy dependencies (inspect_ai, pandas)
   load lazily on first use of a pipeline function.
 - `prepare_study` touches the HF Hub on first run (revision resolution +

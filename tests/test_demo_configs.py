@@ -15,7 +15,7 @@ def test_demo_config_loads(name):
     assert cfg.benchmark.datasets[0].revision  # revision pinned in the file
     assert len(cfg.solvers.models) == 3
     assert all(m.startswith("mockllm/") for m in cfg.solvers.models)
-    assert cfg.facets.prompt == ["minimal", "standard"]
+    assert cfg.facets.prompt == ["builtin:minimal", "builtin:standard"]
     assert cfg.facets.replications == 2
     assert cfg.grader_spec("mock_judge").model == "mockllm/judge"
     assert cfg.budget.policy == "dev"
