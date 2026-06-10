@@ -70,7 +70,11 @@ def builtin_names(subdir: str) -> list[str]:
 
 def read_builtin(subdir: str, name: str) -> "str | None":
     """Raw text of a packaged template, or None if it does not exist."""
-    res = _builtin_root().joinpath(subdir, f"{name}.md")
+    # One segment per joinpath: importlib.resources' MultiplexedPath.joinpath only
+    # accepts multiple descendants on Python 3.12+; 3.11 takes a single arg.
+    res = _builtin_root()
+    for part in (*subdir.split("/"), f"{name}.md"):
+        res = res.joinpath(part)
     if not res.is_file():
         return None
     return res.read_text(encoding="utf-8")
