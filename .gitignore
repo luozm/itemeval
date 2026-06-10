@@ -13,5 +13,8 @@ build/
 .pytest_cache/
 .ruff_cache/
 
+# Demo study outputs (itemeval generate/grade/export artifacts)
+studies/
+
 # OS
 .DS_Store
