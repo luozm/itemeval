@@ -1,0 +1,370 @@
+"""Generate-stage orchestrator: per-condition inspect evals -> solutions store."""
+
+from functools import reduce
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
+import inspect_ai
+from pydantic import BaseModel, ConfigDict
+
+from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
+from itemeval._mockmodels import resolve_model
+from itemeval._util import new_run_id, utc_now_iso
+from itemeval.budget._pricing import (
+    BATCH_PROVIDERS,
+    cost_usd,
+    lookup_price,
+    provider_of,
+)
+from itemeval.design._grid import GenCondition
+from itemeval.generate._params import extract_effective_params
+from itemeval.generate._task import build_generate_task
+from itemeval.store import _ledger, _logs, _solutions
+from itemeval.store._base import rel_to_study
+from itemeval.store._items import upsert_items
+
+if TYPE_CHECKING:
+    from inspect_ai.log import EvalLog, EvalSample
+    from inspect_ai.model import ModelUsage
+
+    from itemeval._prepare import PreparedStudy
+
+ModelFactory = Callable[[str, str], Any]  # (model_id, stage) -> str | Model
+
+
+class ConditionRunReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    condition_id: str
+    slug: str
+    status: Literal["run", "skipped", "error"]
+    items_run: int
+    rows_written: int
+    errors: int  # samples that errored in this run
+    usd: float | None  # None when model unpriced
+    log_file: str | None  # relative to study_dir
+    message: str | None = None  # eval-level error detail
+
+
+class GenerateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    study: str
+    conditions: list[ConditionRunReport]
+    rows_written: int
+    total_usd: float
+    manifest_path: str
+
+
+def matches_filter(cond_id: str, slug: str, filters: "list[str] | None") -> bool:
+    if not filters:
+        return True
+    return any(cond_id == f or cond_id.startswith(f) or slug == f for f in filters)
+
+
+def sum_usage(sample: "EvalSample") -> "ModelUsage | None":
+    usages = list((sample.model_usage or {}).values())
+    if not usages:
+        return None
+    return reduce(lambda a, b: a + b, usages)
+
+
+def usd_for_usage(
+    pricing, model: str, usage: "ModelUsage | None", batch: "bool | int | None"
+) -> "float | None":
+    """None = model unpriced. Missing usage with a known price = $0 (cache hit)."""
+    price = lookup_price(pricing, model)
+    if price is None:
+        return None
+    if usage is None:
+        return 0.0
+    value = cost_usd(
+        price,
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.input_tokens_cache_read,
+        usage.input_tokens_cache_write,
+    )
+    if batch is not None and provider_of(model) in BATCH_PROVIDERS:
+        value *= 0.5  # documented approximation; provider invoices authoritative
+    return value
+
+
+def usage_columns(usage: "ModelUsage | None") -> "dict[str, Any]":
+    if usage is None:
+        return {
+            "input_tokens": None,
+            "output_tokens": None,
+            "total_tokens": None,
+            "cache_read_tokens": None,
+            "cache_write_tokens": None,
+            "reasoning_tokens": None,
+        }
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+        "cache_read_tokens": usage.input_tokens_cache_read,
+        "cache_write_tokens": usage.input_tokens_cache_write,
+        "reasoning_tokens": usage.reasoning_tokens,
+    }
+
+
+def log_index_row(
+    log: "EvalLog",
+    paths,
+    run_id: str,
+    stage: str,
+    condition_id: str,
+    model: str,
+    usd: "float | None",
+) -> dict:
+    stats_usage = list(log.stats.model_usage.values()) if log.stats else []
+    total = reduce(lambda a, b: a + b, stats_usage) if stats_usage else None
+    return {
+        "log_file": rel_to_study(paths, log.location),
+        "run_id": run_id,
+        "stage": stage,
+        "condition_id": condition_id,
+        "task_name": log.eval.task,
+        "model": model,
+        "status": log.status,
+        "started_at": log.stats.started_at if log.stats else None,
+        "completed_at": log.stats.completed_at if log.stats else None,
+        "total_samples": log.results.total_samples if log.results else None,
+        "completed_samples": log.results.completed_samples if log.results else None,
+        "input_tokens": total.input_tokens if total else None,
+        "output_tokens": total.output_tokens if total else None,
+        "total_tokens": total.total_tokens if total else None,
+        "usd": usd,
+        "created_at": utc_now_iso(),
+    }
+
+
+def ledger_row(
+    run_id: str,
+    stage: str,
+    condition_id: str,
+    model: str,
+    rows: "list[dict]",
+    batch: "bool | int | None",
+) -> dict:
+    def total(col: str) -> "int | None":
+        vals = [r[col] for r in rows if r.get(col) is not None]
+        return sum(vals) if vals else None
+
+    usd_vals = [r["usd"] for r in rows if r.get("usd") is not None]
+    return {
+        "run_id": run_id,
+        "stage": stage,
+        "condition_id": condition_id,
+        "model": model,
+        "calls": len(rows),
+        "input_tokens": total("input_tokens"),
+        "output_tokens": total("output_tokens"),
+        "total_tokens": total("total_tokens"),
+        "cache_read_tokens": total("cache_read_tokens"),
+        "cache_write_tokens": total("cache_write_tokens"),
+        "usd": sum(usd_vals) if usd_vals else 0.0,
+        "priced": bool(usd_vals),
+        "batch": batch is not None,
+        "created_at": utc_now_iso(),
+    }
+
+
+def rows_from_generate_log(
+    log: "EvalLog", cond: GenCondition, prep: "PreparedStudy", run_id: str
+) -> "list[dict]":
+    rows = []
+    now = utc_now_iso()
+    log_file = rel_to_study(prep.paths, log.location)
+    p = cond.gen_params
+    for sample in log.samples or []:
+        item_id = str(sample.id)
+        origin = prep.origins[item_id]
+        usage = sum_usage(sample)
+        error = sample.error.message if sample.error else None
+        solution = (
+            sample.output.completion
+            if (error is None and sample.output and sample.output.completion)
+            else None
+        )
+        eff = extract_effective_params(sample, p)
+        rows.append(
+            {
+                "study": prep.config.study,
+                "run_id": run_id,
+                "condition_id": cond.id,
+                "condition_slug": cond.slug,
+                "item_id": item_id,
+                "dataset_id": origin.dataset_id,
+                "dataset_revision": origin.revision,
+                "epoch": int(sample.epoch),
+                "model": cond.model,
+                "prompt_name": cond.prompt_name,
+                "prompt_hash": cond.prompt_hash,
+                "model_config_name": cond.model_config_name,
+                "temperature_requested": p.temperature,
+                "temperature_effective": eff.temperature,
+                "top_p_requested": p.top_p,
+                "top_p_effective": eff.top_p,
+                "max_tokens_requested": p.max_tokens,
+                "max_tokens_effective": eff.max_tokens,
+                "seed_requested": p.seed,
+                "reasoning_effort": p.reasoning_effort,
+                "reasoning_effort_effective": eff.reasoning_effort,
+                "reasoning_tokens_requested": p.reasoning_tokens,
+                "solution": solution,
+                "stop_reason": sample.output.stop_reason if sample.output else None,
+                "error": error,
+                **usage_columns(usage),
+                "usd": usd_for_usage(prep.pricing, cond.model, usage, prep.plan.batch),
+                "latency_s": sample.total_time,
+                "log_file": log_file,
+                "sample_uuid": sample.uuid,
+                "created_at": now,
+            }
+        )
+    return rows
+
+
+def run_generate(
+    prep: "PreparedStudy",
+    *,
+    run_id: "str | None" = None,
+    force: bool = False,
+    condition_filter: "list[str] | None" = None,
+    display: str = "none",
+    model_factory: "ModelFactory | None" = None,
+    estimate_usd: "float | None" = None,
+) -> GenerateResult:
+    run_id = run_id or new_run_id("generate")
+    prep.paths.ensure()
+    upsert_items(prep.paths, prep.datasets)
+
+    selected = [c for c in prep.grid.generate if matches_filter(c.id, c.slug, condition_filter)]
+    manifest = build_manifest(prep, "generate", run_id, [c.id for c in selected], estimate_usd)
+    manifest_path = write_manifest(manifest, prep.paths)
+
+    reports: list[ConditionRunReport] = []
+    rows_written = 0
+    total_usd = 0.0
+    sampling_effective: dict[str, Any] = {}
+    factory = model_factory or resolve_model
+    item_ids = [it.id for it in prep.items_effective]
+
+    for cond in selected:
+        existing = _solutions.read_solutions(prep.paths)
+        to_run = (
+            list(item_ids)
+            if force
+            else _solutions.items_to_run(existing, cond.id, item_ids, prep.plan.replications)
+        )
+        if not to_run:
+            reports.append(
+                ConditionRunReport(
+                    condition_id=cond.id,
+                    slug=cond.slug,
+                    status="skipped",
+                    items_run=0,
+                    rows_written=0,
+                    errors=0,
+                    usd=None,
+                    log_file=None,
+                )
+            )
+            continue
+        items = [it for it in prep.items_effective if it.id in set(to_run)]
+        task = build_generate_task(
+            items,
+            cond,
+            prep.solver_templates[cond.prompt_name],
+            prep.config.study,
+            prep.plan.replications,
+            prep.config.cache,
+            prep.origins,
+            batch=prep.plan.batch,
+        )
+        try:
+            # Serial eval per condition: inspect's eval is one-at-a-time per process.
+            logs = inspect_ai.eval(
+                task,
+                model=factory(cond.model, "generate"),
+                display=display,
+                log_dir=str(prep.paths.logs_dir("generate", cond.id)),
+                log_format="eval",
+                fail_on_error=False,
+                retry_on_error=1,
+                tags=["itemeval", "generate"],
+                metadata={
+                    "itemeval_run_id": run_id,
+                    "itemeval_study": prep.config.study,
+                    "itemeval_condition_id": cond.id,
+                },
+            )
+            log = logs[0]
+        except Exception as e:  # eval-level failure: report and continue
+            reports.append(
+                ConditionRunReport(
+                    condition_id=cond.id,
+                    slug=cond.slug,
+                    status="error",
+                    items_run=len(items),
+                    rows_written=0,
+                    errors=0,
+                    usd=None,
+                    log_file=None,
+                    message=f"{type(e).__name__}: {e}",
+                )
+            )
+            continue
+
+        rows = rows_from_generate_log(log, cond, prep, run_id)
+        n = _solutions.upsert_solutions(prep.paths, rows)
+        rows_written += n
+
+        usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
+        cond_usd = sum(usd_vals) if usd_vals else None
+        total_usd += cond_usd or 0.0
+        _logs.upsert_log_index(
+            prep.paths,
+            [log_index_row(log, prep.paths, run_id, "generate", cond.id, cond.model, cond_usd)],
+        )
+        _ledger.upsert_ledger(
+            prep.paths,
+            [ledger_row(run_id, "generate", cond.id, cond.model, rows, prep.plan.batch)],
+        )
+        ok_rows = [r for r in rows if r["error"] is None]
+        if ok_rows:
+            sampling_effective[cond.id] = {
+                k.replace("_effective", ""): ok_rows[0][k]
+                for k in (
+                    "temperature_effective",
+                    "top_p_effective",
+                    "max_tokens_effective",
+                    "reasoning_effort_effective",
+                )
+            }
+        reports.append(
+            ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="run",
+                items_run=len(items),
+                rows_written=n,
+                errors=sum(1 for r in rows if r["error"] is not None),
+                usd=cond_usd,
+                log_file=rel_to_study(prep.paths, log.location),
+            )
+        )
+
+    if sampling_effective:
+        finalize_manifest(manifest_path, sampling_effective)
+    return GenerateResult(
+        run_id=run_id,
+        study=prep.config.study,
+        conditions=reports,
+        rows_written=rows_written,
+        total_usd=total_usd,
+        manifest_path=rel_to_study(prep.paths, manifest_path),
+    )

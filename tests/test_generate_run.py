@@ -1,0 +1,87 @@
+"""Generate-stage e2e on mockllm: store rows, resume, manifest, ledger."""
+
+import json
+
+import pandas as pd
+
+from itemeval.generate._run import run_generate
+from itemeval.store._ledger import read_ledger
+from itemeval.store._logs import read_log_index
+from itemeval.store._solutions import read_solutions
+
+
+def test_generate_e2e(study):
+    cfg, prep = study
+    result = run_generate(prep)
+
+    # 2 conditions x 2 dev items x 2 epochs
+    assert result.rows_written == 8
+    assert all(r.status == "run" for r in result.conditions)
+    df = read_solutions(prep.paths)
+    assert len(df) == 8
+    assert set(df["epoch"]) == {1, 2}
+    assert df["solution"].notna().all()
+    assert df["error"].isna().all()
+    assert (df["input_tokens"] > 0).all()
+    assert (df["usd"] > 0).all()  # mockllm priced via seed table
+    assert (df["temperature_requested"] == 0.3).all()
+    assert df["log_file"].notna().all()
+
+    # items snapshot covers ALL loaded items, not just policy scope
+    items_df = pd.read_parquet(prep.paths.items)
+    assert len(items_df) == 3
+
+    # log index + ledger
+    logs = read_log_index(prep.paths)
+    assert len(logs) == 2 and (logs["stage"] == "generate").all()
+    ledger = read_ledger(prep.paths)
+    assert len(ledger) == 2
+    assert ledger["usd"].sum() == df["usd"].sum()
+
+    # manifest written and backfilled with effective params
+    manifest_file = prep.paths.study_dir / result.manifest_path
+    manifest = json.loads(manifest_file.read_text())
+    assert manifest["stage"] == "generate"
+    assert manifest["replications_effective"] == 2
+    assert len(manifest["grid_generate"]) == 2
+    assert manifest["datasets"][0]["revision_resolved"]
+    assert manifest["config_sha256"] == cfg.config_sha256
+    assert manifest["sampling_effective"]  # backfilled post-run
+
+
+def test_generate_resume_skips_complete(study):
+    _, prep = study
+    run_generate(prep)
+    second = run_generate(prep)
+    assert all(r.status == "skipped" for r in second.conditions)
+    assert second.rows_written == 0
+
+
+def test_generate_force_reruns(study):
+    _, prep = study
+    run_generate(prep)
+    forced = run_generate(prep, force=True)
+    assert forced.rows_written == 8
+    assert len(read_solutions(prep.paths)) == 8  # upsert, no duplicates
+
+
+def test_generate_condition_filter(study):
+    _, prep = study
+    cond = prep.grid.generate[0]
+    result = run_generate(prep, condition_filter=[cond.slug])
+    assert len(result.conditions) == 1
+    assert result.conditions[0].condition_id == cond.id
+    df = read_solutions(prep.paths)
+    assert set(df["condition_id"]) == {cond.id}
+
+
+def test_generate_eval_failure_reported_not_raised(study, monkeypatch):
+    _, prep = study
+
+    def broken_factory(model, stage):
+        raise RuntimeError("provider exploded")
+
+    result = run_generate(prep, model_factory=broken_factory)
+    assert all(r.status == "error" for r in result.conditions)
+    assert "provider exploded" in result.conditions[0].message
+    assert read_solutions(prep.paths).empty
