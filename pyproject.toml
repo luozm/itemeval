@@ -11,14 +11,23 @@ keywords = ["llm", "evaluation", "benchmark", "item-response", "inspect-ai", "ps
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
 ]
 dependencies = [
-    "datasets>=5.0.0",
+    # Lower bounds are the published support contract: the oldest version whose
+    # APIs we rely on, not the latest. uv.lock pins exact (latest) versions for
+    # dev/CI. itemeval uses only long-stable surfaces of pyarrow (schema/Table/
+    # parquet) and datasets (load_dataset with revision), so these floors stay
+    # permissive to ease co-installation; bump only when we adopt a newer API.
+    "datasets>=3.0.0",
     "inspect-ai>=0.3.239",
     "pandas>=2.3.3",
-    "pyarrow>=24.0.0",
+    "pyarrow>=15.0.0",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
 ]
@@ -27,7 +36,11 @@ dependencies = [
 itemeval = "itemeval.cli:main"
 
 [project.urls]
+Homepage = "https://github.com/luozm/itemeval"
 Repository = "https://github.com/luozm/itemeval"
+Documentation = "https://github.com/luozm/itemeval/wiki"
+Changelog = "https://github.com/luozm/itemeval/blob/main/CHANGELOG.md"
+Issues = "https://github.com/luozm/itemeval/issues"
 
 [build-system]
 requires = ["hatchling"]

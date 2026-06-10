@@ -9,9 +9,9 @@ item-response table plus full raw logs — built for item-response-level analysi
 (psychometrics, G-theory, IRT), never just aggregate scores.
 
 **Status: pre-alpha — M1–M6 implemented; first PyPI release pending (M7).**
-See [ROADMAP.md](ROADMAP.md).
+See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
 
-**User guide:** [docs/wiki/Home.md](docs/wiki/Home.md) — getting started,
+**User guide:** [the wiki](https://github.com/luozm/itemeval/wiki) — getting started,
 config reference, CLI, output schemas, budget controls, architecture, FAQ.
 
 ## Why this exists

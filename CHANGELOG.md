@@ -68,6 +68,17 @@ All notable changes to itemeval are documented here. Format follows
   (were `[default]`, which referenced a template that never existed).
 - Template references and validation moved ahead of study-directory creation:
   an unresolved template now fails before any output directory is written.
+
+### Packaging
+- Ship a `py.typed` marker (PEP 561): downstream type checkers now see
+  itemeval's annotations. Added the `Typing :: Typed` and Python 3.11/3.12
+  classifiers.
+- Relaxed the `pyarrow` (`>=24` → `>=15`) and `datasets` (`>=5` → `>=3`)
+  lower bounds to the oldest versions whose APIs we actually use, easing
+  co-installation; dev/CI still pin the latest via `uv.lock`. The full test
+  suite passes at both the floor and the locked versions.
+- Expanded `[project.urls]` (Homepage, Documentation → wiki, Changelog, Issues)
+  and switched the README's PyPI-facing links to absolute GitHub URLs.
 - Minimum Python is now 3.11 (was 3.10). The tested dependency stack resolves
   pandas 3.x, which requires Python >=3.11, so 3.10 could only ever install a
   different (pandas 2.x) stack that was never tested. Floor now matches the
