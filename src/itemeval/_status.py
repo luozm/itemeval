@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from itemeval._config import ExperimentConfig
 from itemeval._prepare import PreparedStudy, prepare_study
 from itemeval.store import _gradings, _ledger, _solutions
+from itemeval.store._solutions import empty_solution_mask
 
 
 class DatasetStatus(BaseModel):
@@ -26,6 +27,7 @@ class ConditionStatus(BaseModel):
     expected: int
     completed: int
     errors: int
+    incomplete: int = 0  # generate: empty (no-error) completions, e.g. truncated
     parse_failures: int = 0
 
 
@@ -60,6 +62,8 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
     effective_ids = {it.id for it in prep.items_effective}
     reps = prep.plan.replications
     expected_gen = len(prep.items_effective) * reps
+    # rerun policy re-attempts empty completions, so they don't count as done.
+    rerun_empty = config.solvers.on_empty == "rerun"
 
     gen_status = []
     for cond in prep.grid.generate:
@@ -69,6 +73,8 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
             if not rows.empty
             else rows
         )
+        incomplete = int(empty_solution_mask(in_scope).sum()) if not in_scope.empty else 0
+        err_null = int(in_scope["error"].isna().sum()) if not in_scope.empty else 0
         gen_status.append(
             ConditionStatus(
                 condition_id=cond.id,
@@ -80,8 +86,9 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
                     "model_config": cond.model_config_name,
                 },
                 expected=expected_gen,
-                completed=int(in_scope["error"].isna().sum()) if not in_scope.empty else 0,
+                completed=err_null - (incomplete if rerun_empty else 0),
                 errors=int(in_scope["error"].notna().sum()) if not in_scope.empty else 0,
+                incomplete=incomplete,
             )
         )
 
@@ -90,7 +97,12 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         scoped = solutions[
             solutions["item_id"].isin(effective_ids) & (solutions["epoch"].astype(int) <= reps)
         ]
-        gradable = int((scoped["error"].isna() & scoped["solution"].notna()).sum())
+        # gradable = produced a non-empty completion (error null, not blank). With
+        # on_empty=grade the empties are gradable too (judged as-is).
+        if config.solvers.on_empty == "grade":
+            gradable = int(scoped["error"].isna().sum())
+        else:
+            gradable = int((scoped["error"].isna() & ~empty_solution_mask(scoped)).sum())
 
     grade_status = []
     for cond in prep.grid.grade:

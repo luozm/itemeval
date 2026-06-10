@@ -42,6 +42,7 @@ solvers:
   max_tokens: 1024             # optional; unset => uncapped (estimate warns)
   top_p: null                  # optional, (0, 1]
   seed: null                   # optional; recorded; only some providers honor it
+  on_empty: skip               # empty (no-error) solutions: skip | rerun | grade (default skip)
 
 facets:
   prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]
@@ -85,6 +86,18 @@ budget:
   pydantic field is internally aliased). Each cell's non-null fields override
   the matching `solvers.*` value for that condition; `reasoning_effort` /
   `reasoning_tokens` exist only on cells.
+- **`solvers.on_empty`**: what to do with a *completed* generation that produced
+  no gradable text (empty/blank `solution`, no API error — typically a reasoning
+  model whose `max_tokens` was spent entirely on hidden reasoning). This is a
+  distinct channel from API errors (always re-attempted) and parse failures
+  (always final). `skip` (default) excludes them from grading; `rerun` also
+  treats them as not-done so a later `generate` re-attempts them (raise
+  `max_tokens` / lower `reasoning_effort` first — an identical request hits the
+  response cache and stays empty); `grade` sends the empty answer to the judge
+  as-is (usually scored low). Either way they are surfaced, never silently
+  counted as complete: `grade` prints the count + stop-reason breakdown and
+  `status` shows an `empty` column. The usual cause is too small a `max_tokens`
+  for a reasoning model — give the cap room for reasoning **plus** the answer.
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
   template in one of two namespaces, never mixed or silently shadowed:
   `builtin:NAME` resolves to a template packaged inside itemeval (run

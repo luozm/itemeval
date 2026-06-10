@@ -32,6 +32,17 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.optional-dependencies]
+# Provider SDKs are optional, mirroring inspect_ai: it imports them lazily and
+# raises a PrerequisiteError when missing. Install the extra for the provider(s)
+# you run, e.g. `pip install itemeval[openai]`. The `openai` extra also covers
+# OpenRouter and other OpenAI-compatible providers, which ride the OpenAI client.
+# Bare names (no floors) defer the version contract to inspect_ai's requirements.
+openai = ["openai"]
+anthropic = ["anthropic"]
+google = ["google-genai"]
+all = ["openai", "anthropic", "google-genai"]
+
 [project.scripts]
 itemeval = "itemeval.cli:main"
 

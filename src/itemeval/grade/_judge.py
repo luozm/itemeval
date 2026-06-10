@@ -35,7 +35,10 @@ JUDGE_FORMAT_SUFFIX = (
 )
 
 
-def build_judge_input(item: Item, solution: str, rubric: Template) -> str:
+def build_judge_input(item: Item, solution: "str | None", rubric: Template) -> str:
+    # `solution` may be null/blank under the `grade` empty-solution policy
+    # (judging an empty answer); pandas hands us a float NaN for null cells.
+    solution = "" if solution is None or solution != solution else str(solution)
     values = {
         "input": item.input,
         "solution": solution,

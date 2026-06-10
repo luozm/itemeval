@@ -258,7 +258,13 @@ def run_generate(
         to_run = (
             list(item_ids)
             if force
-            else _solutions.items_to_run(existing, cond.id, item_ids, prep.plan.replications)
+            else _solutions.items_to_run(
+                existing,
+                cond.id,
+                item_ids,
+                prep.plan.replications,
+                require_solution=prep.config.solvers.on_empty == "rerun",
+            )
         )
         if not to_run:
             reports.append(

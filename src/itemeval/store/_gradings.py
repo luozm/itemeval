@@ -5,6 +5,7 @@ import pyarrow as pa
 
 from itemeval.store._base import read_parquet_or_empty, upsert_parquet
 from itemeval.store._layout import StudyPaths
+from itemeval.store._solutions import empty_solution_mask
 
 GRADING_KEY = ["grade_condition_id", "gen_condition_id", "item_id", "epoch"]
 
@@ -57,14 +58,20 @@ def pending_solutions(
     gradings_df: pd.DataFrame,
     grade_condition_id: str,
     force: bool,
+    *,
+    include_empty: bool = False,
 ) -> pd.DataFrame:
     """Gradable solutions rows not yet finally graded under this grade condition.
 
     A solutions row is pending iff no gradings row exists for
     (grade_condition_id, gen condition, item, epoch) with error null. Rows with
     parse_ok=False are final (not re-run); rows with error set are pending again.
+
+    Empty no-error completions are excluded unless `include_empty=True` (the
+    `grade` empty-solution policy, which grades the empty answer as-is).
     """
-    gradable = solutions_df[solutions_df["error"].isna() & solutions_df["solution"].notna()]
+    base = solutions_df[solutions_df["error"].isna()]
+    gradable = base if include_empty else base[~empty_solution_mask(base)]
     if force or gradings_df.empty:
         return gradable
     done = gradings_df[

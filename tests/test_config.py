@@ -43,6 +43,21 @@ def test_readme_sketch_validates():
     assert cfg.grader_spec("judge_a").model == "openai/gpt-5-mini"
 
 
+def test_on_empty_default_and_validation():
+    import yaml
+
+    cfg = ExperimentConfig.model_validate(yaml.safe_load(README_SKETCH))
+    assert cfg.solvers.on_empty == "skip"  # default
+
+    data = yaml.safe_load(README_SKETCH)
+    data["solvers"]["on_empty"] = "rerun"
+    assert ExperimentConfig.model_validate(data).solvers.on_empty == "rerun"
+
+    data["solvers"]["on_empty"] = "bogus"
+    with pytest.raises(Exception, match="on_empty"):
+        ExperimentConfig.model_validate(data)
+
+
 def test_facets_default_to_builtin_standard():
     import yaml
 

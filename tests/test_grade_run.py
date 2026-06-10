@@ -78,6 +78,80 @@ def test_parse_failures_flagged_never_dropped_and_final(study):
     assert third.parse_failures == 0  # real mock judge emits valid JSON
 
 
+def _seed_solutions(prep, blank_item="1"):
+    """Seed the solutions store directly; blank `blank_item`'s completions
+    (no error) to simulate a truncated/empty generation."""
+    from itemeval.store._solutions import upsert_solutions
+
+    rows = []
+    for cond in prep.grid.generate:
+        for it in prep.items_effective:
+            for epoch in (1, 2):
+                empty = it.id == blank_item
+                rows.append(
+                    {
+                        "study": prep.config.study,
+                        "run_id": "r",
+                        "condition_id": cond.id,
+                        "condition_slug": cond.slug,
+                        "item_id": it.id,
+                        "dataset_id": "d",
+                        "dataset_revision": "v",
+                        "epoch": epoch,
+                        "model": cond.model,
+                        "prompt_name": cond.prompt_name,
+                        "prompt_hash": "h",
+                        "model_config_name": cond.model_config_name,
+                        "solution": None if empty else "ANSWER: 4",
+                        "stop_reason": "max_tokens" if empty else "stop",
+                        "error": None,
+                        "log_file": "lf",
+                        "created_at": "t0",
+                    }
+                )
+    upsert_solutions(prep.paths, rows)
+
+
+def _prep_with_on_empty(study, policy):
+    import yaml
+
+    from itemeval import ExperimentConfig
+    from itemeval._prepare import prepare_study
+
+    cfg, _ = study
+    data = yaml.safe_load(cfg.config_path.read_text())
+    data["solvers"]["on_empty"] = policy
+    cfg2 = ExperimentConfig.model_validate(data)
+    cfg2._config_dir = cfg.config_dir
+    cfg2._work_dir = cfg.work_dir
+    return prepare_study(cfg2)
+
+
+def test_grade_skip_reports_empty_solutions(study):
+    _, prep = study  # default policy: skip
+    _seed_solutions(prep, blank_item="1")
+    result = run_grade(prep)
+    assert result.on_empty == "skip"
+    assert result.empty_total == 4  # item 1 x 2 gen conditions x 2 epochs
+    assert result.empty_skipped == 4
+    assert result.empty_stop_reasons == {"max_tokens": 4}
+    assert result.rows_written == 4  # only item 2's non-empty solutions graded
+    df = read_gradings(prep.paths)
+    assert (df["item_id"] == "2").all()
+
+
+def test_grade_policy_grades_empty_solutions(study):
+    prep = _prep_with_on_empty(study, "grade")
+    _seed_solutions(prep, blank_item="1")
+    result = run_grade(prep)
+    assert result.on_empty == "grade"
+    assert result.empty_total == 4
+    assert result.empty_skipped == 0  # graded as-is, not skipped
+    assert result.rows_written == 8  # all solutions graded, including empties
+    df = read_gradings(prep.paths)
+    assert set(df["item_id"]) == {"1", "2"}
+
+
 def test_grade_grader_rubric_filters(study):
     _, prep = study
     run_generate(prep)

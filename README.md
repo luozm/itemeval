@@ -80,6 +80,7 @@ benchmark:
 solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5, openrouter/deepseek/deepseek-v3.2]
   temperature: 0.7              # recorded; provider-forced values recorded as-is
+  on_empty: skip                # empty (no-error) completions: skip | rerun | grade
 facets:
   prompt: [builtin:minimal, builtin:standard]   # packaged templates; bare name -> prompts/solver/*.md
   grader: [judge_a, judge_b]    # or scorer: exact_match for verifiable benchmarks
@@ -154,10 +155,17 @@ identical results; raw logs allow full re-derivation of every number.
 ## Install
 
 ```bash
-pip install itemeval        # or: uv add itemeval (in a project) / uv tool install itemeval (as a CLI)
+pip install itemeval[openai]   # provider extra; also: [anthropic], [google], [all]
+                               # bare `pip install itemeval` omits provider SDKs
 itemeval init my_study      # scaffold a runnable study (config.yaml only; templates resolve from the package)
 cd my_study && itemeval status config.yaml
 ```
+
+Provider SDKs are optional extras (mirroring inspect_ai's lazy imports): install
+the extra for the provider(s) you call. The `openai` extra also covers
+OpenRouter and other OpenAI-compatible providers. A bare `pip install itemeval`
+runs the free `mockllm/*` path and all no-API commands (`status`, `estimate`);
+calling a real provider without its extra raises a clear install hint.
 
 `init` writes just `config.yaml`; its `builtin:` prompt/rubric references resolve
 from templates packaged inside itemeval, so the study runs with no local files.

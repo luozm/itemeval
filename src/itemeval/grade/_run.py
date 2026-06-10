@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 import inspect_ai
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._errors import StoreError
 from itemeval._manifest import build_manifest, write_manifest
@@ -25,6 +25,7 @@ from itemeval.grade._parse import parse_judge_output
 from itemeval.grade._verifiable import VERIFIABLE_SCORERS
 from itemeval.store import _gradings, _ledger, _logs, _solutions
 from itemeval.store._base import rel_to_study
+from itemeval.store._solutions import empty_solution_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -42,6 +43,10 @@ class GradeResult(BaseModel):
     parse_failures: int
     total_usd: float
     manifest_path: str
+    on_empty: str = "skip"  # solvers.on_empty policy in effect
+    empty_total: int = 0  # scoped empty (no-error) solutions
+    empty_skipped: int = 0  # of those, how many were excluded from grading
+    empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
 
 
 def _base_row(
@@ -168,6 +173,18 @@ def run_grade(
         & (solutions_df["epoch"].astype(int) <= prep.plan.replications)
     ]
 
+    # Empty (no-error) completions: a distinct channel from API errors. The
+    # solvers.on_empty policy decides whether they are graded as-is or skipped;
+    # either way they are surfaced (never silently folded into "complete").
+    on_empty = prep.config.solvers.on_empty
+    include_empty = on_empty == "grade"
+    empties = scoped[empty_solution_mask(scoped)]
+    empty_total = int(len(empties))
+    empty_skipped = 0 if include_empty else empty_total
+    empty_stop_reasons = {
+        str(k): int(v) for k, v in empties["stop_reason"].fillna("(none)").value_counts().items()
+    }
+
     selected = []
     for cond in prep.grid.grade:
         if not matches_filter(cond.id, cond.slug, condition_filter):
@@ -192,7 +209,9 @@ def run_grade(
 
     for cond in selected:
         gradings_df = _gradings.read_gradings(prep.paths)
-        pending = _gradings.pending_solutions(scoped, gradings_df, cond.id, force)
+        pending = _gradings.pending_solutions(
+            scoped, gradings_df, cond.id, force, include_empty=include_empty
+        )
         if pending.empty:
             reports.append(
                 ConditionRunReport(
@@ -301,4 +320,8 @@ def run_grade(
         parse_failures=parse_failures,
         total_usd=total_usd,
         manifest_path=rel_to_study(prep.paths, manifest_path),
+        on_empty=on_empty,
+        empty_total=empty_total,
+        empty_skipped=empty_skipped,
+        empty_stop_reasons=empty_stop_reasons,
     )

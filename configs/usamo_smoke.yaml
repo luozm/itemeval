@@ -14,16 +14,22 @@ benchmark:
 solvers:
   models: [openai/gpt-5-mini]   # real provider — first live-API exercise
   temperature: 0.7             # requested; temp_effective records what the model actually used
-  max_tokens: 1024
+  max_tokens: 2048             # gpt-5-mini is a reasoning model: the cap must cover
+                               # hidden reasoning tokens + the visible answer (a tight
+                               # cap is spent entirely on reasoning → empty solution)
 facets:
   prompt: [builtin:minimal, builtin:standard]  # 2 prompts → exercises grid expansion
   grader: [gpt5_mini_judge]
   rubric: [builtin:standard]
   replications: 2
+  model_config:                # minimal reasoning keeps the smoke cheap, fast, and
+    - name: minimal            # guarantees visible output within the token budget
+      reasoning_effort: minimal
 graders:
   gpt5_mini_judge:
     model: openai/gpt-5-mini
-    max_tokens: 512
+    max_tokens: 1024           # headroom for reasoning + the structured score line
+    reasoning_effort: minimal  # judge is also a reasoning model — same truncation trap
 crossing: full
 budget:
   policy: dev                  # dev: first 2 items; replications kept

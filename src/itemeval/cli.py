@@ -168,6 +168,16 @@ def _cmd_grade(args) -> int:
         f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
         f"spend: {_fmt_usd(result.total_usd)}"
     )
+    if result.empty_total:
+        breakdown = ", ".join(f"{k}×{v}" for k, v in result.empty_stop_reasons.items())
+        if result.empty_skipped:
+            print(
+                f"empty solutions: {result.empty_skipped} excluded from grading "
+                f"[{breakdown}] — on_empty={result.on_empty}; raise max_tokens, or set "
+                f"solvers.on_empty to rerun (regenerate) or grade (score as-is)"
+            )
+        else:
+            print(f"empty solutions: {result.empty_total} graded as-is [{breakdown}]")
     print(f"manifest: {result.manifest_path}")
     return 1 if any(r.status == "error" for r in result.conditions) else 0
 
@@ -230,10 +240,11 @@ def _cmd_status(args) -> int:
             c.detail.get("model_config", ""),
             f"{c.completed}/{c.expected}",
             str(c.errors),
+            str(c.incomplete),
         ]
         for c in report.generate
     ]
-    print(_fmt_table(["condition", "model", "prompt", "config", "done", "err"], rows))
+    print(_fmt_table(["condition", "model", "prompt", "config", "done", "err", "empty"], rows))
     print()
     grade_expected = report.grade[0].expected if report.grade else 0
     print(f"GRADE — {len(report.grade)} condition(s) x {grade_expected} solutions")

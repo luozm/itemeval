@@ -58,13 +58,36 @@ def upsert_solutions(paths: StudyPaths, rows: "list[dict]") -> int:
     return upsert_parquet(paths.solutions, rows, SOLUTION_KEY, SOLUTIONS_SCHEMA)
 
 
+def empty_solution_mask(df: pd.DataFrame) -> pd.Series:
+    """No-error rows whose completion is null/blank (e.g. reasoning truncation).
+
+    These completed without an API error but produced no gradable text. They are
+    a distinct channel from error rows (re-attempted) and parse failures (final).
+    """
+    if df.empty:
+        return pd.Series([], dtype=bool, index=df.index)
+    blank = df["solution"].isna() | (df["solution"].fillna("").astype(str).str.strip() == "")
+    return df["error"].isna() & blank
+
+
 def items_to_run(
-    df: pd.DataFrame, condition_id: str, item_ids: "list[str]", replications: int
+    df: pd.DataFrame,
+    condition_id: str,
+    item_ids: "list[str]",
+    replications: int,
+    *,
+    require_solution: bool = False,
 ) -> "list[str]":
-    """Items (input order preserved) missing any completed epoch 1..replications."""
+    """Items (input order preserved) missing any completed epoch 1..replications.
+
+    `require_solution=True` (the `rerun` empty-solution policy) counts only
+    non-empty completions as done, so empty no-error rows are re-attempted.
+    """
     if df.empty:
         return list(item_ids)
     cond = df[(df["condition_id"] == condition_id) & (df["error"].isna())]
+    if require_solution and not cond.empty:
+        cond = cond[~empty_solution_mask(cond)]
     done_epochs = cond.groupby("item_id")["epoch"].apply(set).to_dict()
     needed = set(range(1, replications + 1))
     return [iid for iid in item_ids if not needed.issubset(done_epochs.get(iid, set()))]

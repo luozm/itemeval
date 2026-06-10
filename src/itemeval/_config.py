@@ -27,6 +27,17 @@ STUDY_RE = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
+# What to do with a *completed* generation that produced no gradable text
+# (empty/blank `solution`, no API error — e.g. a reasoning model whose token
+# budget was spent entirely on hidden reasoning). Distinct from API errors
+# (always re-attempted) and parse failures (always final).
+#   skip  — exclude from grading, but report the count + stop reasons (default)
+#   rerun — also treat as not-done in generate, so a subsequent `generate`
+#           re-attempts them (raise max_tokens / lower reasoning effort first;
+#           an identical request will hit the response cache and stay empty)
+#   grade — send to the judge as-is (an empty answer, typically scored low)
+EmptySolutionPolicy = Literal["skip", "rerun", "grade"]
+
 
 class DatasetSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -64,6 +75,7 @@ class SolversConfig(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
     seed: int | None = None  # recorded; only some providers honor it
+    on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
 
     @field_validator("models")
     @classmethod

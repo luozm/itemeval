@@ -55,6 +55,15 @@ All notable changes to itemeval are documented here. Format follows
   study (`config.yaml`). `--with-templates` also copies the referenced built-in
   prompts/rubrics locally as editable starters. Makes `pip install itemeval`
   usable without cloning the repo.
+- `solvers.on_empty` policy (`skip` default / `rerun` / `grade`) for completed
+  generations that produced no gradable text (empty/blank `solution`, no API
+  error — e.g. a reasoning model whose token budget was spent entirely on
+  hidden reasoning). Empty no-error completions are a distinct channel from API
+  errors (re-attempted) and parse failures (final): `skip` excludes them from
+  grading, `rerun` also makes them eligible for regeneration on the next
+  `generate`, `grade` sends them to the judge as-is. They are always surfaced —
+  `grade` reports the count and stop-reason breakdown, and `status` gains an
+  `empty` column — never silently folded into a green "complete".
 
 ### Changed
 - **Path resolution split by intent** (behavior change). Inputs (`prompts_dir`,
@@ -70,6 +79,12 @@ All notable changes to itemeval are documented here. Format follows
   an unresolved template now fails before any output directory is written.
 
 ### Packaging
+- Provider-SDK optional extras (`openai`, `anthropic`, `google`, `all`),
+  mirroring inspect_ai's lazy provider imports. Install the extra for the
+  provider you run, e.g. `pip install itemeval[openai]` — the `openai` extra
+  also covers OpenRouter and other OpenAI-compatible providers. The base
+  install stays SDK-free; running a real provider without its extra raises
+  inspect_ai's `PrerequisiteError` with the install hint.
 - Ship a `py.typed` marker (PEP 561): downstream type checkers now see
   itemeval's annotations. Added the `Typing :: Typed` and Python 3.11/3.12
   classifiers.

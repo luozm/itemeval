@@ -8,7 +8,7 @@ from itemeval._errors import StoreError
 from itemeval.store._base import read_parquet_or_empty, upsert_parquet
 from itemeval.store._gradings import GRADINGS_SCHEMA, pending_solutions
 from itemeval.store._layout import StudyPaths
-from itemeval.store._solutions import SOLUTIONS_SCHEMA, items_to_run
+from itemeval.store._solutions import SOLUTIONS_SCHEMA, empty_solution_mask, items_to_run
 
 TEST_SCHEMA = pa.schema(
     [
@@ -131,6 +131,32 @@ def test_items_to_run_resume_logic():
     assert items_to_run(empty, "c1", ["1"], 2) == ["1"]
 
 
+def test_empty_solution_mask():
+    df = _sol_df(
+        [
+            _sol_row("c1", "1", 1, solution="text"),  # gradable
+            _sol_row("c1", "1", 2, solution=None),  # empty (null)
+            _sol_row("c1", "2", 1, solution="   "),  # empty (whitespace)
+            _sol_row("c1", "2", 2, solution="", error="boom"),  # error channel, not empty-empty
+        ]
+    )
+    assert empty_solution_mask(df).tolist() == [False, True, True, False]
+    assert empty_solution_mask(_sol_df([]).iloc[0:0]).tolist() == []
+
+
+def test_items_to_run_require_solution_reruns_empties():
+    df = _sol_df(
+        [
+            _sol_row("c1", "1", 1, solution="ok"),
+            _sol_row("c1", "1", 2, solution=None),  # empty, no error
+        ]
+    )
+    # default: an empty no-error row still counts as done (skip/grade policies)
+    assert items_to_run(df, "c1", ["1"], 2) == []
+    # rerun policy: the empty epoch makes item 1 incomplete again
+    assert items_to_run(df, "c1", ["1"], 2, require_solution=True) == ["1"]
+
+
 def _grading_row(grade_cond, gen_cond, item, epoch, error=None, parse_ok=True):
     return {
         "study": "t",
@@ -184,3 +210,29 @@ def test_pending_solutions_rules():
     assert len(pending_solutions(solutions, gradings2, "g1", force=True)) == 2
     # different grade condition sees everything as pending
     assert len(pending_solutions(solutions, gradings, "g2", force=False)) == 2
+
+
+def test_pending_solutions_empty_handling():
+    solutions = _sol_df(
+        [
+            _sol_row("c1", "1", 1, solution="text"),  # gradable
+            _sol_row("c1", "1", 2, solution=None),  # empty (no error)
+            _sol_row("c1", "2", 1, error="gen failed", solution=None),  # error: never gradable
+        ]
+    )
+    empty = _grading_df([])
+    # default: empties excluded; only the non-empty no-error row is pending
+    keys = {
+        (r.item_id, int(r.epoch))
+        for r in pending_solutions(solutions, empty, "g1", force=False).itertuples()
+    }
+    assert keys == {("1", 1)}
+    # include_empty (grade policy): the empty no-error row is now pending too,
+    # but the errored row is still excluded
+    keys_incl = {
+        (r.item_id, int(r.epoch))
+        for r in pending_solutions(
+            solutions, empty, "g1", force=False, include_empty=True
+        ).itertuples()
+    }
+    assert keys_incl == {("1", 1), ("1", 2)}
