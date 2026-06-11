@@ -54,6 +54,11 @@ All notable changes to itemeval are documented here. Format follows
 - `docs/FUTURE.md`: the post-0.1 feature backlog with per-feature design notes
   (motivation, sketch, implementation plan); ROADMAP's "Later" section is now a
   tiered summary pointing at it.
+- `docs/UX-PATTERNS.md`: the binding UX contract for development — two
+  operators (human/agent), eight laws (no silent side effects, advice never
+  acts, native consent, …), the hint framework, a normative side-effect
+  ledger, and a nine-question per-feature checklist. Referenced from
+  CLAUDE.md, DEVELOPMENT.md, and FUTURE.md.
 
 ### Added
 - Per-run savings report: `export` now reports spend against a plain-API list

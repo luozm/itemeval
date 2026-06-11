@@ -5,7 +5,10 @@ Publishable Python package: item-level LLM evaluation on inspect_ai.
 as milestones complete. `DEVELOPMENT.md` defines the inspect_ai upgrade
 pipeline and the versioning/release process — follow it for any dependency
 bump or release; update `CHANGELOG.md` ([Unreleased]) in the same change that
-makes a user-visible difference. Any study consuming this package lives in its
+makes a user-visible difference. `docs/UX-PATTERNS.md` is the binding UX
+contract (no silent side effects, hint framework, consent rules, knob
+buckets) — every feature, new or touched, must pass its development
+checklist. Any study consuming this package lives in its
 own separate repo; never put study-specific content (a particular study's
 datasets, rubric texts, or analysis) in this package.
 

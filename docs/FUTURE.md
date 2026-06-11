@@ -4,7 +4,9 @@ Planning document for post-0.1 features. [ROADMAP.md](../ROADMAP.md) says
 *what* is committed for which release; this file holds the *why and how* for
 everything beyond that — one section per feature: motivation, design sketch,
 implementation notes (which modules change), and open questions. Nothing here
-is promised; sections graduate to ROADMAP when scheduled.
+is promised; sections graduate to ROADMAP when scheduled. Every design here
+must comply with [UX-PATTERNS.md](UX-PATTERNS.md) (the binding UX contract:
+side-effect announcements, hint framework, consent rules, knob buckets).
 
 Tiers reflect adoption value, not effort:
 

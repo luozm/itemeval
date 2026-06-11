@@ -1,7 +1,9 @@
 # Development Guide
 
 Process documentation for maintaining itemeval. For coding conventions see
-`CLAUDE.md`; for milestones see `ROADMAP.md`.
+`CLAUDE.md`; for milestones see `ROADMAP.md`; for the UX contract every
+feature must follow (output, side effects, consent), see
+`docs/UX-PATTERNS.md`.
 
 ## Dependency policy
 
