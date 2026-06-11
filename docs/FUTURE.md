@@ -384,8 +384,24 @@ unreferenced facet values.
 
 ### 2.5 Combine multiple runs on export
 
+**Scope decision (2026-06-11).** The pilot→full lifecycle's *primary* path is
+**grow-in-place**, which already works and costs nothing extra: keep one
+study, edit the config (raise `replications`, flip the policy, add models),
+re-run — resume pays only the delta, the local response cache replays any
+re-issued call free (extending replications 4→6 replays epochs 1–4 at $0),
+and `dev`'s first-N items make the pilot a strict subset of the full run.
+Combining stores cannot save money (both runs already paid); its honest niche
+is pooling *organizationally separate* stores — a frozen pilot artifact,
+different machines/collaborators, a re-run months later. Two consequences:
+(1) a higher-priority sibling feature is a **config-drift warning** — when a
+facet name matches stored rows but its content hash changed, say "prompt
+'standard' changed; previous rows stay under the old condition, this run
+starts fresh" before the gate, turning grow-in-place's one footgun into an
+informed choice; (2) this feature stays narrow as specified below.
+
 **Motivation.** Pool a small pilot with the full follow-up run under the same
-setting into one analysis table (the standard pilot→scale lifecycle).
+setting into one analysis table — when the runs are genuinely separate
+stores (see scope decision above; same-store growth needs no merging).
 
 **Design sketch.** `itemeval export CONFIG --also studies/pilot_study`
 (repeatable). Refuses to merge unless manifests are compatible: same dataset
