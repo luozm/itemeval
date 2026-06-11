@@ -144,6 +144,110 @@ deps (correlations via pandas; no scipy). ~200 lines.
 careful hand-rolling — start with correlations + exact agreement, add alpha
 later if demand shows.
 
+### 1.6 Cache-aware execution scheduling (maximize provider prompt-cache discounts)
+
+**Motivation.** Provider-side prompt caching (input-prefix KV reuse) discounts
+repeated input tokens by ~75–90% — but only when calls are *scheduled* to hit
+it. A cache entry becomes readable only after the first request's response has
+begun, so N identical-prefix calls fired concurrently (inspect's default) all
+miss and pay full price. Replication designs and judge fan-outs are exactly
+the repeated-prefix workloads this discount was built for; today itemeval
+captures it only by accident. Unlike the local response cache ($0 replay of
+identical calls), the provider cache discounts *fresh sampling* — so it is the
+only discount available to replications, which must be independent draws.
+
+**Provider facts the design must respect** (verified 2026-06; per-token rates
+live in the pricing table, refreshed from OpenRouter):
+
+| | activation | granularity | min prefix | write cost | read cost | lifetime |
+|---|---|---|---|---|---|---|
+| Anthropic | opt-in `cache_control` breakpoints | **block boundary** | 1k–4k tokens by model | 1.25× input | 0.1× | 5 min, refreshed on use |
+| OpenAI | automatic | token prefix (~128-token steps) | 1k | free | ~0.1× (GPT-5 family) | 5–10 min (24 h opt-in) |
+| Gemini | implicit (2.5+) / explicit `CachedContent` | token prefix | 2k–4k | free / storage-billed | ~0.1× | minutes / chosen TTL |
+| DeepSeek, Grok, … (via OpenRouter) | automatic | token prefix | varies | free | ~0.25–0.5× | minutes |
+
+Two structural consequences: (a) on token-prefix providers, *ordering and
+staggering* alone unlock partial-prefix reuse; (b) on Anthropic, partial
+reuse additionally requires the shared content to end at a **block boundary
+with a breakpoint** — inspect places one on the last *system* block, but
+itemeval's judge prompt is currently one monolithic user block, so same-item
+judge calls share no cacheable boundary on Anthropic today (byte-identical
+replications are fine: the full block is the shared prefix).
+
+**Design — four phases, each independently shippable:**
+
+*Phase 0 — observability (no behavior change).* Print a per-condition cache
+line in `generate`/`grade` summaries and `status`: cache-read/write token
+totals and hit rate (rows with `cache_read_tokens > 0` / rows). The columns
+already exist; this makes the win (or its absence) visible before and after
+each later phase. Files: `generate/_run.py`, `grade/_run.py`, `_status.py`.
+
+*Phase 1 — ordering and config (cheap, low risk).*
+- Sort the judge dataset by `item_id` (then gen-condition, epoch) so
+  same-prefix calls are adjacent in the schedule — with bounded
+  `max_connections`, adjacency alone converts much of each group's tail into
+  cache reads on token-prefix providers. File: `grade/_judge.py` (the
+  `pending` iteration order).
+- Opt the generate stage into `cache_prompt` when `replications > 1`
+  (currently grade-only) — identical epochs share the full prompt, so
+  Anthropic replications become cacheable with no prompt restructuring.
+  New config `solvers.cache_prompt: auto|on|off` (default `auto` = on when
+  replications > 1). Files: `generate/_task.py`, `_config.py`.
+- Investigate passing OpenAI's `prompt_cache_key` (per-group routing) and
+  `prompt_cache_retention: "24h"` through inspect's config; if supported,
+  set the key per cache group and retention for multi-phase runs.
+
+*Phase 2 — warm-then-fan-out gate (the core).* A `cache_gate` solver inserted
+before `generate()` in both stages' solver chains. Samples carry a
+`cache_group` key in metadata (generate: `item_id` when replications > 1;
+grade: `item_id`). Within the eval's asyncio loop the solver does per-group
+leader election: the first arrival runs immediately; followers `await` the
+group's `asyncio.Event` (set when the leader's call returns, with a timeout +
+error fallback so a failed leader never blocks the group), then proceed
+concurrently. Leaders of different groups still run in parallel, so wall-time
+cost is roughly one extra call-latency per group — negligible once group
+count exceeds `max_connections`. Because the leader→follower gap is seconds,
+TTL expiry within a group is a non-issue and no chunking machinery is needed.
+Config: `budget.cache_schedule: auto|off` (default `auto` = gate only when
+the provider caches, the estimated shared prefix ≥ the provider minimum, and
+group size ≥ 2). Disabled under batch mode (batch processing reorders calls
+anyway; cache hits there are best-effort bonus). New file
+`generate/_cachegate.py` (~80 lines) + wiring in both task builders.
+
+*Phase 3 — block-structured judge prompts (Anthropic partial-prefix reuse).*
+Split the rendered rubric at the `{solution}` placeholder: everything before
+it (rubric header + problem + grading scheme + reference) becomes a *system*
+message, the solution (+ format suffix) the user message. inspect already
+puts an explicit cache breakpoint on the last system block, so the boundary
+lands exactly at shared/varying — same-item judge calls then read the long
+shared prefix at 0.1× on Anthropic, and token-prefix providers are unaffected
+(system+user concatenate into the same token stream). Caveats: judge-behavior
+shift (rubric as system vs user) must be validated on a pilot; the rendered
+content is unchanged so template hashes stay stable, but record the render
+mode in the manifest and condition payload so the change starts fresh
+conditions rather than silently mixing. Files: `grade/_judge.py`
+(`build_judge_input` → message list), `design/_grid.py` (payload),
+`_manifest.py`.
+
+*Phase 4 — provider-accurate cache pricing.* The default math (read 0.1×,
+write 1.25×) is exact for Anthropic but overcharges OpenAI/Gemini writes
+(free). Default `cache_write_usd_per_mtok` to 0 for non-Anthropic providers
+unless the pricing table says otherwise, and surface "realized vs achievable"
+cache savings in the export savings report using Phase-0 hit rates. Files:
+`budget/_pricing.py`, `budget/_report.py`.
+
+**Expected effect** (input-side, shared-prefix portion): a judge condition
+with K solutions per item pays ≈ `(write + 0.1·(K−1))/K` of list — for K=12,
+~80% off on Anthropic and ~82% on OpenAI, versus ~0% today under concurrent
+misses. N=4 replications: ~61% (Anthropic) / ~67% (OpenAI) off the prompt
+tokens. Output tokens are never discounted, so end-to-end impact is largest
+for judge stages (long inputs, short outputs).
+
+**Out of scope.** Gemini *explicit* `CachedContent` management (billable
+storage objects with their own lifecycle — revisit only if implicit caching
+proves insufficient); cross-run cache persistence (TTLs are minutes; cross-run
+reuse is the local response cache's job).
+
 ---
 
 ## Tier 2 — measurement depth

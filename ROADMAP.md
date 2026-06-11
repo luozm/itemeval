@@ -71,6 +71,10 @@ to a versioned section above when scheduled.
   normalized exact match)
 - Reliability & agreement report (`itemeval report`) — descriptive judge
   agreement / item difficulty / replication consistency over the export table
+- Cache-aware execution scheduling — order, group, and stagger calls
+  (warm-then-fan-out) so replications and judge fan-outs actually hit provider
+  prompt caches (~75–90% off repeated input tokens), plus cache-hit-rate
+  reporting and provider-accurate cache pricing
 
 **Tier 2 — measurement depth:**
 
