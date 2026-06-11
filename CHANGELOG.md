@@ -37,6 +37,9 @@ All notable changes to itemeval are documented here. Format follows
     rates from OpenRouter.
 
 ### Documentation
+- New wiki page **Cost Savings**: every saving option in plain language with
+  measured price/time trade-offs, defaults, and direct-API-vs-OpenRouter
+  guidance; developer-depth counterpart in `docs/COST-OPTIMIZATION.md`.
 - Five step-by-step tutorials in the wiki, each a complete runnable use case:
   score a verifiable benchmark (~2¢), grade with an LLM judge, compare models ×
   prompts with replications (+ pandas/mixed-model analysis), add a second

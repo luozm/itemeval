@@ -105,6 +105,9 @@ Programmatically the same provenance is on `Estimate.pricing` and
 `age_days`, `refreshed`), and `PreparedStudy.pricing_refreshed` flags whether a
 live refresh ran during preparation.
 
+> Plain-language overview of every saving option, with measured price/time
+> trade-offs and defaults: [Cost Savings](Cost-Savings.md).
+
 ## Provider prompt caching (input-side discounts)
 
 Providers discount input tokens whose prefix they recently processed
