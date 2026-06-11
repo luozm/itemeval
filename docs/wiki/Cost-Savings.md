@@ -22,12 +22,22 @@ Solutions are stored once. Adding another judge model or another rubric later
 re-grades the *stored* answers — you never pay for generation again. This is
 how itemeval works; nothing to configure.
 
-### 2. Free re-runs and resume — automatic
+### 2. Never pay for the same call twice — automatic
 
-Every completed call is saved on your machine. Re-running a study, resuming
-after an interruption, or retrying after a crash re-pays **nothing** — repeated
-calls are answered from disk, byte-for-byte identical, $0.
-**Trade-off:** none. **Limit:** the saved answers live on *your* machine — a
+Strictly speaking this is insurance, not a discount: it makes *repeated* work
+free rather than making necessary work cheaper. Your results themselves are
+safe in the study's data files regardless — this is about the API calls.
+Two layers:
+
+- **Resume**: re-running a command skips work that's already done — completed
+  calls aren't even attempted after an interruption or crash.
+- **Call memo**: if an identical call *is* issued again (extending
+  replications, `--force` after a fix, duplicate judge inputs), it's answered
+  from your disk for $0 instead of re-billed.
+
+In practice this matters because iterating *is* the workflow — you will
+re-run things, and none of it re-bills.
+**Trade-off:** none. **Limit:** the memo lives on *your* machine — a
 different computer starts fresh.
 
 ### 3. Provider "seen this before" discounts — on by default, two opt-ins
