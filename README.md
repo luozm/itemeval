@@ -9,7 +9,7 @@ returns a long-format table with one row per grading event — every score,
 judge rationale, token count, and dollar — plus full raw logs. Built as a thin,
 design-driven layer on [inspect_ai](https://inspect.aisi.org.uk), it is made
 for item-response-level analysis (psychometrics, IRT, mixed-model, judge
-reliability), never just aggregate scores.
+reliability), **never just aggregate scores**.
 
 **Status: v0.1.0 — first public release.**
 See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
