@@ -134,6 +134,21 @@ OpenRouter):
   routes byte-identical duplicate judge calls into the local response cache
   at $0. Disabled under batch mode.
 
+Direct API vs OpenRouter (both validated live):
+
+- On the **direct OpenAI and Anthropic APIs**, the scheduler is decisive: in
+  the verification runs the gated arms roughly **halved** total cost versus
+  concurrent bursts (direct OpenAI replications: 0% → 90% hit rows; direct
+  Anthropic: 40% → 80-90%). Through **OpenRouter**, the proxy's own stagger
+  and sticky routing made bursts cache well already — the gate neither helped
+  nor hurt much there.
+- On the **direct Anthropic API**, monolithic single-message prompts do cache
+  (the provider auto-caches the last block), so `split_prompt` is optional —
+  though split still wins when the template head is shared across items (one
+  cache write instead of one per item). **Through OpenRouter**, the split
+  layouts are required for Anthropic-family models: single-block text prompts
+  get no cache marker at all.
+
 Caveats: Anthropic-family models only cache prefixes above a per-model
 minimum (1k–4k tokens — a too-short shared head silently caches nothing);
 cache lifetimes are minutes, so the discount applies within a run, not across

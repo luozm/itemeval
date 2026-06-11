@@ -157,11 +157,15 @@ later if demand shows.
 > inspect→OpenRouter — the split layouts are *required* there, and they
 > halved a real judge bill (78% input-side discount vs 0% monolithic);
 > (2) the shared head must clear the per-model minimum (4096 tokens for
-> Haiku 4.5) or caching silently no-ops; (3) concurrent bursts cached well
-> on both OpenAI and Anthropic upstreams — the gate's measured value was
-> routing byte-identical duplicate calls into the free local response cache,
-> not beating the burst; (4) OpenRouter may route Anthropic models to
-> Bedrock, which ignores the markers — pin the provider for cached runs.
+> Haiku 4.5) or caching silently no-ops; (3) provider path matters for the
+> gate: on the DIRECT OpenAI/Anthropic APIs the warm-then-fan-out gate
+> roughly halved cost vs concurrent bursts (direct OpenAI 0%→90% hit rows,
+> direct Anthropic 40%→80-90%), while through OpenRouter the proxy's stagger
+> and sticky routing made bursts cache well on their own; the gate also
+> routes byte-identical duplicate judge calls into the free local response
+> cache; on direct Anthropic, monolithic prompts auto-cache (split optional
+> there, required via OpenRouter); (4) OpenRouter may route Anthropic models
+> to Bedrock, which ignores the markers — pin the provider for cached runs.
 > Remaining ideas below (per-group `prompt_cache_key`, prefix-keyed gating
 > refinements) stay open.
 
