@@ -386,6 +386,10 @@ unreferenced facet values.
 
 ### 2.5 Combine multiple runs on export
 
+> Detailed, session-ready implementation plan for the grow-in-place UX
+> (scale-up affordances · snapshots + study cards · waves):
+> [docs/plans/growth-ux.md](plans/growth-ux.md).
+
 **Scope decision (2026-06-11).** The pilot→full lifecycle's *primary* path is
 **grow-in-place**, which already works and costs nothing extra: keep one
 study, edit the config (raise `replications`, flip the policy, add models),
