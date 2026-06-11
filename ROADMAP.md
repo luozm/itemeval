@@ -41,6 +41,14 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
 
 ## 0.2 (in progress)
 
+- ✅ 2026-06-11 — Cache-aware execution scheduling (FUTURE.md §1.6), validated
+  live: provider cache observability in run summaries; `solvers.cache_prompt`
+  + `solvers.split_prompt`; `graders.<name>.split_rubric` (halved a real
+  Anthropic judge bill in the pilot — 78% input-side discount vs 0% for the
+  monolithic layout); `budget.cache_schedule` warm-then-fan-out gate + judge
+  dataset ordering; provider-aware cache-write pricing and OpenRouter cache
+  rates in pricing refresh.
+
 - ✅ 2026-06-10 — Progress display on by default for `generate`/`grade`: the
   `--display` flag and the `run_generate`/`run_grade` `display` argument now
   default to inspect's `rich` live display (honoring `INSPECT_DISPLAY`,

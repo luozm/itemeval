@@ -146,6 +146,25 @@ later if demand shows.
 
 ### 1.6 Cache-aware execution scheduling (maximize provider prompt-cache discounts)
 
+> **Status: SHIPPED in 0.2 (2026-06-11)** and validated in a live pilot
+> (~$2.2 via OpenRouter). What landed: cache observability in run summaries;
+> judge dataset ordering; `solvers.cache_prompt`; `budget.cache_schedule`
+> (warm-then-fan-out gate); `graders.<name>.split_rubric` and
+> `solvers.split_prompt` (shared head → system message, where the provider
+> breakpoint lands); provider-aware cache-write pricing + OpenRouter cache
+> rates in `--refresh-pricing`. Pilot findings that amended the design:
+> (1) single-block text prompts get **no** Anthropic cache marker through
+> inspect→OpenRouter — the split layouts are *required* there, and they
+> halved a real judge bill (78% input-side discount vs 0% monolithic);
+> (2) the shared head must clear the per-model minimum (4096 tokens for
+> Haiku 4.5) or caching silently no-ops; (3) concurrent bursts cached well
+> on both OpenAI and Anthropic upstreams — the gate's measured value was
+> routing byte-identical duplicate calls into the free local response cache,
+> not beating the burst; (4) OpenRouter may route Anthropic models to
+> Bedrock, which ignores the markers — pin the provider for cached runs.
+> Remaining ideas below (per-group `prompt_cache_key`, prefix-keyed gating
+> refinements) stay open.
+
 **Motivation.** Provider-side prompt caching (input-prefix KV reuse) discounts
 repeated input tokens by ~75–90% — but only when calls are *scheduled* to hit
 it. A cache entry becomes readable only after the first request's response has

@@ -44,6 +44,10 @@ class ConditionRunReport(BaseModel):
     usd: float | None  # None when model unpriced
     log_file: str | None  # relative to study_dir
     message: str | None = None  # eval-level error detail
+    # Provider prompt-cache activity (0 when the provider reported none):
+    cache_read_tokens: int = 0  # input tokens served from the provider cache
+    cache_write_tokens: int = 0  # input tokens written to the provider cache
+    cache_hit_rows: int = 0  # rows with cache_read_tokens > 0
 
 
 class GenerateResult(BaseModel):
@@ -96,6 +100,7 @@ def usd_for_usage(
         usage.output_tokens,
         usage.input_tokens_cache_read,
         usage.input_tokens_cache_write,
+        model=model,
     )
     if batch is not None and provider_of(model) in BATCH_PROVIDERS:
         value *= 0.5  # documented approximation; provider invoices authoritative
@@ -182,6 +187,15 @@ def ledger_row(
         "priced": bool(usd_vals),
         "batch": batch is not None,
         "created_at": utc_now_iso(),
+    }
+
+
+def cache_columns(rows: "list[dict]") -> "dict[str, int]":
+    """Provider prompt-cache totals over a condition's rows (Phase 0 observability)."""
+    return {
+        "cache_read_tokens": sum(r["cache_read_tokens"] or 0 for r in rows),
+        "cache_write_tokens": sum(r["cache_write_tokens"] or 0 for r in rows),
+        "cache_hit_rows": sum(1 for r in rows if (r["cache_read_tokens"] or 0) > 0),
     }
 
 
@@ -309,6 +323,16 @@ def run_generate(
             )
             continue
         items = [it for it in prep.items_effective if it.id in set(to_run)]
+        # Provider prompt-cache knobs: explicit Anthropic-style markers when
+        # cache_prompt resolves on, and warm-then-fan-out gating of same-prefix
+        # groups (epochs) unless disabled or running through a batch API.
+        cp = prep.config.solvers.cache_prompt
+        cache_prompt = (
+            True
+            if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
+            else (False if cp == "off" else None)
+        )
+        cache_schedule = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
         task = build_generate_task(
             items,
             cond,
@@ -318,6 +342,8 @@ def run_generate(
             prep.config.cache,
             prep.origins,
             batch=prep.plan.batch,
+            cache_prompt=cache_prompt,
+            cache_schedule=cache_schedule,
         )
         try:
             # Serial eval per condition: inspect's eval is one-at-a-time per process.
@@ -390,6 +416,7 @@ def run_generate(
                 errors=sum(1 for r in rows if r["error"] is not None),
                 usd=cond_usd,
                 log_file=rel_to_study(prep.paths, log.location),
+                **cache_columns(rows),
             )
         )
 

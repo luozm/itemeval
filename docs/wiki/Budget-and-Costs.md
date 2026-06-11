@@ -105,6 +105,42 @@ Programmatically the same provenance is on `Estimate.pricing` and
 `age_days`, `refreshed`), and `PreparedStudy.pricing_refreshed` flags whether a
 live refresh ran during preparation.
 
+## Provider prompt caching (input-side discounts)
+
+Providers discount input tokens whose prefix they recently processed
+(~75–90% off cache reads). itemeval schedules and shapes calls to hit these
+caches, and reports the activity per condition (`cache_read=… cache_write=…
+hit_rows=…` in run summaries; `cache_read_tokens`/`cache_write_tokens` on
+every row).
+
+What engages it (all validated live; numbers from the validation pilot via
+OpenRouter):
+
+- **Replications** share the full prompt across epochs. OpenAI-family models
+  cache automatically (~79% input-side discount observed). For
+  Anthropic-family models set `solvers.split_prompt: true` so the static
+  template head becomes a system message carrying an explicit cache
+  breakpoint (66–78% observed).
+- **Judge fan-out**: set `graders.<name>.split_rubric: true` to render the
+  shared head (rubric + problem + scheme + reference) as a system message and
+  the solution as the user message. On an Anthropic judge this **halved the
+  total judge bill** (78% input-side discount); the default monolithic layout
+  cached nothing there. Either layout caches on OpenAI-family judges.
+  Both `split_*` options change condition ids (the layout is part of the
+  design cell).
+- **Scheduling** (`budget.cache_schedule: auto`, the default): judge datasets
+  are sorted so same-prefix calls are adjacent, and same-prefix groups run
+  warm-then-fan-out (a leader writes the cache, followers read). It also
+  routes byte-identical duplicate judge calls into the local response cache
+  at $0. Disabled under batch mode.
+
+Caveats: Anthropic-family models only cache prefixes above a per-model
+minimum (1k–4k tokens — a too-short shared head silently caches nothing);
+cache lifetimes are minutes, so the discount applies within a run, not across
+days (cross-run reuse is the local response cache's job); and through
+OpenRouter, routing can land on upstreams that ignore cache markers (e.g.
+Bedrock) — pin the provider for serious Anthropic-cached runs.
+
 ## Where actual costs come from
 
 Per-sample token usage from inspect logs × the pricing table, recorded on

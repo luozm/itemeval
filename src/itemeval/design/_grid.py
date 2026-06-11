@@ -52,6 +52,7 @@ class GenCondition(BaseModel):
     prompt_hash: str  # 12 hex
     model_config_name: str
     gen_params: GenParams
+    split_prompt: bool = False  # render prompt as system(shared head)+user(item)
     payload: dict
 
 
@@ -68,6 +69,7 @@ class GradeCondition(BaseModel):
     rubric_name: str | None = None
     rubric_hash: str | None = None
     scorer: str | None = None
+    split_rubric: bool = False  # render rubric as system(shared)+user(solution)
     payload: dict
 
 
@@ -98,6 +100,10 @@ def expand_generate_grid(
                     },
                     "prompt": {"name": prompt_name, "hash": template.hash12},
                 }
+                if config.solvers.split_prompt:
+                    # Only present when enabled so pre-existing condition ids
+                    # are unchanged for the default single-message layout.
+                    payload["layout"] = "split"
                 cond_id, slug = make_condition_id(
                     [model_short(model), prompt_name, mc.name], payload
                 )
@@ -110,6 +116,7 @@ def expand_generate_grid(
                         prompt_hash=template.hash12,
                         model_config_name=mc.name,
                         gen_params=params,
+                        split_prompt=config.solvers.split_prompt,
                         payload=payload,
                     )
                 )
@@ -146,6 +153,10 @@ def expand_grade_grid(
                 "rubric": {"name": rubric_name, "hash": template.hash12},
                 "format": JUDGE_FORMAT_VERSION,
             }
+            if spec.split_rubric:
+                # Only present when enabled so pre-existing condition ids are
+                # unchanged for the default single-message layout.
+                payload["layout"] = "split"
             cond_id, slug = make_condition_id([grader_name, rubric_name], payload)
             conditions.append(
                 GradeCondition(
@@ -158,6 +169,7 @@ def expand_grade_grid(
                     grader_reasoning_effort=spec.reasoning_effort,
                     rubric_name=rubric_name,
                     rubric_hash=template.hash12,
+                    split_rubric=spec.split_rubric,
                     payload=payload,
                 )
             )

@@ -76,6 +76,25 @@ class SolversConfig(BaseModel):
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
     seed: int | None = None  # recorded; only some providers honor it
     on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
+    # Provider prompt caching for the generate stage (Anthropic-style explicit
+    # cache_control markers; token-prefix providers like OpenAI cache
+    # automatically regardless). "auto" enables it when replications > 1 —
+    # epochs send byte-identical prompts, the textbook cacheable workload.
+    cache_prompt: Literal["auto", "on", "off"] = "auto"
+    # Render the solver prompt as two messages split at {input}: the static
+    # template head becomes a system message — where providers with
+    # block-granular prompt caching (Anthropic) get an explicit cache
+    # breakpoint — and the item the user message. The concatenated text is
+    # unchanged. Changes generate condition ids when enabled.
+    split_prompt: bool = False
+
+    @field_validator("cache_prompt", mode="before")
+    @classmethod
+    def _yaml_bool_cache_prompt(cls, v: object) -> object:
+        # YAML 1.1 parses bare on/off as booleans; accept them as intended.
+        if isinstance(v, bool):
+            return "on" if v else "off"
+        return v
 
     @field_validator("models")
     @classmethod
@@ -136,6 +155,12 @@ class GraderSpec(BaseModel):
     model: str
     max_tokens: int | None = Field(default=2048, ge=1)
     reasoning_effort: ReasoningEffort | None = None
+    # Render the rubric as two messages split at {solution}: the shared head
+    # (rubric + problem + scheme + reference) becomes a system message — where
+    # an explicit provider cache breakpoint lands — and the solution the user
+    # message. Lets same-item judge calls share a cached prefix on providers
+    # with block-granular caching (Anthropic). Changes the grade condition id.
+    split_rubric: bool = False
 
 
 class BudgetConfig(BaseModel):
@@ -152,6 +177,19 @@ class BudgetConfig(BaseModel):
     # this many days old (best-effort; failures keep the stale table). None
     # disables it; ignored when pricing_path pins an explicit table.
     pricing_max_age_days: float | None = Field(default=None, ge=0.0)
+    # Warm-then-fan-out scheduling of same-prefix calls so replications and
+    # judge fan-outs hit provider prompt caches (see docs/FUTURE.md §1.6).
+    # "auto" gates whenever a condition has same-prefix groups of ≥2 calls and
+    # batch mode is off; "off" disables scheduling entirely.
+    cache_schedule: Literal["auto", "off"] = "auto"
+
+    @field_validator("cache_schedule", mode="before")
+    @classmethod
+    def _yaml_bool_cache_schedule(cls, v: object) -> object:
+        # YAML 1.1 parses bare off as boolean False; accept it as intended.
+        if isinstance(v, bool):
+            return "auto" if v else "off"
+        return v
 
 
 class ExperimentConfig(BaseModel):

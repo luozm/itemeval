@@ -13,6 +13,7 @@ from itemeval.design._grid import GradeCondition
 from itemeval.generate._run import (
     ConditionRunReport,
     ModelFactory,
+    cache_columns,
     endpoint_info,
     ledger_row,
     log_index_row,
@@ -247,6 +248,9 @@ def run_grade(
                 prep.config.study,
                 prep.config.cache,
                 batch=prep.plan.batch,
+                cache_schedule=(
+                    prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
+                ),
             )
             try:
                 logs = inspect_ai.eval(
@@ -313,6 +317,7 @@ def run_grade(
                 errors=sum(1 for r in rows if r["error"] is not None),
                 usd=cond_usd,
                 log_file=log_file,
+                **cache_columns(rows),
             )
         )
 

@@ -43,6 +43,8 @@ solvers:
   top_p: null                  # optional, (0, 1]
   seed: null                   # optional; recorded; only some providers honor it
   on_empty: skip               # empty (no-error) solutions: skip | rerun | grade (default skip)
+  cache_prompt: auto           # provider prompt caching for generation: auto|on|off (auto = on when replications > 1)
+  split_prompt: false          # render prompt as system(template head)+user(item) for provider cache breakpoints; changes condition ids
 
 facets:
   prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]
@@ -62,6 +64,7 @@ graders:                       # resolves facets.grader names
     model: openai/gpt-5-mini   # required; judge temperature is pinned to 0.0 in v0.1
     max_tokens: 2048           # default 2048
     reasoning_effort: null
+    split_rubric: false        # rubric head as system msg + solution as user msg (provider cache breakpoint); changes condition ids
 
 crossing: full                 # only "full" in v0.1
 
@@ -73,6 +76,7 @@ budget:
   dev_items: 2                 # dev policy: first N items (default 2)
   dev_replications: null       # dev policy: cap replications (default: keep)
   pricing_path: null           # explicit pricing JSON (else user cache, else packaged seed)
+  cache_schedule: auto         # warm-then-fan-out scheduling of same-prefix calls: auto | off
 ```
 
 ## Field notes

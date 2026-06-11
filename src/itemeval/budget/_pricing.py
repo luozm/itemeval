@@ -22,7 +22,10 @@ class ModelPrice(BaseModel):
     input_usd_per_mtok: float
     output_usd_per_mtok: float
     cache_read_usd_per_mtok: float | None = None  # None -> 0.1 * input
-    cache_write_usd_per_mtok: float | None = None  # None -> 1.25 * input
+    # None -> 1.25 * input for Anthropic-style explicit caching (write
+    # surcharge); 0 for providers with free automatic cache writes (OpenAI,
+    # Gemini implicit, DeepSeek, ...). See cache_write_default().
+    cache_write_usd_per_mtok: float | None = None
 
 
 class PricingTable(BaseModel):
@@ -83,7 +86,19 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             out = float(pricing["completion"]) * 1e6
         except (KeyError, TypeError, ValueError):
             continue
-        price = ModelPrice(input_usd_per_mtok=inp, output_usd_per_mtok=out)
+
+        def _opt(key: str) -> "float | None":
+            try:
+                return float(pricing[key]) * 1e6  # noqa: B023 (loop var read eagerly)
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        price = ModelPrice(
+            input_usd_per_mtok=inp,
+            output_usd_per_mtok=out,
+            cache_read_usd_per_mtok=_opt("input_cache_read"),
+            cache_write_usd_per_mtok=_opt("input_cache_write"),
+        )
         table.models[f"openrouter/{model_id}"] = price
         if model_id not in table.models:  # seed wins for native ids
             table.models[model_id] = price
@@ -160,19 +175,38 @@ def lookup_price(table: PricingTable, model: str) -> "ModelPrice | None":
     return None
 
 
+def anthropic_style_caching(model: "str | None") -> bool:
+    """Whether `model` bills cache writes Anthropic-style (1.25x surcharge).
+
+    Anthropic models — called natively or through OpenRouter — charge a write
+    surcharge for explicit cache_control caching. Token-prefix providers
+    (OpenAI, Gemini implicit, DeepSeek, Grok, ...) cache automatically with
+    free writes. Unknown (None) models keep the conservative surcharge.
+    """
+    if model is None:
+        return True
+    segments = model.split("/")
+    return "anthropic" in segments[:2]
+
+
+def cache_write_default(price: ModelPrice, model: "str | None") -> float:
+    if price.cache_write_usd_per_mtok is not None:
+        return price.cache_write_usd_per_mtok
+    return 1.25 * price.input_usd_per_mtok if anthropic_style_caching(model) else 0.0
+
+
 def cost_usd(
     price: ModelPrice,
     input_tokens: "int | None",
     output_tokens: "int | None",
     cache_read: "int | None" = 0,
     cache_write: "int | None" = 0,
+    model: "str | None" = None,
 ) -> float:
     crp = price.cache_read_usd_per_mtok
-    cwp = price.cache_write_usd_per_mtok
     if crp is None:
         crp = 0.1 * price.input_usd_per_mtok
-    if cwp is None:
-        cwp = 1.25 * price.input_usd_per_mtok
+    cwp = cache_write_default(price, model)
     return (
         (input_tokens or 0) * price.input_usd_per_mtok
         + (output_tokens or 0) * price.output_usd_per_mtok

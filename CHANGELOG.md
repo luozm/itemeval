@@ -6,6 +6,36 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **Cache-aware execution scheduling** (docs/FUTURE.md §1.6, validated in a
+  live pilot): maximize provider prompt-cache discounts (~75–90% off repeated
+  input tokens).
+  - Cache observability: `generate`/`grade` per-condition summaries report
+    provider cache reads/writes and hit rate; `ConditionRunReport` gains
+    `cache_read_tokens` / `cache_write_tokens` / `cache_hit_rows`.
+  - `graders.<name>.split_rubric`: render the rubric as a system message
+    (shared head: rubric + problem + scheme + reference) plus a user message
+    (the solution), placing the provider cache breakpoint exactly at the
+    shared/varying boundary. In the validation pilot this **halved the judge
+    bill** on an Anthropic judge via OpenRouter (78% input-side discount;
+    the monolithic layout cached nothing). Changes grade condition ids when
+    enabled.
+  - `solvers.split_prompt`: the analogous split for solver prompts at
+    `{input}` (static template head → system message). Required for
+    Anthropic-style caching of generate calls through OpenRouter; 66–78%
+    input-side discount on replications in the pilot.
+  - `solvers.cache_prompt` (`auto`/`on`/`off`, default `auto` = on when
+    replications > 1): provider prompt caching for the generate stage.
+  - `budget.cache_schedule` (`auto`/`off`): warm-then-fan-out gating of
+    same-prefix call groups (leader writes the cache, followers read). Also
+    routes byte-identical duplicate judge calls into inspect's local response
+    cache ($0). Judge datasets are now sorted by item so same-prefix calls
+    are adjacent.
+  - Pricing: cache write defaults to $0 for non-Anthropic-style models
+    (OpenAI/Gemini/DeepSeek writes are free; Anthropic keeps the 1.25×
+    surcharge); `--refresh-pricing` now also pulls per-model cache read/write
+    rates from OpenRouter.
+
 ### Documentation
 - Five step-by-step tutorials in the wiki, each a complete runnable use case:
   score a verifiable benchmark (~2¢), grade with an LLM judge, compare models ×

@@ -137,9 +137,16 @@ def _print_reports(reports) -> None:
         elif rep.status == "error":
             print(f"[{i}/{total}] {rep.condition_id}  ERROR: {rep.message}")
         else:
+            cache = ""
+            if rep.cache_read_tokens or rep.cache_write_tokens:
+                hit_pct = 100.0 * rep.cache_hit_rows / max(rep.rows_written, 1)
+                cache = (
+                    f" cache_read={rep.cache_read_tokens} "
+                    f"cache_write={rep.cache_write_tokens} hit_rows={hit_pct:.0f}%"
+                )
             print(
                 f"[{i}/{total}] {rep.condition_id}  items={rep.items_run} "
-                f"rows=+{rep.rows_written} errors={rep.errors} usd={_fmt_usd(rep.usd)}"
+                f"rows=+{rep.rows_written} errors={rep.errors} usd={_fmt_usd(rep.usd)}{cache}"
             )
 
 

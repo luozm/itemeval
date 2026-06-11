@@ -71,8 +71,8 @@ def cost_report(ledger: "pd.DataFrame", pricing: PricingTable) -> CostReport:
         cache_read = _int(row.cache_read_tokens)
         cache_write = _int(row.cache_write_tokens)
 
-        after_cache = cost_usd(price, in_tok, out_tok, cache_read, cache_write)
-        base = cost_usd(price, in_tok + cache_read + cache_write, out_tok, 0, 0)
+        after_cache = cost_usd(price, in_tok, out_tok, cache_read, cache_write, model=model)
+        base = cost_usd(price, in_tok + cache_read + cache_write, out_tok, 0, 0, model=model)
         act = after_cache * 0.5 if bool(row.batch) else after_cache
 
         actual += act
