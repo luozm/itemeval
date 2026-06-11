@@ -105,59 +105,29 @@ Programmatically the same provenance is on `Estimate.pricing` and
 `age_days`, `refreshed`), and `PreparedStudy.pricing_refreshed` flags whether a
 live refresh ran during preparation.
 
-> Plain-language overview of every saving option, with measured price/time
-> trade-offs and defaults: [Cost Savings](Cost-Savings.md).
+## Provider prompt caching (how it's priced and reported)
 
-## Provider prompt caching (input-side discounts)
+Providers discount input tokens whose prefix they recently processed.
+**Which options engage this, their measured price/time trade-offs, and when
+to use them live in [Cost Savings](Cost-Savings.md)** (`cache_schedule`,
+`split_prompt`, `split_rubric`, direct API vs OpenRouter). This page covers
+only the accounting:
 
-Providers discount input tokens whose prefix they recently processed
-(~75–90% off cache reads). itemeval schedules and shapes calls to hit these
-caches, and reports the activity per condition (`cache_read=… cache_write=…
-hit_rows=…` in run summaries; `cache_read_tokens`/`cache_write_tokens` on
-every row).
-
-What engages it (all validated live; numbers from the validation pilot via
-OpenRouter):
-
-- **Replications** share the full prompt across epochs. OpenAI-family models
-  cache automatically (~79% input-side discount observed). For
-  Anthropic-family models set `solvers.split_prompt: true` so the static
-  template head becomes a system message carrying an explicit cache
-  breakpoint (66–78% observed).
-- **Judge fan-out**: set `graders.<name>.split_rubric: true` to render the
-  shared head (rubric + problem + scheme + reference) as a system message and
-  the solution as the user message. On an Anthropic judge this **halved the
-  total judge bill** (78% input-side discount); the default monolithic layout
-  cached nothing there. Either layout caches on OpenAI-family judges.
-  Both `split_*` options change condition ids (the layout is part of the
-  design cell).
-- **Scheduling** (`budget.cache_schedule: auto`, the default): judge datasets
-  are sorted so same-prefix calls are adjacent, and same-prefix groups run
-  warm-then-fan-out (a leader writes the cache, followers read). It also
-  routes byte-identical duplicate judge calls into the local response cache
-  at $0. Disabled under batch mode.
-
-Direct API vs OpenRouter (both validated live):
-
-- On the **direct OpenAI and Anthropic APIs**, the scheduler is decisive: in
-  the verification runs the gated arms roughly **halved** total cost versus
-  concurrent bursts (direct OpenAI replications: 0% → 90% hit rows; direct
-  Anthropic: 40% → 80-90%). Through **OpenRouter**, the proxy's own stagger
-  and sticky routing made bursts cache well already — the gate neither helped
-  nor hurt much there.
-- On the **direct Anthropic API**, monolithic single-message prompts do cache
-  (the provider auto-caches the last block), so `split_prompt` is optional —
-  though split still wins when the template head is shared across items (one
-  cache write instead of one per item). **Through OpenRouter**, the split
-  layouts are required for Anthropic-family models: single-block text prompts
-  get no cache marker at all.
-
-Caveats: Anthropic-family models only cache prefixes above a per-model
-minimum (1k–4k tokens — a too-short shared head silently caches nothing);
-cache lifetimes are minutes, so the discount applies within a run, not across
-days (cross-run reuse is the local response cache's job); and through
-OpenRouter, routing can land on upstreams that ignore cache markers (e.g.
-Bedrock) — pin the provider for serious Anthropic-cached runs.
+- Every row records `cache_read_tokens` / `cache_write_tokens`; run summaries
+  print per-condition totals and the hit rate (`cache_read=… cache_write=…
+  hit_rows=…`). Zeros on a run that should cache are the diagnostic signal.
+- Cache reads are priced at the model's cache-read rate (default 0.1× input);
+  cache **writes** are priced at 1.25× input for Anthropic-family models (an
+  explicit-caching surcharge) and $0 for providers with free automatic
+  caching (OpenAI, Gemini, DeepSeek). `--refresh-pricing` pulls per-model
+  cache rates from OpenRouter where published.
+- inspect's accounting keeps `input_tokens` **exclusive** of the cache
+  buckets: true input = `input + cache_read + cache_write`. The savings
+  report below relies on this.
+- Cache lifetimes are minutes, so these discounts apply within a run, not
+  across days — cross-run reuse is the local response cache's job (a
+  local-cache hit has null tokens and `usd = 0.0`, a different signature
+  than a provider cache read).
 
 ## Where actual costs come from
 
