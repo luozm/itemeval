@@ -33,6 +33,12 @@ prompt/rubric name **and content hash**. Consequences:
   silently mix results from two prompt versions.
 - Ids are reproducible across machines and runs. Replication/epoch is never
   part of the id (it's a column).
+- When a run's grid disagrees with stored rows — same facet name with a
+  different content hash (edited template), or an unchanged slug mapping to
+  a new id (changed sampling param) — `generate`/`grade` print a **config
+  drift warning** naming the facet, the hash change, and the affected row
+  count (also in the run JSON as `warnings[]`). Warnings never block: the
+  run proceeds under the new condition by design.
 
 ## Two decoupled stages
 

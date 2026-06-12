@@ -309,6 +309,8 @@ def _cmd_generate(args) -> int:
     else:
         _print_reports(result.conditions)
         _print_local_cache(result)
+        for w in result.warnings:
+            print(f"warning: {w}")
         print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
         print(f"manifest: {result.manifest_path}")
         emit_hints(result.hints)
@@ -380,6 +382,8 @@ def _cmd_grade(args) -> int:
         return 1 if any(r.status == "error" for r in result.conditions) else 0
     _print_reports(result.conditions)
     _print_local_cache(result)
+    for w in result.warnings:
+        print(f"warning: {w}")
     print(
         f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
         f"spend: {_fmt_usd(result.total_usd)}"

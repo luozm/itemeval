@@ -69,6 +69,7 @@ class GradeResult(BaseModel):
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
     hints: list[Hint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
     datasets: list[DatasetProvenance] = Field(default_factory=list)
     # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
     local_cache_rows: int = 0
@@ -235,6 +236,14 @@ def run_grade(
                 continue
         selected.append(cond)
 
+    from itemeval._driftcheck import endpoint_drift_warnings, grade_drift_warnings
+
+    drift_warnings = grade_drift_warnings(
+        prep.grid, _gradings.read_gradings(prep.paths)
+    ) + endpoint_drift_warnings(
+        [c.grader_model for c in selected if c.grader_model], prep.paths.manifests_dir
+    )
+
     manifest = build_manifest(
         prep, "grade", run_id, [c.id for c in selected], estimate_usd, estimate_full_usd
     )
@@ -398,6 +407,7 @@ def run_grade(
         empty_skipped=empty_skipped,
         empty_stop_reasons=empty_stop_reasons,
         hints=hints,
+        warnings=drift_warnings,
         datasets=dataset_provenance(prep.datasets),
         local_cache_rows=sum(r.local_cache_rows for r in reports),
         local_cache_dir=(local_cache_dir() if any(r.local_cache_rows for r in reports) else None),

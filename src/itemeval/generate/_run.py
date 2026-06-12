@@ -94,6 +94,7 @@ class GenerateResult(BaseModel):
     total_usd: float
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
     datasets: list[DatasetProvenance] = Field(default_factory=list)
     # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
     local_cache_rows: int = 0
@@ -340,12 +341,17 @@ def run_generate(
     estimate_full_usd: "float | None" = None,
     max_usd: "float | None" = None,
 ) -> GenerateResult:
+    from itemeval._driftcheck import endpoint_drift_warnings, generate_drift_warnings
+
     enforce_budget_cap(prep, "generate", max_usd, force)
     run_id = run_id or new_run_id("generate")
     prep.paths.ensure()
     upsert_items(prep.paths, prep.datasets)
 
     selected = [c for c in prep.grid.generate if matches_filter(c.id, c.slug, condition_filter)]
+    drift_warnings = generate_drift_warnings(
+        prep.grid, _solutions.read_solutions(prep.paths)
+    ) + endpoint_drift_warnings([c.model for c in selected], prep.paths.manifests_dir)
     manifest = build_manifest(
         prep, "generate", run_id, [c.id for c in selected], estimate_usd, estimate_full_usd
     )
@@ -527,6 +533,7 @@ def run_generate(
         total_usd=total_usd,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
+        warnings=drift_warnings,
         datasets=dataset_provenance(prep.datasets),
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,

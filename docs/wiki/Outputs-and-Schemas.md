@@ -102,4 +102,10 @@ condition, backfilled after the run); `endpoints_effective` per condition
 and provider-returned model snapshot that actually answered; `base_url` is null
 on the provider's default endpoint); policy, effective replications/items
 limit/batch; the complete condition grid with payloads; the condition ids
-this run selected; and the estimate the run was approved under.
+this run selected; and the estimate the run was approved under
+(`estimate_usd` = the remaining figure, `estimate_full_usd` alongside).
+
+Because manifests are immutable, they double as an **endpoint drift**
+record: when past manifests show inconsistent `served_model` snapshots for a
+model id this run uses (or the last run is >30 days old), `generate`/`grade`
+print a best-effort warning — rows remain distinguishable by `run_id`.

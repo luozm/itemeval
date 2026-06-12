@@ -7,6 +7,15 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Drift warnings** on `generate`/`grade` (one line each in the summary
+  block; `warnings[]` on the run results — never blocking): *config drift*
+  when a facet name matches stored rows but its content hash differs, or an
+  unchanged slug maps to a new condition id (changed sampling param) — names
+  the facet, the hash change, and the affected row count; *endpoint drift*
+  when past manifests recorded inconsistent `served_model` snapshots for a
+  model this run uses, or the last run is >30 days old (best-effort proxy).
+
+### Added
 - **Batch announcement**: when a run goes through a provider batch API,
   `generate`/`grade` print
   `batch: enabled (<providers>) — provider-side jobs created; resume with
