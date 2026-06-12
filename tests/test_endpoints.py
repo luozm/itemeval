@@ -194,3 +194,74 @@ def test_generate_unpinned_cached_openrouter_anthropic_hints(tmp_path, offline_a
     assert all(args == {} for _, _, args in seen)
     hint = next(h for h in result.hints if h.code == "openrouter-unpinned-cache")
     assert "openrouter/anthropic/claude-haiku-4.5" in hint.message
+
+
+# --- OpenAI keyed caching (W2) ---
+
+
+def test_openai_direct_with_scheduling_gets_key_and_retention():
+    args = model_args_for("openai/gpt-5-mini", cache_scheduling=True, study="s1", condition_id="c1")
+    assert args == {"prompt_cache_key": "itemeval/s1/c1", "prompt_cache_retention": "24h"}
+    # stable across calls: same study+condition -> same key (pilot warms the full run)
+    again = model_args_for(
+        "openai/gpt-5-mini", cache_scheduling=True, study="s1", condition_id="c1"
+    )
+    assert again["prompt_cache_key"] == args["prompt_cache_key"]
+
+
+def test_openai_no_key_when_scheduling_off():
+    # the caller's flag is false under cache_schedule: off and under batch
+    assert (
+        model_args_for("openai/gpt-5-mini", cache_scheduling=False, study="s1", condition_id="c1")
+        == {}
+    )
+
+
+def test_openrouter_openai_excluded_from_keyed_caching():
+    # bucket C: OpenRouter does not document forwarding the cache fields
+    assert (
+        model_args_for(
+            "openrouter/openai/gpt-5-mini", cache_scheduling=True, study="s1", condition_id="c1"
+        )
+        == {}
+    )
+
+
+def test_non_openai_models_get_no_key():
+    for model in ("anthropic/claude-haiku-4-5", "google/gemini-2.5-flash", "mockllm/solver-a"):
+        assert model_args_for(model, cache_scheduling=True, study="s1", condition_id="c1") == {}
+
+
+def test_routing_and_key_compose_independently():
+    args = model_args_for(
+        "openrouter/anthropic/claude-haiku-4.5",
+        provider_routing=ROUTING,
+        cache_scheduling=True,
+        study="s1",
+        condition_id="c1",
+    )
+    assert args == {"provider": ROUTING}  # routing only; no OpenAI key on openrouter
+
+
+def test_generate_attaches_openai_cache_key(tmp_path, offline_adapter):
+    from conftest import TEST_CONFIG_YAML, write_study_files
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+    from itemeval.generate._run import run_generate
+
+    yaml_text = TEST_CONFIG_YAML.replace(
+        "  models: [mockllm/solver-a, mockllm/solver-b]", "  models: [openai/gpt-5-mini]"
+    )
+    config = write_study_files(tmp_path, yaml_text)
+    prep = prepare_study(load_config(config))
+    seen = []
+    run_generate(prep, model_factory=_mock_stand_in_factory(seen), display="none")
+    cond = prep.grid.generate[0]
+    assert all(
+        args
+        == {
+            "prompt_cache_key": f"itemeval/tstudy/{cond.id}",
+            "prompt_cache_retention": "24h",
+        }
+        for _, _, args in seen
+    )

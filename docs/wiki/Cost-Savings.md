@@ -61,7 +61,10 @@ things decide whether you actually get that discount:
 **a) Call order (`budget.cache_schedule` — already on).**
 The discount works like a toll transponder: the first call must register at
 full price before the ones behind it get the fast lane. itemeval sends one
-warm-up call per group, then the rest together.
+warm-up call per group, then the rest together. On OpenAI's own API it also
+tags every scheduled request with a stable cache key per study and condition
+and asks for 24-hour retention (free) — so your pilot in the morning still
+discounts the full run in the afternoon. Nothing to configure.
 
 **b) Prompt packaging (`solvers.split_prompt` / `graders.<name>.split_rubric`
 — off by default, recommended for repeat-heavy studies).**

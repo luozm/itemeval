@@ -61,6 +61,13 @@ pinned to the Anthropic upstream; both arms gated)
 - **Output tokens are never discounted.** End-to-end savings scale with the
   input:output ratio — judge stages (read a lot, write a score) benefit most;
   long-form generation benefits least.
+- **Direct OpenAI runs are keyed automatically** (`_endpoints.model_args_for`):
+  scheduled runs attach `prompt_cache_key = itemeval/<study>/<condition_id>`
+  (stable across estimate→pilot→full, so a pilot warms the full run) and
+  `prompt_cache_retention: "24h"` (surcharge-free, verified 2026-06-12 —
+  same-day phases keep hitting the cache instead of the default 5–10 min
+  window). Per-condition granularity: per-sample keys aren't reachable
+  through inspect's GenerateConfig.
 
 ## Direct API vs OpenRouter — when to use which
 
@@ -185,5 +192,6 @@ deliberately no haircut/confidence knob — the pair of "optimistic projection
 
 ## Open follow-ups (FUTURE.md §1.6 tail)
 
-OpenAI `prompt_cache_key` + 24h retention passthrough;
-store-level judge dedup (`dedup_identical`); cheap-then-escalate judging.
+Store-level judge dedup (`dedup_identical`); cheap-then-escalate judging;
+per-cache-group OpenAI `prompt_cache_key` (needs upstream GenerateConfig
+support — today's key is per-condition, attached automatically).

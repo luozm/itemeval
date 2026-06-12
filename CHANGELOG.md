@@ -7,6 +7,17 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **OpenAI keyed caching, automatic** (no new knob): when cache scheduling is
+  active (`budget.cache_schedule` on, not batch), direct `openai/*` requests
+  carry `prompt_cache_key: itemeval/<study>/<condition_id>` — stable across
+  runs and phases of the same study+condition, so a pilot warms the full run
+  and routing affinity holds — plus `prompt_cache_retention: "24h"`, which is
+  surcharge-free on OpenAI pricing (verified 2026-06-12). Names pass through
+  verbatim. `openrouter/openai/*` is excluded (OpenRouter does not document
+  forwarding these fields); cache effectiveness stays observable via the
+  existing cache-read columns and the `cache-zero-reads` hint.
+
+### Added
 - **Cache-aware estimator**: when a run will be scheduled into provider
   prompt caches (cache scheduling on, not batch, provider minimum known and
   met), projections model the same per-group split the runtime schedules —

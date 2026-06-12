@@ -82,6 +82,9 @@ def model_args_for(
     model: str,
     *,
     provider_routing: "dict[str, Any] | None" = None,
+    cache_scheduling: bool = False,
+    study: "str | None" = None,
+    condition_id: "str | None" = None,
 ) -> "dict[str, Any]":
     """inspect `model_args` for one condition's model; {} for the common case.
 
@@ -89,10 +92,24 @@ def model_args_for(
     (pass through, don't rename); it only applies to openrouter/* models —
     direct-API models ignore it (the inert case is warned about at estimate
     time, see routing_warnings).
+
+    With cache scheduling active, direct `openai/*` models get OpenAI's keyed
+    caching (names kept verbatim): a `prompt_cache_key` stable across runs and
+    phases of the same study+condition — deliberately excluding run_id/wave,
+    so a pilot warms the full run — plus `prompt_cache_retention: "24h"`,
+    which is surcharge-free on OpenAI pricing (checked 2026-06-12).
+    Granularity is per-condition, not per-cache-group: model_args are
+    per-Model and per-sample keys aren't reachable through GenerateConfig;
+    per-condition suffices for routing affinity. OpenRouter does not document
+    forwarding these fields, so `openrouter/openai/*` is excluded; batch runs
+    are excluded by the caller's cache_scheduling flag (batch reorders calls).
     """
     args: dict[str, Any] = {}
     if provider_routing and provider_of(model) == "openrouter":
         args["provider"] = provider_routing
+    if cache_scheduling and provider_of(model) == "openai" and study and condition_id:
+        args["prompt_cache_key"] = f"itemeval/{study}/{condition_id}"
+        args["prompt_cache_retention"] = "24h"
     return args
 
 

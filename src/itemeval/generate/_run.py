@@ -474,6 +474,9 @@ def run_generate(
                     model_args_for(
                         cond.model,
                         provider_routing=prep.config.solvers.provider_routing,
+                        cache_scheduling=cache_schedule,
+                        study=prep.config.study,
+                        condition_id=cond.id,
                     ),
                 ),
                 display=resolve_display(display),

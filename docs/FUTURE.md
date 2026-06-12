@@ -168,8 +168,18 @@ later if demand shows.
 > cache; on direct Anthropic, monolithic prompts auto-cache (split optional
 > there, required via OpenRouter); (4) OpenRouter may route Anthropic models
 > to Bedrock, which ignores the markers — pin the provider for cached runs.
-> Remaining ideas below (per-group `prompt_cache_key`, prefix-keyed gating
-> refinements) stay open.
+>
+> **Tail completed 2026-06-12** (plan: `docs/plans/archive/cache-tail.md`):
+> `provider_routing` (solvers + graders) pins the OpenRouter upstream, with
+> the `openrouter-unpinned-cache` hint productizing finding (4); the
+> `split-head-below-min` hint + per-provider minimums table productize
+> finding (2); the estimator projects the per-group cache split so the money
+> gate sees the discounted cost; direct-OpenAI runs automatically attach
+> `prompt_cache_key` (per study+condition) and surcharge-free 24h retention
+> (the Phase-1 investigation below: supported, via `get_model` model_args).
+> Still open: per-cache-group OpenAI keys (needs upstream GenerateConfig
+> support), prefix-keyed gating refinements, Anthropic 1h-TTL markers
+> (inspect hardcodes the marker shape — upstream issue, wrap don't fork).
 
 **Motivation.** Provider-side prompt caching (input-prefix KV reuse) discounts
 repeated input tokens by ~75–90% — but only when calls are *scheduled* to hit

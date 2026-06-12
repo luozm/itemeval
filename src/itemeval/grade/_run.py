@@ -285,6 +285,8 @@ def run_grade(
     judge_models: list[str] = []  # grader models of judge conditions that ran
     unpinned_cached: list[str] = []  # openrouter/anthropic judges cached without routing
     repeated_prefix_calls = 0  # judge calls beyond each same-item group's leader
+    # One truth value for "cache scheduling active" (matches generate's).
+    scheduled = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
     factory = model_factory or resolve_model
 
     for cond in selected:
@@ -326,9 +328,7 @@ def run_grade(
                 prep.config.study,
                 prep.config.cache,
                 batch=prep.plan.batch,
-                cache_schedule=(
-                    prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
-                ),
+                cache_schedule=scheduled,
             )
             try:
                 logs = inspect_ai.eval(
@@ -336,7 +336,13 @@ def run_grade(
                     model=factory(
                         cond.grader_model,
                         "grade",
-                        model_args_for(cond.grader_model, provider_routing=grader_routing),
+                        model_args_for(
+                            cond.grader_model,
+                            provider_routing=grader_routing,
+                            cache_scheduling=scheduled,
+                            study=prep.config.study,
+                            condition_id=cond.id,
+                        ),
                     ),
                     display=resolve_display(display),
                     log_dir=str(prep.paths.logs_dir("grade", cond.id)),
@@ -419,7 +425,6 @@ def run_grade(
         finalize_manifest(manifest_path, endpoints_effective=endpoints_effective)
 
     run_reports = [r for r in reports if r.status == "run"]
-    scheduled = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
     hints = [
         h
         for h in (
