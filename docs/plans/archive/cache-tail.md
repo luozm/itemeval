@@ -1,6 +1,17 @@
 # Implementation plan — provider-cache tail (FUTURE.md §1.6 follow-ups)
 
-**Status: NOT STARTED.** Written 2026-06-12 against inspect_ai **0.3.239**
+**Status: DONE 2026-06-12** (W1 `9c10716`, W4 `6af8c6a`, W3 `5a526ae`,
+W2 `68fab8d`). Notes vs plan: the [verify] pass moved several facts —
+Anthropic minimums are per-model {512, 1024, 2048, 4096} (not "4096
+Opus-class"), Gemini 2.5 is 2048, OpenAI 24h retention is surcharge-free (so
+W2 defaults it on), the OpenRouter Anthropic slug is lowercase `anthropic`,
+and OpenRouter does not document forwarding `prompt_cache_key` (bucket C
+confirmed). The inert-routing warning lands at estimate time (new
+stage-relevant `StageEstimate.warnings`/`hints` carry per-stage estimator
+output to the run commands) rather than literally at config load — load has
+no output channel.
+
+Originally written 2026-06-12 against inspect_ai **0.3.239**
 (pinned in `uv.lock`) — re-verify the "inspect facts" below if the pin moved.
 This file is the working brief for a fresh implementation session: it carries
 all context that session needs. Read these first, in order:

@@ -41,6 +41,14 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
 
 ## 0.2 (in progress)
 
+- ✅ 2026-06-12 — Provider-cache tail (FUTURE.md §1.6 follow-ups, plan:
+  `docs/plans/archive/cache-tail.md`): `provider_routing` knob (solvers +
+  graders) pinning the OpenRouter upstream + `openrouter-unpinned-cache`
+  hint; `split-head-below-min` hint with a verified per-provider
+  minimum-cacheable-prefix table; cache-aware estimator (the money gate now
+  compares the *discounted* projection); automatic OpenAI
+  `prompt_cache_key`/24h-retention on scheduled direct runs.
+
 - ✅ 2026-06-11 — Cache-aware execution scheduling (FUTURE.md §1.6), validated
   live: provider cache observability in run summaries; `solvers.cache_prompt`
   + `solvers.split_prompt`; `graders.<name>.split_rubric` (halved a real
