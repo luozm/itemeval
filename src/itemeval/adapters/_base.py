@@ -24,6 +24,46 @@ class LoadedDataset(BaseModel):
     revision_requested: str | None = None
     revision: str  # resolved commit SHA actually loaded
     items: list[Item]
+    # Provenance of this load (Law 1: announced, append-only). The adapter
+    # fills cache facts; load_items fills the revision-precedence facts.
+    cache: str = "reused"  # "downloaded" (first use) | "reused"
+    cache_dir: str = ""  # the global cache the data lives in
+    download_bytes: int | None = None  # best-effort; None when unavailable/reused
+    revision_source: str = "resolved"  # "config" | "lock" | "resolved"
+    pinned_now: bool = False  # this load wrote/changed the lock entry
+
+
+class DatasetProvenance(BaseModel):
+    """JSON rendering of a dataset announcement line (same numbers, Law 6)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    split: str
+    name: str | None = None
+    revision: str
+    revision_source: str
+    cache: str
+    cache_dir: str
+    download_bytes: int | None = None
+    pinned_now: bool
+
+
+def dataset_provenance(datasets: "list[LoadedDataset]") -> "list[DatasetProvenance]":
+    return [
+        DatasetProvenance(
+            id=ds.dataset_id,
+            split=ds.split,
+            name=ds.name,
+            revision=ds.revision,
+            revision_source=ds.revision_source,
+            cache=ds.cache,
+            cache_dir=ds.cache_dir,
+            download_bytes=ds.download_bytes,
+            pinned_now=ds.pinned_now,
+        )
+        for ds in datasets
+    ]
 
 
 class Adapter(Protocol):
@@ -74,15 +114,17 @@ def load_items(config: ExperimentConfig, locks_path: Path) -> list[LoadedDataset
     locks_changed = False
     for spec in config.benchmark.datasets:
         if spec.revision is not None:
-            revision = spec.revision
+            revision, source = spec.revision, "config"
         elif spec.id in locks:
-            revision = locks[spec.id]
+            revision, source = locks[spec.id], "lock"
         else:
-            revision = adapter.resolve_revision(spec)
-        if locks.get(spec.id) != revision:
+            revision, source = adapter.resolve_revision(spec), "resolved"
+        pinned_now = locks.get(spec.id) != revision
+        if pinned_now:
             locks[spec.id] = revision
             locks_changed = True
-        loaded.append(adapter.load(spec, config.benchmark.mapping, revision))
+        ds = adapter.load(spec, config.benchmark.mapping, revision)
+        loaded.append(ds.model_copy(update={"revision_source": source, "pinned_now": pinned_now}))
     if locks_changed:
         write_locks(locks_path, locks)
 

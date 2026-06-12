@@ -15,6 +15,13 @@ class DatasetStatus(BaseModel):
     id: str
     revision: str
     n_items: int
+    # Provenance (append-only, mirrors the dataset announcement line):
+    split: str = ""
+    revision_source: str = "resolved"  # "config" | "lock" | "resolved"
+    cache: str = "reused"  # "downloaded" | "reused"
+    cache_dir: str = ""
+    download_bytes: int | None = None
+    pinned_now: bool = False
 
 
 class ConditionStatus(BaseModel):
@@ -152,7 +159,17 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         policy_source=prep.policy_source,
         config_path=str(config.config_path) if config.config_path else "(in-memory)",
         datasets=[
-            DatasetStatus(id=ds.dataset_id, revision=ds.revision, n_items=len(ds.items))
+            DatasetStatus(
+                id=ds.dataset_id,
+                revision=ds.revision,
+                n_items=len(ds.items),
+                split=ds.split,
+                revision_source=ds.revision_source,
+                cache=ds.cache,
+                cache_dir=ds.cache_dir,
+                download_bytes=ds.download_bytes,
+                pinned_now=ds.pinned_now,
+            )
             for ds in prep.datasets
         ],
         n_items_total=len(prep.items_all),

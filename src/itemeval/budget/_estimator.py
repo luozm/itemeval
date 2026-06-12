@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._hints import Hint, detect_unpriced_models
 from itemeval._templates import render_template
+from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import estimate_tokens
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
@@ -76,6 +77,7 @@ class Estimate(BaseModel):
     warnings: list[str]
     pricing: PricingProvenance  # which prices these projections used
     hints: list[Hint] = Field(default_factory=list)
+    datasets: list[DatasetProvenance] = Field(default_factory=list)
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
@@ -324,4 +326,5 @@ def estimate_study(
         warnings=warnings,
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
         hints=[unpriced] if unpriced else [],
+        datasets=dataset_provenance(prep.datasets),
     )

@@ -1,5 +1,6 @@
 """HuggingFace dataset adapter: pinned revision + field mapping -> canonical Items."""
 
+from pathlib import Path
 from typing import Any
 
 from itemeval._config import DatasetSpec, MappingSpec
@@ -7,6 +8,19 @@ from itemeval._errors import AdapterError
 from itemeval._item import Item
 from itemeval._util import canonical_json
 from itemeval.adapters._base import LoadedDataset
+
+
+def _dataset_cache_dir(cache_root: "str | Path", dataset_id: str) -> Path:
+    """The `datasets` library materializes a repo under <root>/<id with / -> ___>."""
+    return Path(cache_root) / dataset_id.replace("/", "___")
+
+
+def _dir_size_bytes(path: Path) -> "int | None":
+    """Best-effort recursive size; None when the directory can't be walked."""
+    try:
+        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    except OSError:
+        return None
 
 
 def _record_to_item(
@@ -65,6 +79,11 @@ class HFAdapter:
     def load(self, spec: DatasetSpec, mapping: MappingSpec, revision: str) -> LoadedDataset:
         import datasets
 
+        # Fresh-vs-reused detection (Law 1): the repo's materialization dir in
+        # the global HF datasets cache, checked before load_dataset touches it.
+        cache_root = Path(str(datasets.config.HF_DATASETS_CACHE))
+        repo_cache = _dataset_cache_dir(cache_root, spec.id)
+        cached_before = repo_cache.is_dir() and any(repo_cache.iterdir())
         try:
             ds = datasets.load_dataset(spec.id, name=spec.name, split=spec.split, revision=revision)
         except Exception as e:
@@ -82,4 +101,7 @@ class HFAdapter:
             revision_requested=spec.revision,
             revision=revision,
             items=items,
+            cache="reused" if cached_before else "downloaded",
+            cache_dir=str(cache_root),
+            download_bytes=None if cached_before else _dir_size_bytes(repo_cache),
         )

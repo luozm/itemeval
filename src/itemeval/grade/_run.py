@@ -14,6 +14,7 @@ from itemeval._hints import (
 )
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model
+from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import PricingProvenance, lookup_price
 from itemeval._mockmodels import resolve_model
@@ -60,6 +61,7 @@ class GradeResult(BaseModel):
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
     hints: list[Hint] = Field(default_factory=list)
+    datasets: list[DatasetProvenance] = Field(default_factory=list)
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -377,4 +379,5 @@ def run_grade(
         empty_skipped=empty_skipped,
         empty_stop_reasons=empty_stop_reasons,
         hints=hints,
+        datasets=dataset_provenance(prep.datasets),
     )

@@ -113,6 +113,21 @@ def _print_pricing(prov) -> None:
     print(f"pricing: {prov.source} (updated {prov.updated_at}{age}){suffix}")
 
 
+def _print_datasets(prep) -> None:
+    """One provenance line per dataset (Law 1) — unconditional in text mode."""
+    for ds in prep.datasets:
+        if ds.cache == "downloaded":
+            size = f"{ds.download_bytes / 1e6:.0f} MB " if ds.download_bytes else ""
+            clause = f"downloaded {size}to HF cache (first use)"
+        else:
+            pinned = " (pinned)" if ds.revision_source in ("lock", "config") else ""
+            clause = f"reused from HF cache{pinned}"
+        line = f"dataset: {ds.dataset_id} (split {ds.split}) @ {ds.revision[:7]} — {clause}"
+        if ds.pinned_now:
+            line += "; revision pinned in dataset_locks.json"
+        print(line)
+
+
 def _print_cost_report(rep) -> None:
     print(
         f"savings vs list price: {_fmt_usd(rep.total_savings_usd)} "
@@ -144,6 +159,7 @@ def _cmd_estimate(args) -> int:
         print(est.model_dump_json(indent=2))
         return 0
     print(f"study: {est.study}  (policy: {est.policy})")
+    _print_datasets(prep)
     _print_pricing(est.pricing)
     _print_estimate(est, args.stage)
     emit_hints(est.hints)
@@ -219,6 +235,7 @@ def _cmd_generate(args) -> int:
     est = estimate_study(prep, force=args.force)
     st = est.generate
     if not args.json:
+        _print_datasets(prep)
         _print_pricing(est.pricing)
         delta = ""
         if st.completed_cells > 0:
@@ -290,6 +307,7 @@ def _cmd_grade(args) -> int:
     est = estimate_study(prep, force=args.force)
     st = est.grade
     if not args.json:
+        _print_datasets(prep)
         _print_pricing(est.pricing)
         delta = ""
         if st.completed_cells > 0:
@@ -406,6 +424,7 @@ def _cmd_status(args) -> int:
         return 0
     print(f"study: {report.study}  (policy: {report.policy})")
     print(f"config: {report.config_path}")
+    _print_datasets(prep)
     _print_pricing(describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed))
     ds_bits = ", ".join(f"{d.id}@{d.revision[:8]}: {d.n_items}" for d in report.datasets)
     print(

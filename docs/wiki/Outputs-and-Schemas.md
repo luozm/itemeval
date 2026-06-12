@@ -24,6 +24,14 @@ All parquet stores use keyed, atomic upserts — re-runs replace rows, never
 duplicate them. Raw `.eval` logs are append-only evidence; open them with
 `inspect view` or `inspect_ai.log.read_eval_log()` to audit any number.
 
+`dataset_locks.json` pins each dataset's resolved revision at first run so
+every later run loads identical data. Every command that loads data prints
+one provenance line per dataset — revision, downloaded vs reused from the HF
+cache, and (only when this run wrote the lock) a
+`revision pinned in dataset_locks.json` clause; the same facts ride JSON as
+`datasets[]` (`{id, split, revision, revision_source, cache, cache_dir,
+download_bytes, pinned_now}`).
+
 ## `solutions.parquet` (key: condition_id, item_id, epoch)
 
 Provenance: `study, run_id, condition_id, condition_slug, item_id,

@@ -7,6 +7,17 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Dataset provenance announcements** (UX-PATTERNS Law 1): every
+  `estimate`/`generate`/`grade`/`status` prints one line per dataset —
+  revision, downloaded-vs-reused from the HF cache (with best-effort size on
+  first use), and a pin clause when this run wrote `dataset_locks.json`.
+  JSON parity via a new `DatasetProvenance` model: `datasets[]` on
+  `Estimate`, `GenerateResult`, `GradeResult`, and extended fields on the
+  status report's `DatasetStatus` (`split`, `revision_source`, `cache`,
+  `cache_dir`, `download_bytes`, `pinned_now` — all append-only).
+  `LoadedDataset` carries the same facts for Python callers.
+
+### Added
 - **Delta-aware estimates**: each stage projection now carries
   `remaining_usd`/`full_usd`/`remaining_calls`/`completed_cells`/
   `total_cells`/`rows_replaced` alongside the unchanged `usd` (full grid,

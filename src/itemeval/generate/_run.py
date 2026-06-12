@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from itemeval._hints import Hint, detect_cache_zero_reads, detect_unpriced_models
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
+from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
@@ -63,6 +64,7 @@ class GenerateResult(BaseModel):
     total_usd: float
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
+    datasets: list[DatasetProvenance] = Field(default_factory=list)
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -472,4 +474,5 @@ def run_generate(
         total_usd=total_usd,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
+        datasets=dataset_provenance(prep.datasets),
     )
