@@ -17,6 +17,13 @@ Related: `docs/FUTURE.md` §2.5 records the scope decision behind this plan
 and is **out of scope here**). `docs/COST-OPTIMIZATION.md` explains the cache
 layers referenced below.
 
+**Sibling plan:** `docs/plans/ux-compliance.md` (UX-PATTERNS compliance
+backlog, same date). The two are implemented as **one program in one
+combined order** — see Sequencing below, which is canonical for both files.
+Two items in this plan have hard prerequisites there: 1.2 needs the hint
+framework (ux-compliance Step 3) and 1.3's `--json` gate fix needs `--json`
+to exist on generate/grade (ux-compliance Step 2).
+
 ---
 
 ## Context: how a study grows today (read this, it decides everything)
@@ -106,6 +113,10 @@ store for row counts cheaply (`store/_solutions.read_solutions` /
 Hint code `pilot-available`, registered in the UX-PATTERNS catalog table (the
 table is normative — update it in the same change).
 
+**Prerequisite:** the hint framework (`_hints.py`: codes, stderr rendering,
+`ITEMEVAL_HINTS=off`, `hints[]` in JSON) — ux-compliance Step 3. It does not
+exist in the code today; build it first, then this hint is one detector.
+
 **Checklist.** Side effects: none. Quotable: the hint line itself. JSON:
 `hints[]` entry. Doc anchor: Cost-Savings. Hint: this *is* one (≤2/command
 budget respected — it fires only at the gate, where no other hint competes).
@@ -143,6 +154,10 @@ figure alongside (`estimate_full_usd` — manifest schema is additive JSON).
 **Also fix here (same code, mandated by UX-PATTERNS):** the known gap that
 `check_gate` ignores `--json` — under `--json` the gate must never prompt
 (proceed under threshold or with `--yes`, else exit 3). `budget/_gate.py`.
+**Prerequisite:** `--json` on generate/grade (ux-compliance Step 2) — the
+flag does not exist on these commands today; without it this fix has nothing
+to key off. On a gate stop under `--json`, still emit the JSON document
+(projected cost, gate reason, rerun command, hints) before exit 3.
 
 **Checklist.** Side effects: reading the stores during estimate (study-dir
 read — exempt from Law 1). Quotable: the line above. JSON: new append-only
@@ -416,17 +431,27 @@ the columns; status silent at one wave, per-wave at two.
 
 ---
 
-## Sequencing
+## Sequencing — combined order (canonical for this file AND ux-compliance.md)
 
-1. **1.1 + 1.2** — one evening; no schema changes; immediately improves the
-   pilot story (cases "planned pilot" and "didn't know").
-2. **1.3 + 1.5 (+ the `--json` gate-gap fix)** — one PR; touches estimator +
-   gate; biggest trust win for growth.
-3. **1.4** — independent; small.
-4. **2.1 + 2.2** — independent of everything above; one PR.
-5. **3.1 + 3.2** — last and largest; depends on 1.4 (drift warnings) being
-   in place; subsumes the old FUTURE "finer-grained resume" idea for the
-   generate stage.
+"UXC n" = ux-compliance.md Step n. One PR per phase unless noted.
+
+1. **UXC 2** — `--json` on generate/grade (stdout purity, display=none,
+   JSON document on gate stop). Unblocks phases 3–4.
+2. **UXC 3** — hint framework + the three ☑ catalog hints. Unblocks 1.2.
+3. **1.1 + 1.2** — policy override + pilot hint; no schema changes;
+   immediately improves the pilot story.
+4. **1.3 + 1.5** — delta-aware estimate, gate on remaining, the `--json`
+   gate-gap fix, replacement statement; biggest trust win for growth.
+5. **UXC 1, 4, 5, 6** — dataset provenance lines; local-cache announcement;
+   Python `max_usd=` (compare against *remaining*, post-1.3); export
+   wording + batch line. Independent of each other, any order, separate
+   small PRs. UXC 4 must land before phase 8 (wave/epoch-extension replay
+   is invisible without it).
+6. **1.4** — drift warnings; independent; small.
+7. **2.1 + 2.2** — snapshots + study card; independent of everything above.
+8. **3.1 + 3.2** — last and largest; depends on 1.4 (drift warnings) and
+   UXC 4 (local-cache visibility); subsumes the old FUTURE "finer-grained
+   resume" idea for the generate stage.
 
 After each lands: CHANGELOG `[Unreleased]`, wiki page updates per the doc
 anchors named above, UX-PATTERNS hint-catalog/side-effect-ledger rows
