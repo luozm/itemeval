@@ -40,9 +40,8 @@ est = itemeval.estimate_study(prep)
 print(f"projected: generate ${est.generate.usd:.2f}, grade ${est.grade.usd:.2f}")
 for w in est.warnings:
     print("warning:", w)
-assert est.total_usd < 20, "over budget — not running"   # the gate is YOUR job here
-
-gen = itemeval.run_generate(prep)           # resumable: completed conditions skip
+gen = itemeval.run_generate(prep, max_usd=20)  # raises BudgetExceededError before
+                                               # any API call if remaining > $20
 assert not any(c.status == "error" for c in gen.conditions), gen.conditions
 
 graded = itemeval.run_grade(prep)
@@ -95,19 +94,23 @@ itemeval.estimate_study(prep)            # reads the solutions store automatical
 
 ## Differences from the CLI
 
-1. **No confirmation gate.** `generate`/`grade` in the CLI refuse to run past
-   `confirm_above_usd` without confirmation and abort on `max_usd`. The
-   Python functions run when called — compare `estimate_study` totals against
-   your own threshold first (the CLI's exit-code-3/4 behavior is yours to
-   implement if you need it).
+1. **Consent is a parameter, never a prompt.** The CLI's interactive
+   `confirm_above_usd` gate does not exist here; instead pass
+   `max_usd=` to `run_generate`/`run_grade` — when the stage's *remaining*
+   projection (completed work is never re-counted) exceeds it, the function
+   raises `itemeval.BudgetExceededError` **before any API call**. The config's
+   `budget.max_usd` hard cap is enforced the same way on this surface, so the
+   cap holds everywhere. A library never prompts — it would hang notebooks
+   and CI.
 2. **No printing.** Information arrives as return values; condition-level
    eval failures are reported in `result.conditions` (status `"error"`), not
    raised — check them.
 3. **Exceptions instead of exit codes.** Config/template/dataset problems
-   raise `itemeval._errors.ItemevalError` subclasses (`ConfigError`,
-   `TemplateError`, `AdapterError`, `StoreError`, `BudgetError`). The
-   hierarchy lives in an internal module; catching the broad `Exception` or
-   re-importing those names is at your own risk pre-1.0.
+   raise `itemeval.ItemevalError` subclasses (`ConfigError`, `TemplateError`,
+   `AdapterError`, `StoreError`, `BudgetError`); budget caps raise
+   `itemeval.BudgetExceededError`. `ItemevalError` and `BudgetExceededError`
+   are public exports; the narrower classes live in an internal module
+   pre-1.0.
 
 ## Notes
 

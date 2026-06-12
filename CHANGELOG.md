@@ -7,6 +7,15 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Python-surface consent: `max_usd=`** on `run_generate`/`run_grade` —
+  when the stage's *remaining* projection exceeds it, the run raises the new
+  `itemeval.BudgetExceededError` **before any API call**; never prompts
+  (UX-PATTERNS Law 3). The config's `budget.max_usd` hard cap is now
+  enforced on the Python path the same way, so the cap holds on every
+  surface. `BudgetExceededError` and `ItemevalError` are new public exports;
+  the `import itemeval` docstring no longer tells users to gate themselves.
+
+### Added
 - **Local response-cache reuse is announced**: when any calls are answered
   from inspect's local response cache, `generate`/`grade` print one summary
   line (`12 calls answered from local cache ($0) — cache dir: …`); JSON

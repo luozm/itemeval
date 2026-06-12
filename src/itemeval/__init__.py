@@ -6,20 +6,23 @@ CLI        itemeval estimate|generate|grade|export|status CONFIG
 Python     cfg  = load_config("configs/my_study.yaml")
            prep = prepare_study(cfg)
            estimate_study(prep)          # projected $ per stage
-           run_generate(prep)            # stage 1 -> solutions store
-           run_grade(prep)               # stage 2 -> gradings store
+           run_generate(prep, max_usd=20)  # stage 1 -> solutions store
+           run_grade(prep, max_usd=20)     # stage 2 -> gradings store
            export_study(cfg)             # long-format parquet + CSV + ledger
            build_status(cfg, prep)       # grid completion report
 
-The Python pipeline functions do NOT apply the budget confirmation gate (a
-CLI feature) — compare `estimate_study(...)` totals against your own
-threshold before paid runs.
+Consent on the Python surface is a parameter, never a prompt: pass
+`max_usd=` to run_generate/run_grade and they raise BudgetExceededError
+*before any API call* when the stage's remaining projection exceeds it.
+`budget.max_usd` from the config is enforced the same way on every surface.
+(The interactive confirmation gate remains a CLI feature.)
 """
 
 from importlib import import_module
 from importlib.metadata import version
 
 from itemeval._config import ExperimentConfig, load_config
+from itemeval._errors import BudgetExceededError, ItemevalError
 from itemeval._item import Item
 
 __version__ = version("itemeval")
@@ -36,8 +39,10 @@ _LAZY = {
 }
 
 __all__ = [
+    "BudgetExceededError",
     "ExperimentConfig",
     "Item",
+    "ItemevalError",
     "__version__",
     "build_status",
     "estimate_study",

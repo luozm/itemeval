@@ -36,6 +36,34 @@ if TYPE_CHECKING:
 ModelFactory = Callable[[str, str], Any]  # (model_id, stage) -> str | Model
 
 
+def enforce_budget_cap(
+    prep: "PreparedStudy", stage: str, max_usd: "float | None", force: bool
+) -> None:
+    """Raise BudgetExceededError before any API call when a cap is exceeded.
+
+    The cap is min(max_usd argument, config budget.max_usd); the projection
+    compared is the stage's *remaining* figure (what this run can spend) —
+    matching the CLI gate's semantics. Never prompts (Law 3).
+    """
+    from itemeval._errors import BudgetExceededError
+
+    caps = [c for c in (max_usd, prep.config.budget.max_usd) if c is not None]
+    if not caps:
+        return
+    from itemeval.budget._estimator import estimate_study
+
+    est = estimate_study(prep, force=force)
+    stage_est = est.generate if stage == "generate" else est.grade
+    cap = min(caps)
+    if stage_est.remaining_usd > cap:
+        source = "max_usd argument" if cap == max_usd else "budget.max_usd"
+        raise BudgetExceededError(
+            f"projected {stage} cost ${stage_est.remaining_usd:.2f} (remaining; "
+            f"full grid ${stage_est.usd:.2f}) exceeds {source} ${cap:.2f} — "
+            "no API calls were made"
+        )
+
+
 class ConditionRunReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -307,7 +335,9 @@ def run_generate(
     model_factory: "ModelFactory | None" = None,
     estimate_usd: "float | None" = None,
     estimate_full_usd: "float | None" = None,
+    max_usd: "float | None" = None,
 ) -> GenerateResult:
+    enforce_budget_cap(prep, "generate", max_usd, force)
     run_id = run_id or new_run_id("generate")
     prep.paths.ensure()
     upsert_items(prep.paths, prep.datasets)

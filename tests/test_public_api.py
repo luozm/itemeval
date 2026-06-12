@@ -4,8 +4,10 @@ from conftest import write_study_files
 import itemeval
 
 PROMISED = [
+    "BudgetExceededError",
     "ExperimentConfig",
     "Item",
+    "ItemevalError",
     "__version__",
     "build_status",
     "estimate_study",

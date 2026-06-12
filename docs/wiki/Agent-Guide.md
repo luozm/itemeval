@@ -136,20 +136,19 @@ Prefer the parquet stores over stdout:
 | Raw transcripts | `logs/<stage>/<condition_id>/*.eval` | inspect_ai logs (open with `inspect view`) |
 
 Or stay in Python — one public function per command, same semantics, pydantic
-results (`.model_dump()` for JSON). **The budget gate is CLI-only**: a Python
-agent must enforce its own threshold against `estimate_study(...)` before
-calling `run_generate`/`run_grade`
+results (`.model_dump()` for JSON). Consent is a parameter: pass `max_usd=`
+and the run raises `itemeval.BudgetExceededError` before any API call when
+the remaining projection exceeds it
 ([Python API](Python-API.md)).
 
 ```python
 import itemeval
 cfg  = itemeval.load_config("config.yaml")
 prep = itemeval.prepare_study(cfg)
-est  = itemeval.estimate_study(prep)
-assert est.total_usd <= BUDGET_USD          # your gate — there is no built-in one here
-gen  = itemeval.run_generate(prep, display="none")
+est  = itemeval.estimate_study(prep)        # remaining figures: est.generate.remaining_usd
+gen  = itemeval.run_generate(prep, display="none", max_usd=BUDGET_USD)
 assert not any(c.status == "error" for c in gen.conditions)
-itemeval.run_grade(prep, display="none")
+itemeval.run_grade(prep, display="none", max_usd=BUDGET_USD)
 itemeval.export_study(cfg)
 ```
 

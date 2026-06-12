@@ -25,6 +25,7 @@ from itemeval.generate._run import (
     ModelFactory,
     cache_columns,
     endpoint_info,
+    enforce_budget_cap,
     ledger_row,
     local_cache_dir,
     local_cache_rows,
@@ -185,7 +186,9 @@ def run_grade(
     model_factory: "ModelFactory | None" = None,
     estimate_usd: "float | None" = None,
     estimate_full_usd: "float | None" = None,
+    max_usd: "float | None" = None,
 ) -> GradeResult:
+    enforce_budget_cap(prep, "grade", max_usd, force)
     run_id = run_id or new_run_id("grade")
     prep.paths.ensure()
     solutions_df = _solutions.read_solutions(prep.paths)
