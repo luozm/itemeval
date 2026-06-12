@@ -24,6 +24,12 @@ def _distinct(df, cols: "list[str]"):
     return df[cols].dropna().drop_duplicates().itertuples(index=False)
 
 
+def _id_hash(condition_id: str) -> str:
+    """The digest part of '<slug>--<digest12>' — the slug prefix is identical
+    on both sides of a drift, so only the hash makes the change visible."""
+    return condition_id.rsplit("--", 1)[-1]
+
+
 def generate_drift_warnings(grid, solutions_df) -> "list[str]":
     """Config drift for the generate stage: prompt edits and sampling changes."""
     if solutions_df is None or solutions_df.empty:
@@ -54,7 +60,8 @@ def generate_drift_warnings(grid, solutions_df) -> "list[str]":
             n = int((solutions_df["condition_id"] == row.condition_id).sum())
             warnings.append(
                 f"condition '{row.condition_slug}' changed since last run "
-                f"(id {row.condition_id[:8]}→{new_id[:8]}, e.g. a sampling param): its {n} "
+                f"(id {_id_hash(row.condition_id)[:8]}→{_id_hash(new_id)[:8]}, "
+                f"e.g. a sampling param): its {n} "
                 "existing rows stay under the old condition; this run starts a fresh condition"
             )
     return warnings
@@ -90,7 +97,8 @@ def grade_drift_warnings(grid, gradings_df) -> "list[str]":
             n = int((gradings_df["grade_condition_id"] == row.grade_condition_id).sum())
             warnings.append(
                 f"grade condition '{row.grade_condition_slug}' changed since last run "
-                f"(id {row.grade_condition_id[:8]}→{new_id[:8]}): its {n} existing rows stay "
+                f"(id {_id_hash(row.grade_condition_id)[:8]}→{_id_hash(new_id)[:8]}): "
+                f"its {n} existing rows stay "
                 "under the old condition; this run starts a fresh condition"
             )
     return warnings

@@ -531,7 +531,8 @@ def _cmd_status(args) -> int:
     print(f"manifests: {len(report.manifests)}{latest}")
     if len(report.waves) > 1:  # zero noise for single-wave studies
         bits = ", ".join(
-            f"{w.wave}{f' ({w.label})' if w.label else ''} — {w.completed}/{w.expected}"
+            f"{w.wave}{f' ({w.label})' if w.label else ''} — gen {w.completed}/{w.expected}"
+            + (f" · graded {w.graded}/{w.grade_expected}" if report.grade else "")
             for w in report.waves
         )
         print(f"waves: {bits}")

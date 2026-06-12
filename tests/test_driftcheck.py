@@ -1,6 +1,7 @@
 """Drift warnings (growth-ux 1.4): config drift and endpoint drift."""
 
 import json
+import re
 
 from itemeval import cli
 from itemeval._config import load_config
@@ -35,7 +36,13 @@ def test_sampling_change_warns_on_unchanged_slug(tmp_path, offline_adapter):
     edited = (tmp_path / "config.yaml").read_text().replace("temperature: 0.3", "temperature: 0.9")
     (tmp_path / "config.yaml").write_text(edited)
     result = run_generate(prepare_study(load_config(tmp_path / "config.yaml")), display="none")
-    assert any("changed since last run (id " in w for w in result.warnings)
+    drift = [w for w in result.warnings if "changed since last run (id " in w]
+    assert drift
+    # ids are '<slug>--<digest>': the displayed parts must be the digests, which
+    # actually differ — truncating the full id shows the identical slug prefix.
+    for w in drift:
+        m = re.search(r"\(id ([0-9a-f]+)→([0-9a-f]+)", w)
+        assert m is not None and m.group(1) != m.group(2)
 
 
 def test_endpoint_drift_from_divergent_manifests(tmp_path):

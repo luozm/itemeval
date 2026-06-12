@@ -18,7 +18,10 @@ All notable changes to itemeval are documented here. Format follows
   solutions/gradings/export gain additive `wave`/`wave_label` columns (old
   stores read as wave 0, no rewrite); the ledger gains `epoch_offset`;
   manifests and run results record `wave`/`wave_label`/`epoch_offset`.
-  `status` reports per-wave completion only when >1 wave exists. Substrate:
+  `status` reports per-wave completion (generate and graded counts) only
+  when >1 wave exists; the main completion matrix stays scoped to the
+  current grid at wave-0 scope on both sides of done/expected, so wave or
+  drift-stranded rows can never show >100%. Substrate:
   `epochs_to_run` (epoch-range-aware resume; `items_to_run` now delegates to
   it) and `resolve_wave` in the solutions store;
   `build_generate_task(epoch_offset=)`.
@@ -117,8 +120,8 @@ All notable changes to itemeval are documented here. Format follows
   parity: `prepare_study(cfg, policy=...)`. The run manifest and the
   estimate/status JSON record the effective policy and its source
   (`policy_source: "config" | "override"`, append-only).
-- `pilot-available` hint: when a first paid run (no completed rows for the
-  selected conditions) hits the money gate, one stderr hint points at the
+- `pilot-available` hint: when a paid run with no completed rows for the
+  selected conditions hits the money gate, one stderr hint points at the
   `--policy dev` pilot flow; under `--json` it rides the `hints` array,
   including in the gate-stop document.
 

@@ -126,6 +126,13 @@ def test_grade_wave_grades_that_block(tmp_path, offline_adapter):
     # plain grade stays scoped to wave 0 (zero noise): nothing new to do
     again = run_grade(prep, display="none")
     assert again.rows_written == 0
+    # the grade matrix stays wave-0-scoped (8/8, not 16/8); per-wave graded
+    # counts carry the wave's grading progress instead
+    from itemeval._status import build_status
+
+    report = build_status(cfg, prep)
+    assert report.grade[0].expected == 8 and report.grade[0].completed == 8
+    assert [(w.wave, w.graded, w.grade_expected) for w in report.waves] == [(0, 8, 8), (1, 8, 8)]
 
 
 def test_grade_unknown_wave_errors(tmp_path, offline_adapter):
@@ -160,7 +167,27 @@ def test_status_silent_at_one_wave_per_wave_at_two(tmp_path, offline_adapter, ca
     capsys.readouterr()
     assert cli.main(["status", str(config)]) == 0
     out = capsys.readouterr().out
-    assert "waves: 0 — 8/8, 1 (w1) — 8/8" in out
+    assert "waves: 0 — gen 8/8 · graded 0/8, 1 (w1) — gen 8/8 · graded 0/8" in out
+
+
+def test_wave_status_excludes_stranded_drift_rows(tmp_path, offline_adapter):
+    """Rows stranded under a drifted (abandoned) condition must not count toward
+    per-wave totals — expected comes from the current grid, so counting them
+    showed >100% (e.g. 16/8)."""
+    config = write_study_files(tmp_path)
+    assert cli.main(["generate", str(config), "--yes"]) == 0
+    assert cli.main(["generate", str(config), "--yes", "--wave", "w1"]) == 0
+    # sampling drift: all 16 rows stay stranded under the old condition id
+    config.write_text(config.read_text().replace("temperature: 0.3", "temperature: 0.9"))
+    assert cli.main(["generate", str(config), "--yes"]) == 0  # wave 0 under the new id
+    from itemeval._status import build_status
+
+    report = build_status(load_config(config))
+    assert all(w.completed <= w.expected for w in report.waves)
+    assert [(w.wave, w.completed, w.expected) for w in report.waves] == [(0, 8, 8)]
+    # the grade matrix is scoped the same way: stranded/wave gradings never
+    # push done past expected
+    assert all(c.completed <= c.expected for c in report.grade)
 
 
 def test_wave_cli_announcement_summary_and_json(tmp_path, offline_adapter, capsys):

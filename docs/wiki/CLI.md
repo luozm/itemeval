@@ -122,8 +122,11 @@ itemeval status CONFIG [--json]
 
 Prints datasets (id @ revision, item counts), the policy-effective scope,
 both condition tables with `done/expected`, error and parse-failure counts,
-spend per stage, and manifest count. `--json` emits the full structured
-report (also available for `estimate` and `export`).
+spend per stage, and manifest count. Both tables are scoped to the current
+grid at the current scope (wave 0); studies with more than one wave get an
+extra `waves:` line with per-wave gen/graded counts
+([Pipeline-Concepts#waves](Pipeline-Concepts.md#waves)). `--json` emits the
+full structured report (also available for `estimate` and `export`).
 
 ## Hints
 

@@ -74,6 +74,9 @@ def test_pilot_hint_fires_at_gate_on_fresh_study(gated_study, capsys, monkeypatc
     err = capsys.readouterr().err
     assert "hint: " in err and "--policy dev" in err
     assert "Cost-Savings#never-pay-twice" in err
+    # the trigger is per selected conditions, not the whole store — the message
+    # must not claim "first run" (it can re-fire on a study that has rows)
+    assert "no completed rows yet" in err and "first run" not in err
 
 
 def test_pilot_hint_in_json_gate_stop(gated_study, capsys, monkeypatch):

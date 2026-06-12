@@ -101,20 +101,22 @@ def detect_empty_solutions(
 
 
 def detect_pilot_available(*, store_is_empty: bool, dev_items: int) -> "Hint | None":
-    """First paid run of a study just hit the money gate — a cheap pilot exists.
+    """The money gate engaged with no completed rows behind it — a cheap pilot exists.
 
     The caller checks gate engagement (projection > confirm_above_usd); this
     fires only when the stage's store holds zero rows for the selected
-    conditions (a true first run — absent on every re-run).
+    conditions. That can also happen on a study that already has rows under
+    other conditions (e.g. after config drift), so the message must not claim
+    "first run".
     """
     if not store_is_empty:
         return None
     return Hint(
         code="pilot-available",
         message=(
-            "first run of this study — you can pilot cheaply first "
-            f"(--policy dev runs {dev_items} items), then re-run at full scope; "
-            "completed work is never re-paid"
+            "no completed rows yet for these conditions — you can pilot cheaply "
+            f"first (--policy dev runs {dev_items} items), then re-run at full "
+            "scope; completed work is never re-paid"
         ),
         learn_more="Cost-Savings#never-pay-twice",
     )

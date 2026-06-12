@@ -96,7 +96,10 @@ automatically. Mechanics:
 - Rows carry `wave` (int) and `wave_label` columns
   (solutions/gradings/export, additive — old stores read as wave 0);
   manifests and the ledger record the `epoch_offset`. `status` prints
-  per-wave completion only when more than one wave exists.
+  per-wave completion (generate and graded counts, e.g.
+  `waves: 0 — gen 8/8 · graded 8/8, 1 (w1) — gen 8/8 · graded 0/8`) only
+  when more than one wave exists; the main completion matrix stays scoped
+  to wave 0, so wave progress lives entirely on this line.
 - Analysis: `df.groupby("wave")` over the export, plus `served_model` from
   the manifests to attribute differences.
 - Config drift warnings are load-bearing here: a changed template between

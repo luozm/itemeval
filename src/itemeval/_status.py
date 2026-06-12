@@ -53,6 +53,8 @@ class WaveStatus(BaseModel):
     label: str | None = None  # None for wave 0 (never explicitly labeled)
     completed: int  # error-free generate rows in this wave (effective items)
     expected: int  # gen conditions x effective items x replications
+    graded: int = 0  # error-free grading rows over this wave's solutions
+    grade_expected: int = 0  # grade conditions x this wave's gradable solutions
 
 
 class StatusReport(BaseModel):
@@ -87,10 +89,18 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
     ledger = _ledger.read_ledger(prep.paths)
 
     effective_ids = {it.id for it in prep.items_effective}
+    grid_gen_ids = {c.id for c in prep.grid.generate}
     reps = prep.plan.replications
     expected_gen = len(prep.items_effective) * reps
     # rerun policy re-attempts empty completions, so they don't count as done.
     rerun_empty = config.solvers.on_empty == "rerun"
+
+    def gradable_count(df) -> int:
+        # gradable = produced a non-empty completion (error null, not blank). With
+        # on_empty=grade the empties are gradable too (judged as-is).
+        if config.solvers.on_empty == "grade":
+            return int(df["error"].isna().sum())
+        return int((df["error"].isna() & ~empty_solution_mask(df)).sum())
 
     gen_status = []
     for cond in prep.grid.generate:
@@ -122,19 +132,30 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
     gradable = 0
     if not solutions.empty:
         scoped = solutions[
-            solutions["item_id"].isin(effective_ids) & (solutions["epoch"].astype(int) <= reps)
+            solutions["item_id"].isin(effective_ids)
+            & (solutions["epoch"].astype(int) <= reps)
+            & solutions["condition_id"].isin(grid_gen_ids)
         ]
-        # gradable = produced a non-empty completion (error null, not blank). With
-        # on_empty=grade the empties are gradable too (judged as-is).
-        if config.solvers.on_empty == "grade":
-            gradable = int(scoped["error"].isna().sum())
-        else:
-            gradable = int((scoped["error"].isna() & ~empty_solution_mask(scoped)).sum())
+        gradable = gradable_count(scoped)
+
+    # Both sides of done/expected describe the same population: current grid,
+    # effective items, epoch <= replications. Gradings of wave epochs or of
+    # solutions stranded under drifted conditions are excluded (they showed as
+    # >100%); waves get their own per-wave graded counts below.
+    grade_scoped = gradings
+    if not gradings.empty:
+        grade_scoped = gradings[
+            gradings["item_id"].isin(effective_ids)
+            & (gradings["epoch"].astype(int) <= reps)
+            & gradings["gen_condition_id"].isin(grid_gen_ids)
+        ]
 
     grade_status = []
     for cond in prep.grid.grade:
         rows = (
-            gradings[gradings["grade_condition_id"] == cond.id] if not gradings.empty else gradings
+            grade_scoped[grade_scoped["grade_condition_id"] == cond.id]
+            if not grade_scoped.empty
+            else grade_scoped
         )
         completed = int(rows["error"].isna().sum()) if not rows.empty else 0
         errors = int(rows["error"].notna().sum()) if not rows.empty else 0
@@ -174,15 +195,31 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
 
     waves: list[WaveStatus] = []
     if not solutions.empty and "wave" in solutions.columns:
-        in_scope = solutions[solutions["item_id"].isin(effective_ids)]
+        # expected comes from the current grid, so exclude rows stranded under
+        # drifted (abandoned) conditions — counting them can show >100%.
+        in_scope = solutions[
+            solutions["item_id"].isin(effective_ids) & solutions["condition_id"].isin(grid_gen_ids)
+        ]
+        g_waves = gradings
+        if not gradings.empty and "wave" in gradings.columns:
+            g_waves = gradings[
+                gradings["item_id"].isin(effective_ids)
+                & gradings["gen_condition_id"].isin(grid_gen_ids)
+            ]
         for wave_num, group in in_scope.groupby(in_scope["wave"].astype(int)):
             labels = [v for v in group["wave_label"].dropna().unique() if isinstance(v, str)]
+            graded = 0
+            if not g_waves.empty and "wave" in g_waves.columns:
+                in_wave = g_waves[g_waves["wave"].astype(int) == int(wave_num)]
+                graded = int(in_wave["error"].isna().sum())
             waves.append(
                 WaveStatus(
                     wave=int(wave_num),
                     label=labels[0] if labels else None,
                     completed=int(group["error"].isna().sum()),
                     expected=len(prep.grid.generate) * len(prep.items_effective) * reps,
+                    graded=graded,
+                    grade_expected=len(prep.grid.grade) * gradable_count(group),
                 )
             )
 
