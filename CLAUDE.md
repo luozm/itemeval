@@ -1,18 +1,32 @@
 # CLAUDE.md — itemeval (package development)
 
-Publishable Python package: item-level LLM evaluation on inspect_ai.
-`README.md` is the spec; `ROADMAP.md` is the milestone plan — keep it updated
-as milestones complete. `DEVELOPMENT.md` defines the inspect_ai boundary rules
-(wrap don't fork; pass through don't rename; flatten at the public API; keep
-inspect imports confined to the task-builder/orchestrator/extension modules),
-the upgrade pipeline, and the versioning/release process — follow it for any
-code touching inspect_ai, dependency bump, or release; update `CHANGELOG.md` ([Unreleased]) in the same change that
-makes a user-visible difference. `docs/UX-PATTERNS.md` is the binding UX
-contract (no silent side effects, hint framework, consent rules, knob
-buckets) — every feature, new or touched, must pass its development
-checklist. Any study consuming this package lives in its
-own separate repo; never put study-specific content (a particular study's
-datasets, rubric texts, or analysis) in this package.
+Publishable Python package: item-level LLM evaluation on inspect_ai. Any
+study consuming this package lives in its own separate repo; never put
+study-specific content (a particular study's datasets, rubric texts, or
+analysis) in this package.
+
+## Doc map
+
+- Spec & planning: `README.md` (the spec) · `ROADMAP.md` (committed
+  milestones — keep updated as they complete) · `docs/FUTURE.md` (backlog:
+  why/how) · `docs/plans/` (active implementation briefs, from
+  `plans/TEMPLATE.md`; done → `plans/archive/`).
+- `docs/UX-PATTERNS.md` — **binding** UX contract (no silent side effects,
+  hint framework, consent rules, knob buckets); every feature, new or
+  touched, must pass its development checklist.
+- `DEVELOPMENT.md` — inspect_ai boundary rules (wrap don't fork; pass through
+  don't rename; flatten at the public API; inspect imports confined to the
+  task-builder/orchestrator/extension modules), the upgrade pipeline, and the
+  versioning/release process — follow it for any code touching inspect_ai, a
+  dependency bump, or a release.
+- `CHANGELOG.md` — update `[Unreleased]` in the same change that makes a
+  user-visible difference.
+- `docs/COST-OPTIMIZATION.md` — maintainer reference for the cost-saving
+  mechanisms (user-facing version: `docs/wiki/Cost-Savings.md`).
+- User docs: `docs/wiki/` (published wiki + tutorials).
+- Local-only, gitignored, never published: `local/` (STRATEGY.md,
+  WORKING_MEM.md) · `local/archive/DESIGN.md` (retired M1–M6 design
+  contract; its amendments record decisions that won during implementation).
 
 ## Python environment
 
@@ -38,5 +52,4 @@ datasets, rubric texts, or analysis) in this package.
 - Tests: `./.venv/bin/python -m pytest`. Unit tests must not call paid APIs;
   anything touching providers is mocked or marked for manual runs.
 - No real API keys in tests, fixtures, or examples.
-- Conventional commits (feat:/fix:/docs:/test:/refactor:); update CHANGELOG.md
-  for user-visible changes once releases start.
+- Conventional commits (feat:/fix:/docs:/test:/refactor:).
