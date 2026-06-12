@@ -38,6 +38,14 @@ class ConditionStatus(BaseModel):
     parse_failures: int = 0
 
 
+class SnapshotStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    created_at: str
+    rows: int
+
+
 class StatusReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -55,6 +63,7 @@ class StatusReport(BaseModel):
     spend_generate_usd: float
     spend_grade_usd: float
     manifests: list[str]  # sorted filenames
+    snapshots: list[SnapshotStatus] = []  # frozen export snapshots, sorted by name
 
 
 def _usd(series) -> float:
@@ -153,6 +162,17 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         else []
     )
 
+    from itemeval.store._export import read_snapshots
+
+    snapshots = [
+        SnapshotStatus(
+            name=meta.get("name", "?"),
+            created_at=meta.get("created_at", ""),
+            rows=int(meta.get("rows", 0)),
+        )
+        for meta in read_snapshots(prep.paths)
+    ]
+
     return StatusReport(
         study=config.study,
         policy=prep.plan.policy,
@@ -181,4 +201,5 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         spend_generate_usd=spend_gen,
         spend_grade_usd=spend_grade,
         manifests=manifests,
+        snapshots=snapshots,
     )

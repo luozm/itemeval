@@ -109,3 +109,43 @@ Because manifests are immutable, they double as an **endpoint drift**
 record: when past manifests show inconsistent `served_model` snapshots for a
 model id this run uses (or the last run is >30 days old), `generate`/`grade`
 print a best-effort warning — rows remain distinguishable by `run_id`.
+
+## Snapshots
+
+`itemeval export CONFIG --snapshot NAME` (Python:
+`export_study(cfg, snapshot="NAME")` → `ExportResult.snapshot_path`) runs a
+normal export, then freezes an immutable copy:
+
+```
+export/snapshots/<name>/
+  gradings_long.parquet    # frozen copy of the just-written export
+  gradings_long.csv
+  ledger.csv
+  dataset_locks.json       # pins as of snapshot time
+  manifests/               # every manifest covering included rows
+  snapshot.json            # name, created_at, itemeval_version, config_sha256,
+                           # run_ids, row/condition counts, spend totals
+  STUDY_CARD.md            # self-describing record (see below)
+```
+
+Why copy, not reference: the current-state layer is mutable (upserts
+replace), so "the table as of pub-1" cannot be reconstructed later — history
+is materialized at freeze time. Rules: names match
+`^[a-z0-9][a-z0-9_-]{0,63}$`; an existing name is **refused** (exit 2,
+`snapshot 'pub1' exists — choose a new name`) — refusing overwrite removes
+the only destructive path; snapshots are never read by any compute path (not
+resume, not merge). Consume them like any export (read the parquet; zip the
+folder to share). `status` lists existing snapshots
+(`snapshots: pub1 (2026-06-11, 1,920 rows)`; `snapshots[]` in JSON).
+
+**STUDY_CARD.md** is the HF-dataset-card analog written into every snapshot:
+YAML front-matter (schema-versioned, `itemeval_study_card: 1` — datasets and
+pins, models, replications, graders, rows, spend) followed by sections every
+number of which is derived from existing stores: Design (the facet grid with
+content hashes and template sources), Execution (one row per run from
+manifests + ledger, including `served_model` per condition — exactly which
+provider snapshot answered), Results (completion matrix and per-condition
+mean scores, labeled *descriptive, not analysis*), Costs (per-stage and
+per-provider spend, savings decomposition), and Reproduce (the config
+verbatim plus dataset pins). Configs must never contain secrets — keys live
+in the environment.

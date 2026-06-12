@@ -7,6 +7,20 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Snapshots** (`export --snapshot NAME` / `export_study(cfg,
+  snapshot="NAME")`): freeze an immutable named copy of the just-written
+  export under `export/snapshots/NAME/` — tables, `dataset_locks.json`,
+  every manifest covering included rows, `snapshot.json` (run ids, counts,
+  spend), and a `STUDY_CARD.md`. Existing names are refused (exit 2);
+  snapshots are never read by any compute path. `status` lists snapshots
+  (text line + `snapshots[]` in JSON); export JSON gains `snapshot` /
+  `snapshot_path`.
+- **STUDY_CARD.md**: a self-describing record written into every snapshot —
+  versioned YAML front-matter (`itemeval_study_card: 1`) plus Design /
+  Execution (incl. `served_model` per condition) / Results (descriptive) /
+  Costs / Reproduce sections, every number derived from existing stores.
+
+### Added
 - **Drift warnings** on `generate`/`grade` (one line each in the summary
   block; `warnings[]` on the run results — never blocking): *config drift*
   when a facet name matches stored rows but its content hash differs, or an

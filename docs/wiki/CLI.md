@@ -95,13 +95,18 @@ reports `parse_failures` (rows kept with `parse_ok=false`).
 ## `export` — analysis-ready tables
 
 ```
-itemeval export CONFIG [--json]
+itemeval export CONFIG [--snapshot NAME] [--json]
 ```
 
 Joins gradings × solutions into `export/gradings_long.parquet` (one row per
 grading event, 45 columns) plus a byte-equivalent CSV and `ledger.csv`.
 Prints per-stage spend and the internal reconciliation verdict (ledger totals
 vs row sums; reconciliation against provider dashboards is a manual step).
+
+`--snapshot NAME` additionally freezes an immutable copy under
+`export/snapshots/NAME/` (tables, locks, covering manifests, `snapshot.json`,
+`STUDY_CARD.md`); an existing name is refused with exit 2. See
+[Outputs-and-Schemas#snapshots](Outputs-and-Schemas.md#snapshots).
 
 ## `status` — completion matrix, no model API calls
 

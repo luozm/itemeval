@@ -1,4 +1,16 @@
-"""Long-format export: one row per grading event, parquet + CSV mirrors."""
+"""Long-format export: one row per grading event, parquet + CSV mirrors.
+
+Also home of `--snapshot`: an immutable, named copy of the just-written
+export plus everything needed to interpret it (locks, manifests,
+snapshot.json, STUDY_CARD.md). Snapshots are never read by any compute path —
+purely an analysis/sharing artifact; consumption = read the parquet like any
+export, zip the folder to share.
+"""
+
+import json
+import os
+import re
+import shutil
 
 import pandas as pd
 import pyarrow as pa
@@ -6,8 +18,9 @@ import pyarrow.parquet as pq
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._config import ExperimentConfig
-from itemeval._errors import StoreError
+from itemeval._errors import ConfigError, StoreError
 from itemeval._hints import Hint, detect_unpriced_models
+from itemeval._util import utc_now_iso
 from itemeval.budget._pricing import PricingProvenance, describe_pricing, load_pricing
 from itemeval.budget._report import CostReport, cost_report
 from itemeval.store._base import _coerce_to_schema, rel_to_study
@@ -67,6 +80,21 @@ EXPORT_SCHEMA = pa.schema(
 )
 
 
+SNAPSHOT_NAME_RE = r"^[a-z0-9][a-z0-9_-]{0,63}$"
+
+
+class SnapshotInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    path: str  # relative to the study dir
+    card_path: str  # the STUDY_CARD.md inside the snapshot
+    created_at: str
+    rows: int
+    run_ids: list[str]
+    spend_usd: float
+
+
 class ExportResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -84,6 +112,9 @@ class ExportResult(BaseModel):
     # Which pricing table the cost figures were computed against.
     pricing: PricingProvenance
     hints: list[Hint] = Field(default_factory=list)
+    # Set when export ran with snapshot=NAME / --snapshot NAME:
+    snapshot: "SnapshotInfo | None" = None
+    snapshot_path: "str | None" = None  # == snapshot.path, the documented return
 
 
 _SOLUTION_COLS = {
@@ -110,7 +141,111 @@ _GRADING_COLS = {
 }
 
 
-def export_study(config: ExperimentConfig) -> ExportResult:
+def _write_snapshot(
+    config: ExperimentConfig,
+    paths: StudyPaths,
+    name: str,
+    long: "pd.DataFrame",
+    ledger: "pd.DataFrame",
+    cost,
+) -> SnapshotInfo:
+    """Materialize an immutable copy of the just-written export (atomic rename).
+
+    Copy, not reference: the current-state layer is mutable (upserts replace),
+    so "the table as of pub-1" cannot be reconstructed later — history must be
+    materialized at freeze time.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    from itemeval._prepare import prepare_study
+    from itemeval._status import build_status
+    from itemeval.report._card import build_study_card
+
+    if not re.match(SNAPSHOT_NAME_RE, name):
+        raise ConfigError(f"invalid snapshot name {name!r} (must match {SNAPSHOT_NAME_RE})")
+    snap_dir = paths.export_dir / "snapshots" / name
+    if snap_dir.exists():
+        raise ConfigError(f"snapshot '{name}' exists — choose a new name")
+
+    created_at = utc_now_iso()
+    try:
+        itemeval_version = version("itemeval")
+    except PackageNotFoundError:
+        itemeval_version = "unknown"
+    run_ids = sorted(set(long["gen_run_id"].dropna()) | set(long["grade_run_id"].dropna()))
+    spend_usd = float(pd.to_numeric(ledger["usd"], errors="coerce").fillna(0.0).sum())
+
+    tmp = paths.export_dir / "snapshots" / f".tmp-{name}"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    (tmp / "manifests").mkdir(parents=True)
+    for filename in ("gradings_long.parquet", "gradings_long.csv", "ledger.csv"):
+        shutil.copy2(paths.export_dir / filename, tmp / filename)
+    if paths.dataset_locks.is_file():
+        shutil.copy2(paths.dataset_locks, tmp / "dataset_locks.json")
+    for run_id in run_ids:  # every manifest covering included rows
+        src = paths.manifests_dir / f"{run_id}.json"
+        if src.is_file():
+            shutil.copy2(src, tmp / "manifests" / src.name)
+
+    meta = {
+        "name": name,
+        "created_at": created_at,
+        "itemeval_version": itemeval_version,
+        "config_sha256": config.config_sha256 or "",
+        "run_ids": run_ids,
+        "rows": int(len(long)),
+        "gen_conditions": int(long["gen_condition_id"].nunique()),
+        "grade_conditions": int(long["grade_condition_id"].nunique()),
+        "spend_usd": spend_usd,
+    }
+    (tmp / "snapshot.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+    prep = prepare_study(config)
+    card = build_study_card(
+        config,
+        prep,
+        build_status(config, prep),
+        long,
+        ledger,
+        cost,
+        snapshot_name=name,
+        created_at=created_at,
+        run_ids=run_ids,
+        spend_usd=spend_usd,
+        itemeval_version=itemeval_version,
+    )
+    (tmp / "STUDY_CARD.md").write_text(card, encoding="utf-8")
+
+    os.replace(tmp, snap_dir)
+    return SnapshotInfo(
+        name=name,
+        path=rel_to_study(paths, snap_dir),
+        card_path=rel_to_study(paths, snap_dir / "STUDY_CARD.md"),
+        created_at=created_at,
+        rows=int(len(long)),
+        run_ids=run_ids,
+        spend_usd=spend_usd,
+    )
+
+
+def read_snapshots(paths: StudyPaths) -> "list[dict]":
+    """snapshot.json metadata for every materialized snapshot, sorted by name."""
+    root = paths.export_dir / "snapshots"
+    if not root.is_dir():
+        return []
+    out = []
+    for meta_path in sorted(root.glob("*/snapshot.json")):
+        try:
+            out.append(json.loads(meta_path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return out
+
+
+def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> ExportResult:
     paths = StudyPaths(config.study_dir)
     gradings = read_gradings(paths)
     if gradings.empty:
@@ -185,6 +320,12 @@ def export_study(config: ExperimentConfig) -> ExportResult:
     provenance = describe_pricing(pricing, refreshed=False)
     unpriced = detect_unpriced_models(report.unpriced_models)
 
+    snapshot_info = (
+        _write_snapshot(config, paths, snapshot, long, ledger, report)
+        if snapshot is not None
+        else None
+    )
+
     return ExportResult(
         rows=len(long),
         gradings_parquet=rel_to_study(paths, parquet_path),
@@ -196,4 +337,6 @@ def export_study(config: ExperimentConfig) -> ExportResult:
         cost=report,
         pricing=provenance,
         hints=[unpriced] if unpriced else [],
+        snapshot=snapshot_info,
+        snapshot_path=snapshot_info.path if snapshot_info else None,
     )

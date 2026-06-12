@@ -412,11 +412,20 @@ def _cmd_export(args) -> int:
     from itemeval._hints import emit_hints
     from itemeval.store._export import export_study
 
-    result = export_study(load_config(args.config, work_dir=getattr(args, "base_dir", None)))
+    result = export_study(
+        load_config(args.config, work_dir=getattr(args, "base_dir", None)),
+        snapshot=args.snapshot,
+    )
     if args.json:
         print(result.model_dump_json(indent=2))
         return 0
     print("export: rewrote export/ — gradings_long.parquet + .csv, ledger.csv (disposable view)")
+    if result.snapshot:
+        snap = result.snapshot
+        print(
+            f"snapshot: {snap.name} written — {snap.rows:,} rows · "
+            f"{len(snap.run_ids)} runs · {_fmt_usd(snap.spend_usd)} total · {snap.path}/"
+        )
     print(f"rows: {result.rows}")
     print(f"gradings: {result.gradings_parquet} + {result.gradings_csv}")
     print(f"ledger:   {result.ledger_csv}")
@@ -501,6 +510,11 @@ def _cmd_status(args) -> int:
     )
     latest = f" (latest: manifests/{report.manifests[-1]})" if report.manifests else ""
     print(f"manifests: {len(report.manifests)}{latest}")
+    if report.snapshots:
+        bits = ", ".join(
+            f"{s.name} ({s.created_at[:10]}, {s.rows:,} rows)" for s in report.snapshots
+        )
+        print(f"snapshots: {bits}")
     return 0
 
 
@@ -637,6 +651,14 @@ def _build_parser() -> argparse.ArgumentParser:
             p.add_argument("--rubric", action="append", help="only this rubric (repeatable)")
 
     p = add("export", _cmd_export, "long-format parquet + CSV + cost ledger")
+    p.add_argument(
+        "--snapshot",
+        default=None,
+        metavar="NAME",
+        help="also freeze an immutable named copy under export/snapshots/NAME/ "
+        "(with manifests, locks, snapshot.json, STUDY_CARD.md); an existing "
+        "name is refused",
+    )
     p.add_argument("--json", action="store_true")
 
     p = add("status", _cmd_status, "expanded grid + completion matrix; no model API calls")
