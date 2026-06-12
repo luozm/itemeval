@@ -41,12 +41,17 @@ GRADINGS_SCHEMA = pa.schema(
         pa.field("latency_s", pa.float64()),
         pa.field("log_file", pa.string()),
         pa.field("created_at", pa.string(), nullable=False),
+        # Wave provenance, inherited from the graded solution row (default 0/null).
+        pa.field("wave", pa.int32()),  # nullable: null reads as wave 0
+        pa.field("wave_label", pa.string()),
     ]
 )
 
 
 def read_gradings(paths: StudyPaths) -> pd.DataFrame:
-    return read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA)
+    from itemeval.store._solutions import _backfill_wave
+
+    return _backfill_wave(read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA))
 
 
 def upsert_gradings(paths: StudyPaths, rows: "list[dict]") -> int:

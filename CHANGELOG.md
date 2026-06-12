@@ -7,6 +7,23 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Waves — re-observation over time** (`generate --wave LABEL` /
+  `run_generate(prep, wave=...)`, and the matching `grade --wave`): re-run
+  the same design scope as a new **epoch block** (wave *w* with
+  `replications: R` occupies epochs `w·R+1…(w+1)·R`), keeping both
+  observations — the substrate for drift / model-downgrade detection. New
+  waves are new store keys (never replacements); the offset eval runs with
+  the local response cache **off** (announced) so re-observations are fresh
+  draws; mid-wave crashes resume by label. Schema change (minor bump):
+  solutions/gradings/export gain additive `wave`/`wave_label` columns (old
+  stores read as wave 0, no rewrite); the ledger gains `epoch_offset`;
+  manifests and run results record `wave`/`wave_label`/`epoch_offset`.
+  `status` reports per-wave completion only when >1 wave exists. Substrate:
+  `epochs_to_run` (epoch-range-aware resume; `items_to_run` now delegates to
+  it) and `resolve_wave` in the solutions store;
+  `build_generate_task(epoch_offset=)`.
+
+### Added
 - **Snapshots** (`export --snapshot NAME` / `export_study(cfg,
   snapshot="NAME")`): freeze an immutable named copy of the just-written
   export under `export/snapshots/NAME/` — tables, `dataset_locks.json`,

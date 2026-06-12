@@ -77,6 +77,10 @@ class GradeResult(BaseModel):
     # Provider batch mode (Law 1: provider-side job creation is announced):
     batch: bool = False
     batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
+    # Wave (re-observation) provenance; 0/None/0 for ordinary runs:
+    wave: int = 0
+    wave_label: "str | None" = None
+    epoch_offset: int = 0
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -87,6 +91,7 @@ class GradeResult(BaseModel):
 def _base_row(
     prep: "PreparedStudy", cond: GradeCondition, run_id: str, sol_row, now: str
 ) -> "dict[str, Any]":
+    wave_label = getattr(sol_row, "wave_label", None)
     return {
         "study": prep.config.study,
         "run_id": run_id,
@@ -95,6 +100,9 @@ def _base_row(
         "gen_condition_id": sol_row.condition_id,
         "item_id": sol_row.item_id,
         "epoch": int(sol_row.epoch),
+        # inherited from the graded solution row (NaN -> default 0/null)
+        "wave": int(getattr(sol_row, "wave", 0) or 0),
+        "wave_label": wave_label if isinstance(wave_label, str) else None,
         "grade_kind": cond.kind,
         "grader_name": cond.grader_name,
         "grader_model": cond.grader_model,
@@ -196,20 +204,30 @@ def run_grade(
     estimate_usd: "float | None" = None,
     estimate_full_usd: "float | None" = None,
     max_usd: "float | None" = None,
+    wave: "str | None" = None,
 ) -> GradeResult:
-    enforce_budget_cap(prep, "grade", max_usd, force)
+    enforce_budget_cap(prep, "grade", max_usd, force, wave=wave)
     run_id = run_id or new_run_id("grade")
     prep.paths.ensure()
     solutions_df = _solutions.read_solutions(prep.paths)
     if solutions_df.empty:
         raise StoreError("no solutions in store; run generate first")
 
-    # Policy scope: effective items, epochs within the effective replications.
+    # Policy scope: effective items, epochs within the effective replications —
+    # or, with --wave, exactly that wave's epoch block.
     effective_ids = {it.id for it in prep.items_effective}
-    scoped = solutions_df[
-        solutions_df["item_id"].isin(effective_ids)
-        & (solutions_df["epoch"].astype(int) <= prep.plan.replications)
-    ]
+    if wave is not None:
+        wave_rows = solutions_df[solutions_df["wave_label"] == wave]
+        if wave_rows.empty:
+            raise StoreError(f"no solutions for wave '{wave}'; run generate --wave {wave} first")
+        wave_num = int(wave_rows["wave"].iloc[0])
+        scoped = wave_rows[wave_rows["item_id"].isin(effective_ids)]
+    else:
+        wave_num = 0
+        scoped = solutions_df[
+            solutions_df["item_id"].isin(effective_ids)
+            & (solutions_df["epoch"].astype(int) <= prep.plan.replications)
+        ]
 
     # Empty (no-error) completions: a distinct channel from API errors. The
     # solvers.on_empty policy decides whether they are graded as-is or skipped;
@@ -245,7 +263,15 @@ def run_grade(
     )
 
     manifest = build_manifest(
-        prep, "grade", run_id, [c.id for c in selected], estimate_usd, estimate_full_usd
+        prep,
+        "grade",
+        run_id,
+        [c.id for c in selected],
+        estimate_usd,
+        estimate_full_usd,
+        wave=wave_num,
+        wave_label=wave,
+        epoch_offset=wave_num * prep.plan.replications,
     )
     manifest_path = write_manifest(manifest, prep.paths)
 
@@ -417,4 +443,7 @@ def run_grade(
             if prep.plan.batch is not None
             else []
         ),
+        wave=wave_num,
+        wave_label=wave,
+        epoch_offset=wave_num * prep.plan.replications,
     )

@@ -27,6 +27,7 @@ def build_generate_task(
     batch: "bool | int | None" = None,
     cache_prompt: "bool | None" = None,
     cache_schedule: bool = True,
+    epoch_offset: int = 0,
 ) -> Task:
     # Replications send byte-identical prompts: every epoch of an item shares
     # the full prompt as a provider cache prefix. Gate them (warm-then-fan-out)
@@ -68,12 +69,15 @@ def build_generate_task(
         )
         for item in items
     ]
-    cache_policy = CachePolicy(expiry=None, per_epoch=True) if cache else False
-    solver = (
-        gated_generate(cache=cache_policy)
-        if gate
-        else (generate(cache=cache_policy) if cache else generate())
+    cache_policy: "CachePolicy | bool" = (
+        CachePolicy(expiry=None, per_epoch=True) if cache else False
     )
+    if epoch_offset > 0:
+        # Offset evals run epochs 1..N internally; the local response cache
+        # would key them as such and silently REPLAY the wave-0 draws as "new"
+        # observations. Re-observations must be fresh draws — cache off.
+        cache_policy = False
+    solver = gated_generate(cache=cache_policy) if gate else generate(cache=cache_policy)
     p = cond.gen_params
     config = GenerateConfig(
         temperature=p.temperature,
@@ -92,5 +96,12 @@ def build_generate_task(
         config=config,
         epochs=Epochs(replications),
         name=f"gen_{cond.slug}",
-        metadata={"itemeval": {"stage": "generate", "study": study, "condition_id": cond.id}},
+        metadata={
+            "itemeval": {
+                "stage": "generate",
+                "study": study,
+                "condition_id": cond.id,
+                "epoch_offset": epoch_offset,
+            }
+        },
     )

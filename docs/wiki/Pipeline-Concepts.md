@@ -71,6 +71,37 @@ kept with `parse_ok=false` and is *final* — it is not retried on re-runs
 (use `--force` to re-grade). Sample-level *errors* (provider failures), by
 contrast, leave `error` set and are re-attempted on the next run.
 
+## Waves
+
+`generate cfg.yaml --wave 2026-07` re-observes the **same** design scope as
+a new observation, keeping both — the substrate for drift / model-downgrade
+detection over time. A wave is an **epoch block**: wave *w* with
+`replications: R` occupies epochs `w·R+1 … (w+1)·R`. The epoch axis is
+already in every store key and both cache keys, so new waves are new keys —
+no migration, no replacement — and fresh epoch numbers give fresh draws
+automatically. Mechanics:
+
+- `--wave` is a design declaration: always explicit, never auto-fired.
+  Without it, behavior is exactly the single-wave default (`wave` column
+  constantly 0, `wave_label` null — zero noise).
+- The offset eval runs with the **local response cache off** (announced:
+  `wave 2026-07: local response cache off — re-observations must be fresh
+  draws`) — otherwise inspect would replay the wave-0 bytes as "new"
+  observations. By design waves never replay: they cost full price.
+- Resumable mid-wave: re-running with the same label fills only the block's
+  missing work; an existing label resumes its block, a new label allocates
+  the next free one.
+- `grade --wave LABEL` grades exactly that block's solutions under the
+  existing grade conditions; plain `grade` stays scoped to wave 0.
+- Rows carry `wave` (int) and `wave_label` columns
+  (solutions/gradings/export, additive — old stores read as wave 0);
+  manifests and the ledger record the `epoch_offset`. `status` prints
+  per-wave completion only when more than one wave exists.
+- Analysis: `df.groupby("wave")` over the export, plus `served_model` from
+  the manifests to attribute differences.
+- Config drift warnings are load-bearing here: a changed template between
+  waves means the new wave is a different condition — the warning says so.
+
 ## Resume semantics
 
 The parquet store is the source of truth; raw `.eval` logs are evidence.

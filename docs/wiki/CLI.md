@@ -61,6 +61,7 @@ next run can actually spend; the money gate operates on it). See
 ```
 itemeval generate CONFIG [-y/--yes] [--force] [--condition F]...
                   [--display {none,plain,rich,full}] [--json]
+                  [--policy P] [--wave LABEL]
 ```
 
 Flow: estimate → print projection → **gate** → run each generate condition
@@ -79,15 +80,20 @@ reported and the rest continue (final exit 1).
   outcome) and silences the live display unless `--display` is passed. A
   gate stop still emits a JSON document (projected cost, gate reason, the
   `--yes` rerun command) before exiting 3/4.
+- `--wave LABEL` re-observes the current scope as a new epoch block, keeping
+  both observations (see
+  [Pipeline-Concepts#waves](Pipeline-Concepts.md#waves)).
 
 ## `grade` — stage 2 (resumable, re-runnable)
 
 ```
 itemeval grade CONFIG [-y/--yes] [--force] [--condition F]...
                [--grader N]... [--rubric N]... [--display ...] [--json]
+               [--policy P] [--wave LABEL]
 ```
 
-Same flow over grade conditions (including `--json`, as on `generate`). Verifiable conditions cost $0 and need no
+Same flow over grade conditions (including `--json` and `--wave`, as on
+`generate`). Verifiable conditions cost $0 and need no
 model. `--grader`/`--rubric` (repeatable) narrow to specific judges/rubrics —
 useful for adding a new grader over existing solutions. The summary line
 reports `parse_failures` (rows kept with `parse_ok=false`).
@@ -99,7 +105,7 @@ itemeval export CONFIG [--snapshot NAME] [--json]
 ```
 
 Joins gradings × solutions into `export/gradings_long.parquet` (one row per
-grading event, 45 columns) plus a byte-equivalent CSV and `ledger.csv`.
+grading event, 47 columns) plus a byte-equivalent CSV and `ledger.csv`.
 Prints per-stage spend and the internal reconciliation verdict (ledger totals
 vs row sums; reconciliation against provider dashboards is a manual step).
 

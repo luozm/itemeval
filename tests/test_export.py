@@ -36,7 +36,7 @@ def test_export_schema_and_mirrors(study):
 
     parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
     assert list(parquet.columns) == list(EXPORT_SCHEMA.names)
-    assert len(parquet.columns) == 45
+    assert len(parquet.columns) == 47  # 45 + wave/wave_label
     assert len(parquet) == 8
 
     # One row per grading event, never aggregated; full provenance joined in.

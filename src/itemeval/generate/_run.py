@@ -37,7 +37,11 @@ ModelFactory = Callable[[str, str], Any]  # (model_id, stage) -> str | Model
 
 
 def enforce_budget_cap(
-    prep: "PreparedStudy", stage: str, max_usd: "float | None", force: bool
+    prep: "PreparedStudy",
+    stage: str,
+    max_usd: "float | None",
+    force: bool,
+    wave: "str | None" = None,
 ) -> None:
     """Raise BudgetExceededError before any API call when a cap is exceeded.
 
@@ -52,7 +56,7 @@ def enforce_budget_cap(
         return
     from itemeval.budget._estimator import estimate_study
 
-    est = estimate_study(prep, force=force)
+    est = estimate_study(prep, force=force, wave=wave)
     stage_est = est.generate if stage == "generate" else est.grade
     cap = min(caps)
     if stage_est.remaining_usd > cap:
@@ -102,6 +106,10 @@ class GenerateResult(BaseModel):
     # Provider batch mode (Law 1: provider-side job creation is announced):
     batch: bool = False
     batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
+    # Wave (re-observation) provenance; 0/None/0 for ordinary runs:
+    wave: int = 0
+    wave_label: "str | None" = None
+    epoch_offset: int = 0
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -213,6 +221,7 @@ def ledger_row(
     model: str,
     rows: "list[dict]",
     batch: "bool | int | None",
+    epoch_offset: int = 0,
 ) -> dict:
     def total(col: str) -> "int | None":
         vals = [r[col] for r in rows if r.get(col) is not None]
@@ -235,6 +244,7 @@ def ledger_row(
         "priced": bool(usd_vals),
         "batch": batch is not None,
         "created_at": utc_now_iso(),
+        "epoch_offset": epoch_offset,
     }
 
 
@@ -274,7 +284,13 @@ def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
 
 
 def rows_from_generate_log(
-    log: "EvalLog", cond: GenCondition, prep: "PreparedStudy", run_id: str
+    log: "EvalLog",
+    cond: GenCondition,
+    prep: "PreparedStudy",
+    run_id: str,
+    epoch_offset: int = 0,
+    wave: int = 0,
+    wave_label: "str | None" = None,
 ) -> "list[dict]":
     rows = []
     now = utc_now_iso()
@@ -300,7 +316,9 @@ def rows_from_generate_log(
                 "item_id": item_id,
                 "dataset_id": origin.dataset_id,
                 "dataset_revision": origin.revision,
-                "epoch": int(sample.epoch),
+                "epoch": int(sample.epoch) + epoch_offset,
+                "wave": wave,
+                "wave_label": wave_label,
                 "model": cond.model,
                 "prompt_name": cond.prompt_name,
                 "prompt_hash": cond.prompt_hash,
@@ -340,20 +358,39 @@ def run_generate(
     estimate_usd: "float | None" = None,
     estimate_full_usd: "float | None" = None,
     max_usd: "float | None" = None,
+    wave: "str | None" = None,
 ) -> GenerateResult:
     from itemeval._driftcheck import endpoint_drift_warnings, generate_drift_warnings
 
-    enforce_budget_cap(prep, "generate", max_usd, force)
+    enforce_budget_cap(prep, "generate", max_usd, force, wave=wave)
     run_id = run_id or new_run_id("generate")
     prep.paths.ensure()
     upsert_items(prep.paths, prep.datasets)
 
+    reps = prep.plan.replications
+    store = _solutions.read_solutions(prep.paths)
+    if wave is not None:
+        # A wave is an epoch block: new epoch numbers are new keys — re-observe
+        # the same scope without touching wave-0 rows (resumable mid-wave).
+        wave_num, epoch_offset = _solutions.resolve_wave(store, wave, reps)
+    else:
+        wave_num, epoch_offset = 0, 0
+    epoch_block = (epoch_offset + 1, epoch_offset + reps)
+
     selected = [c for c in prep.grid.generate if matches_filter(c.id, c.slug, condition_filter)]
-    drift_warnings = generate_drift_warnings(
-        prep.grid, _solutions.read_solutions(prep.paths)
-    ) + endpoint_drift_warnings([c.model for c in selected], prep.paths.manifests_dir)
+    drift_warnings = generate_drift_warnings(prep.grid, store) + endpoint_drift_warnings(
+        [c.model for c in selected], prep.paths.manifests_dir
+    )
     manifest = build_manifest(
-        prep, "generate", run_id, [c.id for c in selected], estimate_usd, estimate_full_usd
+        prep,
+        "generate",
+        run_id,
+        [c.id for c in selected],
+        estimate_usd,
+        estimate_full_usd,
+        wave=wave_num,
+        wave_label=wave,
+        epoch_offset=epoch_offset,
     )
     manifest_path = write_manifest(manifest, prep.paths)
 
@@ -368,17 +405,17 @@ def run_generate(
 
     for cond in selected:
         existing = _solutions.read_solutions(prep.paths)
-        to_run = (
-            list(item_ids)
-            if force
-            else _solutions.items_to_run(
+        if force:
+            to_run = list(item_ids)
+        else:
+            missing = _solutions.epochs_to_run(
                 existing,
                 cond.id,
                 item_ids,
-                prep.plan.replications,
+                epoch_block,
                 require_solution=prep.config.solvers.on_empty == "rerun",
             )
-        )
+            to_run = [iid for iid in item_ids if missing[iid]]
         if not to_run:
             reports.append(
                 ConditionRunReport(
@@ -415,6 +452,7 @@ def run_generate(
             batch=prep.plan.batch,
             cache_prompt=cache_prompt,
             cache_schedule=cache_schedule,
+            epoch_offset=epoch_offset,
         )
         try:
             # Serial eval per condition: inspect's eval is one-at-a-time per process.
@@ -450,7 +488,9 @@ def run_generate(
             )
             continue
 
-        rows = rows_from_generate_log(log, cond, prep, run_id)
+        rows = rows_from_generate_log(
+            log, cond, prep, run_id, epoch_offset=epoch_offset, wave=wave_num, wave_label=wave
+        )
         run_models.append(cond.model)
         endpoints_effective[cond.id] = endpoint_info(log, cond.model)
         n = _solutions.upsert_solutions(prep.paths, rows)
@@ -465,7 +505,17 @@ def run_generate(
         )
         _ledger.upsert_ledger(
             prep.paths,
-            [ledger_row(run_id, "generate", cond.id, cond.model, rows, prep.plan.batch)],
+            [
+                ledger_row(
+                    run_id,
+                    "generate",
+                    cond.id,
+                    cond.model,
+                    rows,
+                    prep.plan.batch,
+                    epoch_offset=epoch_offset,
+                )
+            ],
         )
         ok_rows = [r for r in rows if r["error"] is None]
         if ok_rows:
@@ -541,4 +591,7 @@ def run_generate(
         batch_providers=(
             sorted({provider_of(m) for m in run_models} & BATCH_PROVIDERS) if batch_on else []
         ),
+        wave=wave_num,
+        wave_label=wave,
+        epoch_offset=epoch_offset,
     )

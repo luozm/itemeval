@@ -46,6 +46,10 @@ time).
 Cost: `input_tokens, output_tokens, total_tokens, cache_read_tokens,
 cache_write_tokens, reasoning_tokens, usd, latency_s`.
 Audit: `log_file, sample_uuid, created_at`.
+Waves: `wave` (int, default 0), `wave_label` (null unless `--wave` was used);
+old stores read as wave 0 — see
+[Pipeline-Concepts#waves](Pipeline-Concepts.md#waves). Gradings and the
+export carry the same two columns, inherited from the graded solution row.
 
 ## `gradings.parquet` (key: grade_condition_id, gen_condition_id, item_id, epoch)
 
@@ -62,7 +66,7 @@ without a sample-level `error`). Parse failures are final; errors re-run.
 
 ## `export/gradings_long.parquet` — one row per grading event
 
-The left-join of gradings onto solutions: 45 columns, grouped as
+The left-join of gradings onto solutions: 47 columns, grouped as
 
 - **Design cell**: `study, item_id, dataset_id, dataset_revision, model,
   prompt_name, prompt_hash, model_config_name, replication,

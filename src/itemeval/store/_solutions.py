@@ -46,12 +46,26 @@ SOLUTIONS_SCHEMA = pa.schema(
         pa.field("log_file", pa.string(), nullable=False),
         pa.field("sample_uuid", pa.string()),
         pa.field("created_at", pa.string(), nullable=False),
+        # Wave provenance (re-observation over time): wave w with replications R
+        # occupies epochs w*R+1 .. (w+1)*R. Derived columns, default 0/null —
+        # studies that never use --wave see one constant column and nothing else.
+        pa.field("wave", pa.int32()),  # nullable: null reads as wave 0
+        pa.field("wave_label", pa.string()),
     ]
 )
 
 
+def _backfill_wave(df: pd.DataFrame) -> pd.DataFrame:
+    """Old stores predate the wave columns; default them on read (no rewrite)."""
+    if "wave" not in df.columns:
+        df = df.assign(wave=0, wave_label=None)
+    elif not df.empty and df["wave"].isna().any():
+        df = df.assign(wave=df["wave"].fillna(0))
+    return df
+
+
 def read_solutions(paths: StudyPaths) -> pd.DataFrame:
-    return read_parquet_or_empty(paths.solutions, SOLUTIONS_SCHEMA)
+    return _backfill_wave(read_parquet_or_empty(paths.solutions, SOLUTIONS_SCHEMA))
 
 
 def upsert_solutions(paths: StudyPaths, rows: "list[dict]") -> int:
@@ -70,6 +84,30 @@ def empty_solution_mask(df: pd.DataFrame) -> pd.Series:
     return df["error"].isna() & blank
 
 
+def epochs_to_run(
+    df: pd.DataFrame,
+    condition_id: str,
+    item_ids: "list[str]",
+    epoch_range: "tuple[int, int]",
+    *,
+    require_solution: bool = False,
+) -> "dict[str, set[int]]":
+    """Per item: epochs in epoch_range (inclusive) not yet completed.
+
+    `require_solution=True` (the `rerun` empty-solution policy) counts only
+    non-empty completions as done, so empty no-error rows are re-attempted.
+    """
+    lo, hi = epoch_range
+    needed = set(range(lo, hi + 1))
+    if df.empty:
+        return {iid: set(needed) for iid in item_ids}
+    cond = df[(df["condition_id"] == condition_id) & (df["error"].isna())]
+    if require_solution and not cond.empty:
+        cond = cond[~empty_solution_mask(cond)]
+    done = cond.groupby("item_id")["epoch"].apply(lambda s: set(s.astype(int))).to_dict()
+    return {iid: needed - done.get(iid, set()) for iid in item_ids}
+
+
 def items_to_run(
     df: pd.DataFrame,
     condition_id: str,
@@ -78,16 +116,25 @@ def items_to_run(
     *,
     require_solution: bool = False,
 ) -> "list[str]":
-    """Items (input order preserved) missing any completed epoch 1..replications.
+    """Items (input order preserved) missing any completed epoch 1..replications."""
+    missing = epochs_to_run(
+        df, condition_id, item_ids, (1, replications), require_solution=require_solution
+    )
+    return [iid for iid in item_ids if missing[iid]]
 
-    `require_solution=True` (the `rerun` empty-solution policy) counts only
-    non-empty completions as done, so empty no-error rows are re-attempted.
+
+def resolve_wave(df: pd.DataFrame, wave_label: str, replications: int) -> "tuple[int, int]":
+    """(wave_number, epoch_offset) for a labeled re-observation wave.
+
+    A label already present in the store resumes its block (mid-wave crash
+    recovery); otherwise the next free epoch block after the store's max epoch
+    is allocated — new waves are new keys, never replacements.
     """
-    if df.empty:
-        return list(item_ids)
-    cond = df[(df["condition_id"] == condition_id) & (df["error"].isna())]
-    if require_solution and not cond.empty:
-        cond = cond[~empty_solution_mask(cond)]
-    done_epochs = cond.groupby("item_id")["epoch"].apply(set).to_dict()
-    needed = set(range(1, replications + 1))
-    return [iid for iid in item_ids if not needed.issubset(done_epochs.get(iid, set()))]
+    if not df.empty and "wave_label" in df.columns:
+        existing = df[df["wave_label"] == wave_label]
+        if not existing.empty:
+            wave = int(existing["wave"].iloc[0])
+            return wave, wave * replications
+    max_epoch = 0 if df.empty else int(df["epoch"].astype(int).max())
+    wave = -(-max_epoch // replications)  # ceil to the next free block
+    return wave, wave * replications

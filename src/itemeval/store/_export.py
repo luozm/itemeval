@@ -76,6 +76,9 @@ EXPORT_SCHEMA = pa.schema(
         pa.field("gen_log_file", pa.string()),
         pa.field("grade_log_file", pa.string()),
         pa.field("created_at", pa.string()),
+        # Wave provenance (default 0/null; analysis: df.groupby("wave")).
+        pa.field("wave", pa.int32()),
+        pa.field("wave_label", pa.string()),
     ]
 )
 

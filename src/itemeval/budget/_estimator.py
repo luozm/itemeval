@@ -128,19 +128,21 @@ def estimate_study(
     gradings_df: "pd.DataFrame | None" = None,
     *,
     force: bool = False,
+    wave: "str | None" = None,
 ) -> Estimate:
     """Project the policy-effective grid: full figures plus the remaining delta.
 
     `usd`/`full_usd` always cover the full grid; `remaining_usd` subtracts
     already-complete cells using the same predicates the runners use
-    (`items_to_run` for generate, `pending_solutions` for grade), so the gate
+    (`epochs_to_run` for generate, `pending_solutions` for grade), so the gate
     can operate on what this run will actually spend. `force=True` makes
-    remaining equal full (everything selected re-runs). When solutions_df is
-    None, the study's solutions store is read so judge input sizing uses real
-    stored solutions where they exist.
+    remaining equal full (everything selected re-runs). With `wave`, the delta
+    covers that wave's epoch block (1.3's remaining logic within the block).
+    When solutions_df is None, the study's solutions store is read so judge
+    input sizing uses real stored solutions where they exist.
     """
     from itemeval.store._gradings import pending_solutions, read_gradings
-    from itemeval.store._solutions import items_to_run, read_solutions
+    from itemeval.store._solutions import epochs_to_run, read_solutions, resolve_wave
 
     if solutions_df is None:
         solutions_df = read_solutions(prep.paths)
@@ -156,12 +158,21 @@ def estimate_study(
     include_empty = prep.config.solvers.on_empty == "grade"
     warnings: list[str] = []
 
-    # The runners' scope: effective items, epochs within effective replications.
+    if wave is not None:
+        _, offset = resolve_wave(solutions_df, wave, reps)
+    else:
+        offset = 0
+    epoch_lo, epoch_hi = offset + 1, offset + reps
+
+    # The runners' scope: effective items, epochs within the run's block
+    # (1..reps normally; the wave's block under --wave).
     scoped = solutions_df
     if not solutions_df.empty:
+        epochs = solutions_df["epoch"].astype(int)
         scoped = solutions_df[
             solutions_df["item_id"].isin(effective_ids)
-            & (solutions_df["epoch"].astype(int) <= reps)
+            & (epochs >= epoch_lo)
+            & (epochs <= epoch_hi)
         ]
 
     gen_conditions = []
@@ -197,11 +208,17 @@ def estimate_study(
         )
 
         # Delta: what the runner would actually launch for this condition.
-        to_run = (
-            list(item_ids)
-            if force
-            else items_to_run(solutions_df, cond.id, item_ids, reps, require_solution=rerun_empty)
-        )
+        if force:
+            to_run = list(item_ids)
+        else:
+            missing = epochs_to_run(
+                solutions_df,
+                cond.id,
+                item_ids,
+                (epoch_lo, epoch_hi),
+                require_solution=rerun_empty,
+            )
+            to_run = [iid for iid in item_ids if missing[iid]]
         run_set = set(to_run)
         rem_items = [it for it in items if it.id in run_set]
         rem_calls = len(rem_items) * reps
@@ -218,7 +235,7 @@ def estimate_study(
             gen_delta["completed"] += int(cond_rows["error"].isna().sum())
             existing = set(zip(cond_rows["item_id"], cond_rows["epoch"].astype(int)))
             gen_delta["replaced"] += sum(
-                1 for iid in to_run for e in range(1, reps + 1) if (iid, e) in existing
+                1 for iid in to_run for e in range(epoch_lo, epoch_hi + 1) if (iid, e) in existing
             )
 
     # Index stored solutions for judge input sizing (actual text when available).

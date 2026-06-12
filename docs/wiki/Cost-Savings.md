@@ -40,7 +40,9 @@ Two layers:
 In practice this matters because iterating *is* the workflow — you will
 re-run things, and none of it re-bills.
 **Trade-off:** none. **Limit:** the memo lives on *your* machine — a
-different computer starts fresh.
+different computer starts fresh. **Exception (by design):** wave runs
+(`--wave`) turn the memo off — re-observations must be fresh draws, so waves
+never replay and always cost full price.
 
 #### Never pay twice
 

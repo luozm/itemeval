@@ -25,6 +25,7 @@ LEDGER_SCHEMA = pa.schema(
         pa.field("priced", pa.bool_(), nullable=False),
         pa.field("batch", pa.bool_(), nullable=False),
         pa.field("created_at", pa.string(), nullable=False),
+        pa.field("epoch_offset", pa.int64()),  # wave runs: epochs ran at this offset
     ]
 )
 

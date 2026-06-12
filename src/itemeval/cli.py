@@ -205,6 +205,17 @@ def _pilot_hint(prep, cfg, stage: str, est_usd: float, condition_filter):
     )
 
 
+def _print_wave_summary(result, prep) -> None:
+    if result.wave_label is None:
+        return
+    lo = result.epoch_offset + 1
+    hi = result.epoch_offset + prep.plan.replications
+    print(
+        f"wave {result.wave_label}: epochs {lo}–{hi} · "
+        f"{result.rows_written} rows · {_fmt_usd(result.total_usd)}"
+    )
+
+
 def _print_local_cache(result) -> None:
     """Reuse and provider-side job creation announced (Law 1)."""
     if result.local_cache_rows:
@@ -248,11 +259,15 @@ def _cmd_generate(args) -> int:
     from itemeval.generate._run import run_generate
 
     cfg, prep = _load(args)
-    est = estimate_study(prep, force=args.force)
+    est = estimate_study(prep, force=args.force, wave=args.wave)
     st = est.generate
     if not args.json:
         _print_datasets(prep)
         _print_pricing(est.pricing)
+        if args.wave:
+            print(
+                f"wave {args.wave}: local response cache off — re-observations must be fresh draws"
+            )
         delta = ""
         if st.completed_cells > 0:
             delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
@@ -297,6 +312,7 @@ def _cmd_generate(args) -> int:
         display=display,
         estimate_usd=st.remaining_usd,
         estimate_full_usd=st.usd,
+        wave=args.wave,
     )
     result.pricing = est.pricing
     result.estimate_usd = st.remaining_usd
@@ -311,6 +327,7 @@ def _cmd_generate(args) -> int:
         _print_local_cache(result)
         for w in result.warnings:
             print(f"warning: {w}")
+        _print_wave_summary(result, prep)
         print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
         print(f"manifest: {result.manifest_path}")
         emit_hints(result.hints)
@@ -323,7 +340,7 @@ def _cmd_grade(args) -> int:
     from itemeval.grade._run import run_grade
 
     cfg, prep = _load(args)
-    est = estimate_study(prep, force=args.force)
+    est = estimate_study(prep, force=args.force, wave=args.wave)
     st = est.grade
     if not args.json:
         _print_datasets(prep)
@@ -370,6 +387,7 @@ def _cmd_grade(args) -> int:
         display=display,
         estimate_usd=st.remaining_usd,
         estimate_full_usd=st.usd,
+        wave=args.wave,
     )
     result.pricing = est.pricing
     result.estimate_usd = st.remaining_usd
@@ -384,6 +402,7 @@ def _cmd_grade(args) -> int:
     _print_local_cache(result)
     for w in result.warnings:
         print(f"warning: {w}")
+    _print_wave_summary(result, prep)
     print(
         f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
         f"spend: {_fmt_usd(result.total_usd)}"
@@ -510,6 +529,12 @@ def _cmd_status(args) -> int:
     )
     latest = f" (latest: manifests/{report.manifests[-1]})" if report.manifests else ""
     print(f"manifests: {len(report.manifests)}{latest}")
+    if len(report.waves) > 1:  # zero noise for single-wave studies
+        bits = ", ".join(
+            f"{w.wave}{f' ({w.label})' if w.label else ''} — {w.completed}/{w.expected}"
+            for w in report.waves
+        )
+        print(f"waves: {bits}")
     if report.snapshots:
         bits = ", ".join(
             f"{s.name} ({s.created_at[:10]}, {s.rows:,} rows)" for s in report.snapshots
@@ -627,6 +652,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ):
         p = add(name, fn, help_text)
         add_policy(p)
+        p.add_argument(
+            "--wave",
+            default=None,
+            metavar="LABEL",
+            help="re-observe the current scope as a new epoch block (generate), or "
+            "grade that block's solutions (grade); existing waves resume by label",
+        )
         p.add_argument("-y", "--yes", action="store_true", help="skip the cost confirmation gate")
         p.add_argument(
             "--json",

@@ -102,7 +102,7 @@ itemeval export aime.yaml
 This writes the analysis-ready table and prints the spend summary:
 
 - `studies/aime_quickstart/export/gradings_long.parquet` (+ a CSV mirror) —
-  **one row per grading event**, 45 columns.
+  **one row per grading event**, 47 columns.
 - `studies/aime_quickstart/export/ledger.csv` — the cost ledger.
 
 Open it:

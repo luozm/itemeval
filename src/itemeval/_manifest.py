@@ -86,6 +86,10 @@ class Manifest(BaseModel):
     estimate_usd: float | None  # remaining (what this run could spend) since 0.2
     estimate_full_usd: float | None = None  # full-grid projection alongside
     cache: bool
+    # Wave (re-observation) provenance; 0/None/0 for ordinary runs:
+    wave: int = 0
+    wave_label: str | None = None
+    epoch_offset: int = 0
 
 
 def _pkg_version(name: str) -> str:
@@ -121,6 +125,10 @@ def build_manifest(
     conditions_run: "list[str]",
     estimate_usd: "float | None",
     estimate_full_usd: "float | None" = None,
+    *,
+    wave: int = 0,
+    wave_label: "str | None" = None,
+    epoch_offset: int = 0,
 ) -> Manifest:
     cfg = prep.config
     base = cfg.config_dir or cfg.work_dir
@@ -175,6 +183,9 @@ def build_manifest(
         estimate_usd=estimate_usd,
         estimate_full_usd=estimate_full_usd,
         cache=cfg.cache,
+        wave=wave,
+        wave_label=wave_label,
+        epoch_offset=epoch_offset,
     )
 
 

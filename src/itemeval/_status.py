@@ -46,6 +46,15 @@ class SnapshotStatus(BaseModel):
     rows: int
 
 
+class WaveStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    wave: int
+    label: str | None = None  # None for wave 0 (never explicitly labeled)
+    completed: int  # error-free generate rows in this wave (effective items)
+    expected: int  # gen conditions x effective items x replications
+
+
 class StatusReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +73,7 @@ class StatusReport(BaseModel):
     spend_grade_usd: float
     manifests: list[str]  # sorted filenames
     snapshots: list[SnapshotStatus] = []  # frozen export snapshots, sorted by name
+    waves: list[WaveStatus] = []  # per-wave completion; single entry when no waves used
 
 
 def _usd(series) -> float:
@@ -162,6 +172,20 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         else []
     )
 
+    waves: list[WaveStatus] = []
+    if not solutions.empty and "wave" in solutions.columns:
+        in_scope = solutions[solutions["item_id"].isin(effective_ids)]
+        for wave_num, group in in_scope.groupby(in_scope["wave"].astype(int)):
+            labels = [v for v in group["wave_label"].dropna().unique() if isinstance(v, str)]
+            waves.append(
+                WaveStatus(
+                    wave=int(wave_num),
+                    label=labels[0] if labels else None,
+                    completed=int(group["error"].isna().sum()),
+                    expected=len(prep.grid.generate) * len(prep.items_effective) * reps,
+                )
+            )
+
     from itemeval.store._export import read_snapshots
 
     snapshots = [
@@ -202,4 +226,5 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         spend_grade_usd=spend_grade,
         manifests=manifests,
         snapshots=snapshots,
+        waves=waves,
     )
