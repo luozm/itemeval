@@ -21,6 +21,7 @@ studies/
 
 # Internal build-time design contract — kept locally, not published
 docs/\[archived\]DESIGN.md
+WORKING_MEM.md
 
 # Internal positioning/launch plan — kept locally, not published
 docs/STRATEGY.md

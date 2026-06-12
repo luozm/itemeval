@@ -28,6 +28,8 @@ datasets, rubric texts, or analysis) in this package.
 
 ## Conventions
 
+- Do not over-engineer: build the simplest thing that satisfies the spec; no
+  speculative abstractions, config knobs, or generality beyond current needs.
 - src layout: code in `src/itemeval/`; tests import the installed package.
 - Public API is exported from `itemeval/__init__.py`; everything else is
   internal and free to refactor. Prefix private modules with `_`.
