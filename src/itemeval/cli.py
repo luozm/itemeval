@@ -72,6 +72,16 @@ def _pct_complete(st) -> str:
     return f"{pct:.0f}% complete"
 
 
+def _cache_discount_clause(discount: float) -> str:
+    """`includes −$X provider prompt-cache discount; ` (or the surcharge form
+    when projected writes exceed reads); empty when no cache split applies."""
+    if discount > 0:
+        return f"includes −{_fmt_usd(discount)} provider prompt-cache discount; "
+    if discount < 0:
+        return f"includes +{_fmt_usd(-discount)} provider prompt-cache write surcharge; "
+    return ""
+
+
 def _print_estimate(est, stage: str) -> None:
     stages = {"generate": est.generate, "grade": est.grade}
     selected = list(stages.items()) if stage == "all" else [(stage, stages[stage])]
@@ -79,10 +89,13 @@ def _print_estimate(est, stage: str) -> None:
         delta = ""
         if st.completed_cells > 0:
             delta = f" — {_fmt_usd(st.remaining_usd)} remaining ({_pct_complete(st)})"
+        discount = ""
+        if st.cache_discount_usd:
+            discount = f" ({_cache_discount_clause(st.cache_discount_usd).rstrip('; ')})"
         print(
             f"{name.upper()} — {st.calls} calls, "
             f"{st.input_tokens:,} input tok, {st.output_tokens:,} output tok, "
-            f"projected {_fmt_usd(st.usd)}{delta}"
+            f"projected {_fmt_usd(st.usd)}{discount}{delta}"
         )
         rows = [
             [
@@ -273,7 +286,8 @@ def _run_stage(args, stage, runner) -> int:
             delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
         print(
             f"projected {stage} cost: {_fmt_usd(st.remaining_usd)}{delta} "
-            f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
+            f"({_cache_discount_clause(st.remaining_cache_discount_usd)}"
+            f"confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
         )
         if st.rows_replaced:
             print(

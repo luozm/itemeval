@@ -7,6 +7,25 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Cache-aware estimator**: when a run will be scheduled into provider
+  prompt caches (cache scheduling on, not batch, provider minimum known and
+  met), projections model the same per-group split the runtime schedules —
+  one leader writes the shared prefix (1.25× surcharge Anthropic-style, plain
+  input on free-write providers), followers read it at the cache-read rate.
+  `ConditionEstimate` gains `cache_read_tokens` / `cache_write_tokens` /
+  `cache_discount_usd` (negative when projected writes exceed reads — tiny
+  Anthropic groups are shown costing *more*, honestly); `StageEstimate` sums
+  them and adds `remaining_cache_discount_usd`. **`usd` and `remaining_usd`
+  are now the discounted figures** — the money gate and `max_usd` cap
+  therefore compare the discounted projection. Delta-aware estimates apply
+  the split to remaining groups only (a group with ≥1 completed row is warm:
+  followers-only). The projection line states the discount when nonzero
+  (`projected generate cost: $4.10 (includes −$1.30 provider prompt-cache
+  discount; confirm_above_usd: $5.00)`), and `estimate`'s stage lines do the
+  same. Best-case projection by design (assumes scheduled hits); the post-run
+  `cache-zero-reads` hint is the corrective feedback loop.
+
+### Added
 - **`split-head-below-min` hint** (estimate-time): when `split_prompt` /
   `split_rubric` is on but the shared head's token estimate (chars/4) falls
   below the provider's minimum cacheable prefix, one hint line names the

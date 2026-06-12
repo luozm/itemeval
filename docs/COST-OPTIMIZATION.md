@@ -174,8 +174,16 @@ or automatic token-prefix caching on every upstream:
   surcharge defaults to 1.25× input for Anthropic-style models and $0
   elsewhere (`budget/_pricing.py:cache_write_default`).
 
+## Estimator pairing
+
+The estimator projects the cache discount (best case: it assumes the
+scheduled hits land), so the money gate compares the price the run *should*
+cost. The corrective feedback loop is the post-run `cache-zero-reads` hint:
+if the projected discount didn't materialize, the run says so. There is
+deliberately no haircut/confidence knob — the pair of "optimistic projection
++ loud zero-reads signal" replaces it.
+
 ## Open follow-ups (FUTURE.md §1.6 tail)
 
-OpenAI `prompt_cache_key` + 24h
-retention passthrough; cache-aware estimator (project the discounted cost);
+OpenAI `prompt_cache_key` + 24h retention passthrough;
 store-level judge dedup (`dedup_identical`); cheap-then-escalate judging.
