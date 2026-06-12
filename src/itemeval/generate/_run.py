@@ -16,6 +16,7 @@ from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
     PricingProvenance,
+    batch_providers_used,
     cost_usd,
     lookup_price,
     provider_of,
@@ -402,6 +403,9 @@ def run_generate(
     endpoints_effective: dict[str, Any] = {}
     factory = model_factory or resolve_model
     item_ids = [it.id for it in prep.items_effective]
+    # One truth value for "cache scheduling active": gates both task building
+    # (warm-then-fan-out) and the zero-reads hint below.
+    cache_schedule = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
 
     for cond in selected:
         existing = _solutions.read_solutions(prep.paths)
@@ -440,7 +444,6 @@ def run_generate(
             if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
             else (False if cp == "off" else None)
         )
-        cache_schedule = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
         task = build_generate_task(
             items,
             cond,
@@ -550,16 +553,11 @@ def run_generate(
             endpoints_effective=endpoints_effective or None,
         )
     run_reports = [r for r in reports if r.status == "run"]
-    scheduled = (
-        prep.config.budget.cache_schedule != "off"
-        and prep.plan.batch is None
-        and prep.plan.replications > 1
-    )
     hints = [
         h
         for h in (
             detect_cache_zero_reads(
-                scheduled=scheduled,
+                scheduled=cache_schedule,
                 # gated epochs beyond each item's leader should read the cache
                 repeated_prefix_calls=sum(
                     max(0, r.rows_written - r.items_run) for r in run_reports
@@ -588,9 +586,7 @@ def run_generate(
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,
         batch=batch_on,
-        batch_providers=(
-            sorted({provider_of(m) for m in run_models} & BATCH_PROVIDERS) if batch_on else []
-        ),
+        batch_providers=batch_providers_used(run_models) if batch_on else [],
         wave=wave_num,
         wave_label=wave,
         epoch_offset=epoch_offset,

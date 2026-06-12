@@ -217,3 +217,8 @@ def cost_usd(
 
 def provider_of(model: str) -> str:
     return model.split("/")[0]
+
+
+def batch_providers_used(models: list[str]) -> list[str]:
+    """Providers among `models` whose batch API a batch run goes through."""
+    return sorted({provider_of(m) for m in models} & BATCH_PROVIDERS)

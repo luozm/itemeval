@@ -17,10 +17,9 @@ from itemeval._mockmodels import is_mock_model
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
-    BATCH_PROVIDERS,
     PricingProvenance,
+    batch_providers_used,
     lookup_price,
-    provider_of,
 )
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
@@ -438,11 +437,7 @@ def run_grade(
         local_cache_rows=sum(r.local_cache_rows for r in reports),
         local_cache_dir=(local_cache_dir() if any(r.local_cache_rows for r in reports) else None),
         batch=prep.plan.batch is not None,
-        batch_providers=(
-            sorted({provider_of(m) for m in judge_models} & BATCH_PROVIDERS)
-            if prep.plan.batch is not None
-            else []
-        ),
+        batch_providers=(batch_providers_used(judge_models) if prep.plan.batch is not None else []),
         wave=wave_num,
         wave_label=wave,
         epoch_offset=wave_num * prep.plan.replications,

@@ -253,18 +253,18 @@ def _print_reports(reports) -> None:
             )
 
 
-def _cmd_generate(args) -> int:
+def _run_stage(args, stage, runner) -> int:
+    """Shared estimate → gate → run → report skeleton for generate and grade."""
     from itemeval._hints import emit_hints
     from itemeval.budget._estimator import estimate_study
-    from itemeval.generate._run import run_generate
 
     cfg, prep = _load(args)
     est = estimate_study(prep, force=args.force, wave=args.wave)
-    st = est.generate
+    st = est.generate if stage == "generate" else est.grade
     if not args.json:
         _print_datasets(prep)
         _print_pricing(est.pricing)
-        if args.wave:
+        if stage == "generate" and args.wave:
             print(
                 f"wave {args.wave}: local response cache off — re-observations must be fresh draws"
             )
@@ -272,7 +272,7 @@ def _cmd_generate(args) -> int:
         if st.completed_cells > 0:
             delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
         print(
-            f"projected generate cost: {_fmt_usd(st.remaining_usd)}{delta} "
+            f"projected {stage} cost: {_fmt_usd(st.remaining_usd)}{delta} "
             f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
         )
         if st.rows_replaced:
@@ -281,15 +281,18 @@ def _cmd_generate(args) -> int:
                 "(re-runs replay byte-identically from the local response cache "
                 "at $0 where available)"
             )
-        for w in est.warnings:
-            print(f"warning: {w}")
+        if stage == "generate":
+            # The only estimator warning today concerns generate-stage caps;
+            # relaying it on grade would be noise.
+            for w in est.warnings:
+                print(f"warning: {w}")
     gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
-    pilot = _pilot_hint(prep, cfg, "generate", st.remaining_usd, args.condition)
+    pilot = _pilot_hint(prep, cfg, stage, st.remaining_usd, args.condition)
     if not gate.proceed:
         if args.json:
             print(
                 _gate_stop_doc(
-                    "generate",
+                    stage,
                     cfg.study,
                     st,
                     est,
@@ -305,15 +308,7 @@ def _cmd_generate(args) -> int:
     # --json declares a machine consumer: silence inspect's live display unless
     # the operator explicitly chose one, so stdout stays pure JSON.
     display = args.display if args.display is not None else ("none" if args.json else None)
-    result = run_generate(
-        prep,
-        force=args.force,
-        condition_filter=args.condition,
-        display=display,
-        estimate_usd=st.remaining_usd,
-        estimate_full_usd=st.usd,
-        wave=args.wave,
-    )
+    result = runner(prep, display, st.remaining_usd, st.usd)
     result.pricing = est.pricing
     result.estimate_usd = st.remaining_usd
     result.rows_replaced = st.rows_replaced
@@ -328,102 +323,67 @@ def _cmd_generate(args) -> int:
         for w in result.warnings:
             print(f"warning: {w}")
         _print_wave_summary(result, prep)
-        print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
+        if stage == "generate":
+            print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
+        else:
+            print(
+                f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
+                f"spend: {_fmt_usd(result.total_usd)}"
+            )
+            if result.empty_total:
+                # Self-contained fact only; the advice lives at
+                # Error-Handling#empty-completions (relayed by the empty-solutions
+                # hint — advice never rides the summary block).
+                breakdown = ", ".join(f"{k}×{v}" for k, v in result.empty_stop_reasons.items())
+                if result.empty_skipped:
+                    print(
+                        f"empty solutions: {result.empty_skipped} excluded from grading "
+                        f"[{breakdown}] — on_empty={result.on_empty}"
+                    )
+                else:
+                    print(
+                        f"empty solutions: {result.empty_total} graded as-is "
+                        f"[{breakdown}] — on_empty={result.on_empty}"
+                    )
         print(f"manifest: {result.manifest_path}")
         emit_hints(result.hints)
     return 1 if any(r.status == "error" for r in result.conditions) else 0
 
 
+def _cmd_generate(args) -> int:
+    from itemeval.generate._run import run_generate
+
+    def runner(prep, display, estimate_usd, estimate_full_usd):
+        return run_generate(
+            prep,
+            force=args.force,
+            condition_filter=args.condition,
+            display=display,
+            estimate_usd=estimate_usd,
+            estimate_full_usd=estimate_full_usd,
+            wave=args.wave,
+        )
+
+    return _run_stage(args, "generate", runner)
+
+
 def _cmd_grade(args) -> int:
-    from itemeval._hints import emit_hints
-    from itemeval.budget._estimator import estimate_study
     from itemeval.grade._run import run_grade
 
-    cfg, prep = _load(args)
-    est = estimate_study(prep, force=args.force, wave=args.wave)
-    st = est.grade
-    if not args.json:
-        _print_datasets(prep)
-        _print_pricing(est.pricing)
-        delta = ""
-        if st.completed_cells > 0:
-            delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
-        print(
-            f"projected grade cost: {_fmt_usd(st.remaining_usd)}{delta} "
-            f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
+    def runner(prep, display, estimate_usd, estimate_full_usd):
+        return run_grade(
+            prep,
+            force=args.force,
+            condition_filter=args.condition,
+            graders=args.grader,
+            rubrics=args.rubric,
+            display=display,
+            estimate_usd=estimate_usd,
+            estimate_full_usd=estimate_full_usd,
+            wave=args.wave,
         )
-        if st.rows_replaced:
-            print(
-                f"this run replaces {st.rows_replaced} existing rows "
-                "(re-runs replay byte-identically from the local response cache "
-                "at $0 where available)"
-            )
-    gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
-    pilot = _pilot_hint(prep, cfg, "grade", st.remaining_usd, args.condition)
-    if not gate.proceed:
-        if args.json:
-            print(
-                _gate_stop_doc(
-                    "grade",
-                    cfg.study,
-                    st,
-                    est,
-                    gate,
-                    args.config,
-                    hints=[pilot] if pilot else (),
-                )
-            )
-        else:
-            print(f"itemeval: {gate.reason}", file=sys.stderr)
-            emit_hints([pilot] if pilot else [])
-        return gate.exit_code
-    display = args.display if args.display is not None else ("none" if args.json else None)
-    result = run_grade(
-        prep,
-        force=args.force,
-        condition_filter=args.condition,
-        graders=args.grader,
-        rubrics=args.rubric,
-        display=display,
-        estimate_usd=st.remaining_usd,
-        estimate_full_usd=st.usd,
-        wave=args.wave,
-    )
-    result.pricing = est.pricing
-    result.estimate_usd = st.remaining_usd
-    result.rows_replaced = st.rows_replaced
-    result.gate = gate
-    if pilot:
-        result.hints = [*result.hints, pilot]
-    if args.json:
-        print(result.model_dump_json(indent=2))
-        return 1 if any(r.status == "error" for r in result.conditions) else 0
-    _print_reports(result.conditions)
-    _print_local_cache(result)
-    for w in result.warnings:
-        print(f"warning: {w}")
-    _print_wave_summary(result, prep)
-    print(
-        f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
-        f"spend: {_fmt_usd(result.total_usd)}"
-    )
-    if result.empty_total:
-        # Self-contained fact only; the advice lives at Error-Handling#empty-completions
-        # (relayed by the empty-solutions hint — advice never rides the summary block).
-        breakdown = ", ".join(f"{k}×{v}" for k, v in result.empty_stop_reasons.items())
-        if result.empty_skipped:
-            print(
-                f"empty solutions: {result.empty_skipped} excluded from grading "
-                f"[{breakdown}] — on_empty={result.on_empty}"
-            )
-        else:
-            print(
-                f"empty solutions: {result.empty_total} graded as-is "
-                f"[{breakdown}] — on_empty={result.on_empty}"
-            )
-    print(f"manifest: {result.manifest_path}")
-    emit_hints(result.hints)
-    return 1 if any(r.status == "error" for r in result.conditions) else 0
+
+    return _run_stage(args, "grade", runner)
 
 
 def _cmd_export(args) -> int:
