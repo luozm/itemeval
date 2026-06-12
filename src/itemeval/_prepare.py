@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
 
 from itemeval._config import ExperimentConfig
+from itemeval._errors import ConfigError
 from itemeval._item import Item
 from itemeval._templates import Template, rubric_registry, solver_registry
 from itemeval.adapters._base import LoadedDataset, load_items
@@ -41,11 +42,20 @@ class PreparedStudy:
     plan: EffectivePlan
     pricing: PricingTable
     pricing_refreshed: bool = False  # a live OpenRouter refresh ran during prepare
+    policy_source: str = "config"  # "config" | "override" (a policy= argument won)
+
+
+POLICY_CHOICES = ("dev", "full-interactive", "full-batch")
 
 
 def prepare_study(
-    config: ExperimentConfig, *, refresh_pricing_table: bool = False
+    config: ExperimentConfig,
+    *,
+    refresh_pricing_table: bool = False,
+    policy: "str | None" = None,
 ) -> PreparedStudy:
+    if policy is not None and policy not in POLICY_CHOICES:
+        raise ConfigError(f"invalid policy {policy!r} (choose from {', '.join(POLICY_CHOICES)})")
     # Resolve + validate every template reference first: this is cheap, has no
     # side effects, and a bad reference must fail before any study dir is created.
     solvers = solver_registry(config)
@@ -66,7 +76,7 @@ def prepare_study(
             items_all.append(item)
             origins[item.id] = DatasetOrigin(dataset_id=ds.dataset_id, revision=ds.revision)
 
-    plan = effective_plan(config.budget, config.facets.replications)
+    plan = effective_plan(config.budget, config.facets.replications, policy=policy)
     items_effective = apply_items_limit(items_all, plan.items_limit)
 
     grid = expand_grid(config, solver_templates, rubric_templates)
@@ -95,4 +105,5 @@ def prepare_study(
         plan=plan,
         pricing=pricing,
         pricing_refreshed=pricing_refreshed,
+        policy_source="config" if policy is None else "override",
     )

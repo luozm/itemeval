@@ -7,6 +7,19 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- `--policy {dev,full-interactive,full-batch}` on
+  `estimate`/`generate`/`grade`/`status`: override `budget.policy` for one
+  invocation without editing the config — the zero-edit pilot flow
+  (`generate cfg.yaml --policy dev`, inspect, `generate cfg.yaml`). Python
+  parity: `prepare_study(cfg, policy=...)`. The run manifest and the
+  estimate/status JSON record the effective policy and its source
+  (`policy_source: "config" | "override"`, append-only).
+- `pilot-available` hint: when a first paid run (no completed rows for the
+  selected conditions) hits the money gate, one stderr hint points at the
+  `--policy dev` pilot flow; under `--json` it rides the `hints` array,
+  including in the gate-stop document.
+
+### Added
 - **Hint framework** (`docs/UX-PATTERNS.md`): commands may end with up to two
   dim `hint:` lines on stderr — one observed fact from this run plus a wiki
   pointer; hints never change behavior and never block. `ITEMEVAL_HINTS=off`

@@ -35,7 +35,8 @@ class StatusReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     study: str
-    policy: str
+    policy: str  # effective policy for this invocation
+    policy_source: str = "config"  # "config" | "override"
     config_path: str
     datasets: list[DatasetStatus]
     n_items_total: int
@@ -148,6 +149,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
     return StatusReport(
         study=config.study,
         policy=prep.plan.policy,
+        policy_source=prep.policy_source,
         config_path=str(config.config_path) if config.config_path else "(in-memory)",
         datasets=[
             DatasetStatus(id=ds.dataset_id, revision=ds.revision, n_items=len(ds.items))

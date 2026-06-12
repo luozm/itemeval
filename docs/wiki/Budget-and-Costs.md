@@ -42,6 +42,14 @@ CI/scripting pattern: set `confirm_above_usd` to your comfort level, pass
 | `full-interactive` | all | off unless `batch: true` | runs you watch |
 | `full-batch` | all | on (`batch: auto`) | large unattended runs, ~50% cheaper |
 
+`--policy {dev,full-interactive,full-batch}` (on `estimate`/`generate`/
+`grade`/`status`) overrides `budget.policy` for that invocation only — the
+config is untouched. This makes the pilot flow zero-edit:
+`generate cfg.yaml --policy dev` → inspect the export → `generate cfg.yaml`.
+Python parity: `prepare_study(cfg, policy=...)`. The effective policy and its
+source (`config` | `override`) are recorded in the run manifest and in the
+estimate/status JSON (`policy`, `policy_source`).
+
 Batch mode flows through inspect_ai to the provider batch APIs (openai,
 anthropic, google, grok, together). The recorded per-row cost applies a flat
 0.5 multiplier for batch runs — a documented approximation; **provider

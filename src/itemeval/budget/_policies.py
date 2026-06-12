@@ -15,14 +15,18 @@ class EffectivePlan(BaseModel):
     batch: bool | int | None  # GenerateConfig.batch value; None = caching/batch off
 
 
-def effective_plan(budget: BudgetConfig, replications: int) -> EffectivePlan:
+def effective_plan(
+    budget: BudgetConfig, replications: int, policy: "str | None" = None
+) -> EffectivePlan:
+    """Resolve the execution plan; `policy` (e.g. CLI --policy) overrides config."""
+    policy = policy or budget.policy
     if budget.batch is False:
         batch: "bool | int | None" = None
     elif budget.batch == "auto":
-        batch = True if budget.policy == "full-batch" else None
+        batch = True if policy == "full-batch" else None
     else:
         batch = budget.batch
-    if budget.policy == "dev":
+    if policy == "dev":
         batch = None  # dev runs are interactive
         return EffectivePlan(
             policy="dev",
@@ -30,9 +34,7 @@ def effective_plan(budget: BudgetConfig, replications: int) -> EffectivePlan:
             replications=min(replications, budget.dev_replications or replications),
             batch=batch,
         )
-    return EffectivePlan(
-        policy=budget.policy, items_limit=None, replications=replications, batch=batch
-    )
+    return EffectivePlan(policy=policy, items_limit=None, replications=replications, batch=batch)
 
 
 def apply_items_limit(items: "list[Item]", limit: "int | None") -> "list[Item]":

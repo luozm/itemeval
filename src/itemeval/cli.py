@@ -41,8 +41,30 @@ def _load(args) -> "tuple":
 
     cfg = load_config(args.config, work_dir=getattr(args, "base_dir", None))
     refresh = getattr(args, "refresh_pricing", False)
-    prep = prepare_study(cfg, refresh_pricing_table=refresh)
+    prep = prepare_study(cfg, refresh_pricing_table=refresh, policy=getattr(args, "policy", None))
     return cfg, prep
+
+
+def _store_is_empty(prep, stage: str, condition_filter: "list[str] | None") -> bool:
+    """Zero completed rows for the selected conditions of this stage's store."""
+    from itemeval.generate._run import matches_filter
+
+    if stage == "generate":
+        from itemeval.store._solutions import read_solutions
+
+        df = read_solutions(prep.paths)
+        conds = prep.grid.generate
+        col = "condition_id"
+    else:
+        from itemeval.store._gradings import read_gradings
+
+        df = read_gradings(prep.paths)
+        conds = prep.grid.grade
+        col = "grade_condition_id"
+    if df.empty:
+        return True
+    selected = {c.id for c in conds if matches_filter(c.id, c.slug, condition_filter)}
+    return df[df[col].isin(selected)].empty
 
 
 def _print_estimate(est, stage: str) -> None:
@@ -123,7 +145,9 @@ def _check_gate(est_usd: float, cfg, assume_yes: bool):
     return check_gate(est_usd, cfg.budget, assume_yes)
 
 
-def _gate_stop_doc(stage: str, study: str, est_usd: float, est, gate, config_arg: str) -> str:
+def _gate_stop_doc(
+    stage: str, study: str, est_usd: float, est, gate, config_arg: str, hints=()
+) -> str:
     """JSON document emitted on a gate stop under --json (exit 3/4): an agent
     still gets the projected cost, the gate reason, and the rerun command."""
     import json
@@ -135,9 +159,21 @@ def _gate_stop_doc(stage: str, study: str, est_usd: float, est, gate, config_arg
         "pricing": est.pricing.model_dump(mode="json"),
         "gate": gate.model_dump(mode="json"),
         "rerun": f"itemeval {stage} {config_arg} --yes",
-        "hints": [],
+        "hints": [h.model_dump(mode="json") for h in hints],
     }
     return json.dumps(doc, indent=2)
+
+
+def _pilot_hint(prep, cfg, stage: str, est_usd: float, condition_filter):
+    """The pilot-available hint: gate engaged on a study with no completed rows."""
+    from itemeval._hints import detect_pilot_available
+
+    if est_usd <= cfg.budget.confirm_above_usd:
+        return None
+    return detect_pilot_available(
+        store_is_empty=_store_is_empty(prep, stage, condition_filter),
+        dev_items=cfg.budget.dev_items,
+    )
 
 
 def _print_reports(reports) -> None:
@@ -177,11 +213,23 @@ def _cmd_generate(args) -> int:
         for w in est.warnings:
             print(f"warning: {w}")
     gate = _check_gate(est.generate.usd, cfg, args.yes)
+    pilot = _pilot_hint(prep, cfg, "generate", est.generate.usd, args.condition)
     if not gate.proceed:
         if args.json:
-            print(_gate_stop_doc("generate", cfg.study, est.generate.usd, est, gate, args.config))
+            print(
+                _gate_stop_doc(
+                    "generate",
+                    cfg.study,
+                    est.generate.usd,
+                    est,
+                    gate,
+                    args.config,
+                    hints=[pilot] if pilot else (),
+                )
+            )
         else:
             print(f"itemeval: {gate.reason}", file=sys.stderr)
+            emit_hints([pilot] if pilot else [])
         return gate.exit_code
     # --json declares a machine consumer: silence inspect's live display unless
     # the operator explicitly chose one, so stdout stays pure JSON.
@@ -196,6 +244,8 @@ def _cmd_generate(args) -> int:
     result.pricing = est.pricing
     result.estimate_usd = est.generate.usd
     result.gate = gate
+    if pilot:
+        result.hints = [*result.hints, pilot]
     if args.json:
         print(result.model_dump_json(indent=2))
     else:
@@ -220,11 +270,23 @@ def _cmd_grade(args) -> int:
             f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
         )
     gate = _check_gate(est.grade.usd, cfg, args.yes)
+    pilot = _pilot_hint(prep, cfg, "grade", est.grade.usd, args.condition)
     if not gate.proceed:
         if args.json:
-            print(_gate_stop_doc("grade", cfg.study, est.grade.usd, est, gate, args.config))
+            print(
+                _gate_stop_doc(
+                    "grade",
+                    cfg.study,
+                    est.grade.usd,
+                    est,
+                    gate,
+                    args.config,
+                    hints=[pilot] if pilot else (),
+                )
+            )
         else:
             print(f"itemeval: {gate.reason}", file=sys.stderr)
+            emit_hints([pilot] if pilot else [])
         return gate.exit_code
     display = args.display if args.display is not None else ("none" if args.json else None)
     result = run_grade(
@@ -239,6 +301,8 @@ def _cmd_grade(args) -> int:
     result.pricing = est.pricing
     result.estimate_usd = est.grade.usd
     result.gate = gate
+    if pilot:
+        result.hints = [*result.hints, pilot]
     if args.json:
         print(result.model_dump_json(indent=2))
         return 1 if any(r.status == "error" for r in result.conditions) else 0
@@ -446,7 +510,16 @@ def _build_parser() -> argparse.ArgumentParser:
         p.set_defaults(fn=fn)
         return p
 
+    def add_policy(p):
+        p.add_argument(
+            "--policy",
+            choices=["dev", "full-interactive", "full-batch"],
+            default=None,
+            help="override budget.policy for this invocation only (config unchanged)",
+        )
+
     p = add("estimate", _cmd_estimate, "projected $ per stage; no model API calls")
+    add_policy(p)
     p.add_argument("--stage", choices=["generate", "grade", "all"], default="all")
     p.add_argument(
         "--refresh-pricing",
@@ -460,6 +533,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ("grade", _cmd_grade, "stage 2: grade stored solutions (resumable)"),
     ):
         p = add(name, fn, help_text)
+        add_policy(p)
         p.add_argument("-y", "--yes", action="store_true", help="skip the cost confirmation gate")
         p.add_argument(
             "--json",
@@ -487,6 +561,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
 
     p = add("status", _cmd_status, "expanded grid + completion matrix; no model API calls")
+    add_policy(p)
     p.add_argument("--json", action="store_true")
     return parser
 

@@ -59,7 +59,8 @@ class Estimate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     study: str
-    policy: str
+    policy: str  # effective policy these projections cover
+    policy_source: str = "config"  # "config" | "override"
     generate: StageEstimate
     grade: StageEstimate
     total_usd: float
@@ -194,6 +195,7 @@ def estimate_study(prep: "PreparedStudy", solutions_df: "pd.DataFrame | None" = 
     return Estimate(
         study=prep.config.study,
         policy=prep.plan.policy,
+        policy_source=prep.policy_source,
         generate=gen,
         grade=grade,
         total_usd=gen.usd + grade.usd,

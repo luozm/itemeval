@@ -74,7 +74,8 @@ class Manifest(BaseModel):
     # endpoint/account/version that actually answered (which dashboard billed it).
     endpoints_effective: dict[str, Any] | None = None
     seed: int | None
-    policy: str
+    policy: str  # effective policy for this run
+    policy_source: str = "config"  # "config" | "override" (a policy= argument won)
     replications_requested: int
     replications_effective: int
     items_limit: int | None
@@ -157,6 +158,7 @@ def build_manifest(
         sampling_requested=sampling,
         seed=cfg.solvers.seed,
         policy=prep.plan.policy,
+        policy_source=prep.policy_source,
         replications_requested=cfg.facets.replications,
         replications_effective=prep.plan.replications,
         items_limit=prep.plan.items_limit,

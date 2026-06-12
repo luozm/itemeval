@@ -40,6 +40,15 @@ re-run things, and none of it re-bills.
 **Trade-off:** none. **Limit:** the memo lives on *your* machine — a
 different computer starts fresh.
 
+#### Never pay twice
+
+The consequence for growing a study: pilot first, scale later, and the pilot
+is never wasted money. `itemeval generate cfg.yaml --policy dev` runs a few
+items without touching the config; re-running at full scope only pays for the
+delta, because completed rows resume-skip and identical calls replay from the
+local memo at $0. The `pilot-available` hint points here when a first paid
+run hits the money gate.
+
 ### 3. Provider "seen this before" discounts — on by default, two opt-ins
 
 Providers charge ~75–90% less for input text they processed moments ago. Two

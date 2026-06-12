@@ -14,6 +14,11 @@ The run/report commands (`estimate|generate|grade|export|status`) accept
 `studies/` tree). It defaults to the current directory; inputs (prompts/rubrics)
 always resolve relative to the config file, independent of `-C`.
 
+`estimate`, `generate`, `grade`, and `status` also accept
+`--policy {dev,full-interactive,full-batch}`, overriding `budget.policy` for
+that invocation only (see
+[Budget-and-Costs#policies](Budget-and-Costs.md#policies)).
+
 ## Exit codes (all commands)
 
 | Code | Meaning |
