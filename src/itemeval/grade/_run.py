@@ -26,6 +26,8 @@ from itemeval.generate._run import (
     cache_columns,
     endpoint_info,
     ledger_row,
+    local_cache_dir,
+    local_cache_rows,
     log_index_row,
     matches_filter,
     resolve_display,
@@ -62,6 +64,9 @@ class GradeResult(BaseModel):
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
     hints: list[Hint] = Field(default_factory=list)
     datasets: list[DatasetProvenance] = Field(default_factory=list)
+    # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
+    local_cache_rows: int = 0
+    local_cache_dir: "str | None" = None  # set when local_cache_rows > 0
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -257,6 +262,7 @@ def run_grade(
             rows = _verifiable_rows(prep, cond, pending, run_id)
             log_file = None
             cond_usd = 0.0
+            local_rows = 0  # in-process scoring: no model calls, no cache
             _ledger.upsert_ledger(
                 prep.paths,
                 [ledger_row(run_id, "grade", cond.id, "(verifiable)", rows, None)],
@@ -307,6 +313,7 @@ def run_grade(
                 )
                 continue
             rows = _judge_rows(prep, cond, pending, log, run_id)
+            local_rows = local_cache_rows(rows)
             judge_models.append(cond.grader_model)
             repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
             endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model)
@@ -341,6 +348,7 @@ def run_grade(
                 errors=sum(1 for r in rows if r["error"] is not None),
                 usd=cond_usd,
                 log_file=log_file,
+                local_cache_rows=local_rows,
                 **cache_columns(rows),
             )
         )
@@ -380,4 +388,6 @@ def run_grade(
         empty_stop_reasons=empty_stop_reasons,
         hints=hints,
         datasets=dataset_provenance(prep.datasets),
+        local_cache_rows=sum(r.local_cache_rows for r in reports),
+        local_cache_dir=(local_cache_dir() if any(r.local_cache_rows for r in reports) else None),
     )

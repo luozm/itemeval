@@ -256,7 +256,7 @@ feature adding a side effect must add a row here.
 | Resolve dataset revision | network → HF Hub (first run per dataset) | **compliant** — folded into the dataset line | folded into the dataset line below |
 | Dataset download / reuse | `~/.cache/huggingface/datasets` (global) | **compliant** — one `dataset:` line per dataset on estimate/generate/grade/status; `datasets[]` in JSON | `dataset: cais/aime2025 @ 4a1b2c3 — downloaded 412 MB to HF cache (first use)` / `— reused from HF cache (pinned)` |
 | Revision pin write | `dataset_locks.json` (study dir, but **decides future runs**) | **compliant** — pin clause printed on change only | `dataset: … — revision pinned in dataset_locks.json` (printed on change only) |
-| Local response cache read/write | `~/Library/Caches/inspect_ai/model` (macOS) / `~/.cache/inspect_ai` (Linux) | per-row silent; visible only as `usd=0.0` | summary line: `12 calls answered from local cache ($0) — cache dir: <path>` |
+| Local response cache read/write | `~/Library/Caches/inspect_ai/generate` (macOS) / `~/.cache/inspect_ai` (Linux) | **compliant** — run-level summary line + `local_cache_rows`/`local_cache_dir` on results and per-condition reports | summary line: `12 calls answered from local cache ($0) — cache dir: <path>` |
 | Pricing refresh | network → OpenRouter; writes `~/.cache/itemeval/pricing.json` | **compliant** — provenance line | (the model to copy) |
 | Batch job creation | provider-side job | partial | `batch: submitted job <id> (anthropic) — collect with the same command later` |
 | `export/` rewrite | study dir (disposable view) | prints paths | keep; wording must say *rewritten* |

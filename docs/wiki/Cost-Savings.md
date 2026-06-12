@@ -33,7 +33,9 @@ Two layers:
   calls aren't even attempted after an interruption or crash.
 - **Call memo**: if an identical call *is* issued again (extending
   replications, `--force` after a fix, duplicate judge inputs), it's answered
-  from your disk for $0 instead of re-billed.
+  from your disk for $0 instead of re-billed. When this happens the run says
+  so — `12 calls answered from local cache ($0) — cache dir: …` — and the
+  run JSON carries `local_cache_rows`/`local_cache_dir`.
 
 In practice this matters because iterating *is* the workflow — you will
 re-run things, and none of it re-bills.

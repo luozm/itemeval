@@ -205,6 +205,15 @@ def _pilot_hint(prep, cfg, stage: str, est_usd: float, condition_filter):
     )
 
 
+def _print_local_cache(result) -> None:
+    """Reuse announced as loudly as fetching (Law 1)."""
+    if result.local_cache_rows:
+        print(
+            f"{result.local_cache_rows} calls answered from local cache ($0) — "
+            f"cache dir: {result.local_cache_dir}"
+        )
+
+
 def _print_reports(reports) -> None:
     total = len(reports)
     for i, rep in enumerate(reports, 1):
@@ -292,6 +301,7 @@ def _cmd_generate(args) -> int:
         print(result.model_dump_json(indent=2))
     else:
         _print_reports(result.conditions)
+        _print_local_cache(result)
         print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
         print(f"manifest: {result.manifest_path}")
         emit_hints(result.hints)
@@ -362,6 +372,7 @@ def _cmd_grade(args) -> int:
         print(result.model_dump_json(indent=2))
         return 1 if any(r.status == "error" for r in result.conditions) else 0
     _print_reports(result.conditions)
+    _print_local_cache(result)
     print(
         f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
         f"spend: {_fmt_usd(result.total_usd)}"

@@ -52,6 +52,8 @@ class ConditionRunReport(BaseModel):
     cache_read_tokens: int = 0  # input tokens served from the provider cache
     cache_write_tokens: int = 0  # input tokens written to the provider cache
     cache_hit_rows: int = 0  # rows with cache_read_tokens > 0
+    # Error-free rows answered from inspect's local response cache ($0, no usage):
+    local_cache_rows: int = 0
 
 
 class GenerateResult(BaseModel):
@@ -65,6 +67,9 @@ class GenerateResult(BaseModel):
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
     datasets: list[DatasetProvenance] = Field(default_factory=list)
+    # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
+    local_cache_rows: int = 0
+    local_cache_dir: "str | None" = None  # set when local_cache_rows > 0
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -208,6 +213,18 @@ def cache_columns(rows: "list[dict]") -> "dict[str, int]":
         "cache_write_tokens": sum(r["cache_write_tokens"] or 0 for r in rows),
         "cache_hit_rows": sum(1 for r in rows if (r["cache_read_tokens"] or 0) > 0),
     }
+
+
+def local_cache_rows(rows: "list[dict]") -> int:
+    """Error-free rows with no usage object: answered from inspect's local
+    response cache (the same signal usd_for_usage prices at $0)."""
+    return sum(1 for r in rows if r["error"] is None and r["total_tokens"] is None)
+
+
+def local_cache_dir() -> str:
+    from inspect_ai.model import cache_path
+
+    return str(cache_path())
 
 
 def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
@@ -432,6 +449,7 @@ def run_generate(
                 errors=sum(1 for r in rows if r["error"] is not None),
                 usd=cond_usd,
                 log_file=rel_to_study(prep.paths, log.location),
+                local_cache_rows=local_cache_rows(rows),
                 **cache_columns(rows),
             )
         )
@@ -466,6 +484,7 @@ def run_generate(
         )
         if h is not None
     ]
+    local_total = sum(r.local_cache_rows for r in reports)
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,
@@ -475,4 +494,6 @@ def run_generate(
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
         datasets=dataset_provenance(prep.datasets),
+        local_cache_rows=local_total,
+        local_cache_dir=local_cache_dir() if local_total else None,
     )

@@ -7,6 +7,13 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Local response-cache reuse is announced**: when any calls are answered
+  from inspect's local response cache, `generate`/`grade` print one summary
+  line (`12 calls answered from local cache ($0) — cache dir: …`); JSON
+  parity via `local_cache_rows`/`local_cache_dir` on the run results and
+  `local_cache_rows` per condition report (append-only).
+
+### Added
 - **Dataset provenance announcements** (UX-PATTERNS Law 1): every
   `estimate`/`generate`/`grade`/`status` prints one line per dataset —
   revision, downloaded-vs-reused from the HF cache (with best-effort size on
