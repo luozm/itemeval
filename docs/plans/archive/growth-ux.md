@@ -3,8 +3,8 @@
 **Status: IMPLEMENTED 2026-06-12** (all workstreams, in the combined order
 below, together with the ux-compliance plan; see CHANGELOG `[Unreleased]`).
 Kept as the design record. Originally written 2026-06-11.
-This file is the working brief for implementation sessions: it carries all
-context a fresh session needs. Read these first, in order:
+This file was the working brief for the implementation sessions: it carried
+all context a fresh session needed. Read these first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. Every workstream below
@@ -19,7 +19,7 @@ Related: `docs/FUTURE.md` §2.5 records the scope decision behind this plan
 and is **out of scope here**). `docs/COST-OPTIMIZATION.md` explains the cache
 layers referenced below.
 
-**Sibling plan:** `docs/plans/ux-compliance.md` (UX-PATTERNS compliance
+**Sibling plan:** `docs/plans/archive/ux-compliance.md` (UX-PATTERNS compliance
 backlog, same date). The two are implemented as **one program in one
 combined order** — see Sequencing below, which is canonical for both files.
 Two items in this plan have hard prerequisites there: 1.2 needs the hint

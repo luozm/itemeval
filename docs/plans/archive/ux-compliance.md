@@ -3,14 +3,14 @@
 **Status: IMPLEMENTED 2026-06-12** (all steps, in growth-ux.md's combined
 order; see CHANGELOG `[Unreleased]`). Kept as the design record.
 Originally written 2026-06-11, from a
-full code scan against `docs/UX-PATTERNS.md` (binding). This file is the
-working brief for implementation sessions. Read first, in order:
+full code scan against `docs/UX-PATTERNS.md` (binding). This file was the
+working brief for the implementation sessions. Read first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — the contract being discharged; its side-effect
    ledger and hint catalog are **normative tables** — every step below flips
    or adds rows there in the same commit.
-3. `docs/plans/growth-ux.md` — the sibling plan. Two items found by the scan
+3. `docs/plans/archive/growth-ux.md` — the sibling plan. Two items found by the scan
    were **removed from this file because growth-ux owns them**: the
    `--json` gate-gap fix (growth-ux 1.3) and the replacing-rows statement at
    the money gate (growth-ux 1.5). Do not re-implement them here.

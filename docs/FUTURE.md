@@ -388,7 +388,7 @@ unreferenced facet values.
 
 > Detailed, session-ready implementation plan for the grow-in-place UX
 > (scale-up affordances · snapshots + study cards · waves):
-> [docs/plans/growth-ux.md](plans/growth-ux.md).
+> [docs/plans/archive/growth-ux.md](plans/archive/growth-ux.md).
 
 **Scope decision (2026-06-11).** The pilot→full lifecycle's *primary* path is
 **grow-in-place**, which already works and costs nothing extra: keep one
