@@ -27,6 +27,7 @@ CATALOG_ORDER = [
     "cache-zero-reads",
     "split-head-below-min",
     "anthropic-openrouter-no-split",
+    "openrouter-unpinned-cache",
     "empty-solutions",
     "dev-policy-at-scale",
     "unpriced-models",
@@ -81,6 +82,26 @@ def detect_cache_zero_reads(
             "but no provider cache discount engaged"
         ),
         learn_more="Cost-Savings#two-gotchas",
+    )
+
+
+def detect_openrouter_unpinned_cache(models: "list[str]") -> "Hint | None":
+    """Anthropic models ran cached through OpenRouter without provider_routing.
+
+    OpenRouter may route to upstreams (Bedrock/Vertex) that ignore the cache
+    markers — observed live as cache_read=0 at full price. The caller passes
+    only models where caching was active and no routing object was configured.
+    """
+    if not models:
+        return None
+    return Hint(
+        code="openrouter-unpinned-cache",
+        message=(
+            f"{', '.join(models)} ran cached via OpenRouter without "
+            "solvers/graders provider_routing — routing may land on an "
+            "upstream that ignores cache markers (silent full price)"
+        ),
+        learn_more="Cost-Savings#openrouter-or-direct",
     )
 
 

@@ -89,10 +89,64 @@ Both can be mixed in one config (`solvers.models` accepts both id forms).
   spread that hurts caching helps throughput).
 - The study is small enough that discounts don't matter (dev/pilot scale).
 
-**If using OpenRouter for a cache-heavy Anthropic run:** pin the upstream —
-`provider={"order": ["Anthropic"], "allow_fallbacks": False}` — currently only
-possible via the Python API's `model_factory` hook (a `solvers.provider_routing`
-config knob is future work, FUTURE.md §1.6).
+**If using OpenRouter for a cache-heavy Anthropic run:** pin the upstream with
+the `provider_routing` knob (on `solvers:`, and per grader spec — judges route
+too):
+
+```yaml
+solvers:
+  provider_routing: { order: [anthropic], allow_fallbacks: false }
+graders:
+  judge:
+    provider_routing: { order: [anthropic], allow_fallbacks: false }
+```
+
+The object is OpenRouter's own provider-routing schema, passed through
+verbatim — no renamed keys (slugs from `openrouter.ai/api/v1/providers`; the
+Anthropic first-party upstream is lowercase `anthropic`, checked 2026-06-12).
+Optimization knob: it never enters condition ids; the manifest's config echo
+records what routing was requested and `endpoints_effective` what actually
+answered. Setting it in a section with no `openrouter/*` model warns (inert
+knob, never blocks). An `openrouter/anthropic/*` model running cached
+*without* it fires the `openrouter-unpinned-cache` hint.
+
+### OpenRouter or direct? (three buckets)
+
+Where caching decides the routing question (facts checked 2026-06-12 against
+OpenRouter's live endpoints API and provider docs):
+
+**A. OpenRouter direct is fine — no routing object needed.** Single upstream,
+or automatic token-prefix caching on every upstream:
+
+- `openrouter/openai/*` for *unkeyed* caching: both listed upstreams (OpenAI
+  and Azure) report `supports_implicit_caching` with cache-read pricing
+  accounted by OpenRouter.
+- `openrouter/x-ai/*`: single upstream (xAI), cache-read priced.
+- `openrouter/google/*`: Vertex and AI Studio upstreams carry identical
+  implicit-caching flags and cache pricing per model — no upstream to pin
+  (note: the flag is per-model; some Gemini endpoints don't support implicit
+  caching at all).
+
+**B. OpenRouter works but MUST pin the upstream (`provider_routing`):**
+
+- `openrouter/anthropic/*` with caching on — routing can land on
+  Bedrock/Vertex, which ignore the markers (our live finding):
+  `{order: [anthropic], allow_fallbacks: false}`.
+- `openrouter/deepseek/*` and other multi-host open models — only the
+  first-party upstream caches (64-token blocks); pin it or accept
+  `cache_read=0`.
+
+**C. Must NOT use OpenRouter — direct API required:**
+
+- OpenAI **keyed** caching (`prompt_cache_key` / `prompt_cache_retention`):
+  OpenRouter does not document forwarding these request fields (they appear
+  in no endpoint's `supported_parameters`); itemeval only attaches them on
+  direct `openai/*` models.
+- Any provider batch API (OpenRouter is not in `BATCH_PROVIDERS` — already
+  structurally true).
+- Anthropic if you ever need the 1h cache TTL (not reachable through inspect
+  at all today, direct or not — the marker has no `ttl` field; documented
+  limitation).
 
 ## Failure modes (all observed live)
 
@@ -100,7 +154,7 @@ config knob is future work, FUTURE.md §1.6).
 |---|---|---|
 | `cache_read=0` everywhere, Anthropic via OpenRouter, monolithic prompts | no marker on single-block text messages | `split_prompt` / `split_rubric: true` |
 | `cache_read=0`, split layout, Anthropic | shared head below the per-model minimum (4096 tok for Haiku 4.5/Opus-class; 1024–2048 others) — silent no-op | lengthen the head or accept no caching |
-| `cache_read=0`, OpenRouter, markers correct | routed to Bedrock/other upstream | pin provider order |
+| `cache_read=0`, OpenRouter, markers correct | routed to Bedrock/other upstream | `provider_routing: {order: [anthropic], allow_fallbacks: false}` (the `openrouter-unpinned-cache` hint flags this) |
 | `cache_read=0`, direct OpenAI, burst | simultaneous arrivals; no entry registered yet | `cache_schedule: auto` (default) |
 | writes ≫ reads (Anthropic) | low reuse — write surcharge (1.25×) exceeded read savings | expected on tiny groups; gate + split reduce duplicate writes |
 
@@ -122,7 +176,7 @@ config knob is future work, FUTURE.md §1.6).
 
 ## Open follow-ups (FUTURE.md §1.6 tail)
 
-`solvers.provider_routing` config knob; OpenAI `prompt_cache_key` + 24h
+OpenAI `prompt_cache_key` + 24h
 retention passthrough; cache-aware estimator (project the discounted cost);
 estimate-time warning when a split head is below the provider minimum;
 store-level judge dedup (`dedup_identical`); cheap-then-escalate judging.

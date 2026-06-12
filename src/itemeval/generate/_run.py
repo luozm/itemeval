@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
-from itemeval._hints import Hint, detect_cache_zero_reads, detect_unpriced_models
+from itemeval._endpoints import cache_provider_of, model_args_for
+from itemeval._hints import (
+    Hint,
+    detect_cache_zero_reads,
+    detect_openrouter_unpinned_cache,
+    detect_unpriced_models,
+)
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
@@ -34,7 +40,9 @@ if TYPE_CHECKING:
 
     from itemeval._prepare import PreparedStudy
 
-ModelFactory = Callable[[str, str], Any]  # (model_id, stage) -> str | Model
+# (model_id, stage, model_args) -> str | Model; model_args carries per-condition
+# request extras (provider routing, cache keys) built by _endpoints.model_args_for.
+ModelFactory = Callable[[str, str, "dict[str, Any]"], Any]
 
 
 def enforce_budget_cap(
@@ -406,6 +414,14 @@ def run_generate(
     # One truth value for "cache scheduling active": gates both task building
     # (warm-then-fan-out) and the zero-reads hint below.
     cache_schedule = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
+    # Provider prompt-cache markers (Anthropic-style): explicit when
+    # cache_prompt resolves on; loop-invariant, also feeds the unpinned hint.
+    cp = prep.config.solvers.cache_prompt
+    cache_prompt = (
+        True
+        if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
+        else (False if cp == "off" else None)
+    )
 
     for cond in selected:
         existing = _solutions.read_solutions(prep.paths)
@@ -435,15 +451,6 @@ def run_generate(
             )
             continue
         items = [it for it in prep.items_effective if it.id in set(to_run)]
-        # Provider prompt-cache knobs: explicit Anthropic-style markers when
-        # cache_prompt resolves on, and warm-then-fan-out gating of same-prefix
-        # groups (epochs) unless disabled or running through a batch API.
-        cp = prep.config.solvers.cache_prompt
-        cache_prompt = (
-            True
-            if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
-            else (False if cp == "off" else None)
-        )
         task = build_generate_task(
             items,
             cond,
@@ -461,7 +468,14 @@ def run_generate(
             # Serial eval per condition: inspect's eval is one-at-a-time per process.
             logs = inspect_ai.eval(
                 task,
-                model=factory(cond.model, "generate"),
+                model=factory(
+                    cond.model,
+                    "generate",
+                    model_args_for(
+                        cond.model,
+                        provider_routing=prep.config.solvers.provider_routing,
+                    ),
+                ),
                 display=resolve_display(display),
                 log_dir=str(prep.paths.logs_dir("generate", cond.id)),
                 log_format="eval",
@@ -564,6 +578,18 @@ def run_generate(
                 ),
                 cache_read_tokens=sum(r.cache_read_tokens for r in run_reports),
                 real_provider=any(not is_mock_model(m) for m in run_models),
+            ),
+            detect_openrouter_unpinned_cache(
+                sorted(
+                    {
+                        m
+                        for m in run_models
+                        if bool(cache_prompt)
+                        and prep.config.solvers.provider_routing is None
+                        and provider_of(m) == "openrouter"
+                        and cache_provider_of(m) == "anthropic"
+                    }
+                )
             ),
             detect_unpriced_models(
                 sorted({m for m in run_models if lookup_price(prep.pricing, m) is None})

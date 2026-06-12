@@ -87,6 +87,13 @@ class SolversConfig(BaseModel):
     # breakpoint — and the item the user message. The concatenated text is
     # unchanged. Changes generate condition ids when enabled.
     split_prompt: bool = False
+    # Verbatim OpenRouter provider-routing object (e.g. {order: [anthropic],
+    # allow_fallbacks: false}) sent with every openrouter/* request — pins the
+    # upstream so cached runs don't land on a marker-ignoring host (Bedrock).
+    # Pass-through, never renamed/validated beyond "a dict": OpenRouter owns
+    # the schema. Optimization knob; never enters condition ids (endpoint
+    # identity never has — endpoint drift warnings cover served-model drift).
+    provider_routing: "dict[str, Any] | None" = None
 
     @field_validator("cache_prompt", mode="before")
     @classmethod
@@ -161,6 +168,8 @@ class GraderSpec(BaseModel):
     # message. Lets same-item judge calls share a cached prefix on providers
     # with block-granular caching (Anthropic). Changes the grade condition id.
     split_rubric: bool = False
+    # Same contract as solvers.provider_routing (judges route too).
+    provider_routing: "dict[str, Any] | None" = None
 
 
 class BudgetConfig(BaseModel):

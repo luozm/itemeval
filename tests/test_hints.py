@@ -10,6 +10,7 @@ from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
     detect_empty_solutions,
+    detect_openrouter_unpinned_cache,
     detect_unpriced_models,
     emit_hints,
 )
@@ -39,6 +40,15 @@ def test_detect_empty_solutions():
     assert "21 solutions are empty" in h.message and "model_length×21" in h.message
     assert h.learn_more == "Error-Handling#empty-completions"
     assert detect_empty_solutions(0, 0, "skip", {}) is None
+
+
+def test_detect_openrouter_unpinned_cache():
+    h = detect_openrouter_unpinned_cache(["openrouter/anthropic/claude-haiku-4.5"])
+    assert h is not None and h.code == "openrouter-unpinned-cache"
+    assert "openrouter/anthropic/claude-haiku-4.5" in h.message
+    assert "provider_routing" in h.message
+    assert h.learn_more == "Cost-Savings#openrouter-or-direct"
+    assert detect_openrouter_unpinned_cache([]) is None
 
 
 def test_detect_unpriced_models():

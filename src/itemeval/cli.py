@@ -281,11 +281,10 @@ def _run_stage(args, stage, runner) -> int:
                 "(re-runs replay byte-identically from the local response cache "
                 "at $0 where available)"
             )
-        if stage == "generate":
-            # The only estimator warning today concerns generate-stage caps;
-            # relaying it on grade would be noise.
-            for w in est.warnings:
-                print(f"warning: {w}")
+        # Estimator warnings carry their stage, so each command relays only
+        # what concerns it (e.g. uncapped generation caps, inert routing).
+        for w in st.warnings:
+            print(f"warning: {w}")
     gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
     pilot = _pilot_hint(prep, cfg, stage, st.remaining_usd, args.condition)
     if not gate.proceed:

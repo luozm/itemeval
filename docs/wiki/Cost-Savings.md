@@ -123,6 +123,26 @@ Both work in the same config; pick per model:
 Rule of thumb: **pilot wide on OpenRouter, run big and cached on direct
 keys.**
 
+### OpenRouter or direct?
+
+If you do run cached Anthropic models through OpenRouter, pin the upstream —
+OpenRouter is free to route your calls to hosts (Amazon Bedrock, Google
+Vertex) that ignore the caching markers, and the only symptom is a silently
+full-price bill. One config line fixes it (also available per grader):
+
+```yaml
+solvers:
+  provider_routing: { order: [anthropic], allow_fallbacks: false }
+```
+
+The object is passed to OpenRouter verbatim, so anything from
+[OpenRouter's provider-routing docs](https://openrouter.ai/docs/guides/routing/provider-selection)
+works. itemeval reminds you when this matters: a cached
+`openrouter/anthropic/*` run without it gets the `openrouter-unpinned-cache`
+hint. In short: OpenAI, Grok, and Gemini models cache fine through OpenRouter
+as-is; Anthropic and DeepSeek-style open models need the pin; OpenAI's keyed
+caching and all batch APIs need a direct key.
+
 ## What's on by default
 
 | Setting | Default | Change it when… |

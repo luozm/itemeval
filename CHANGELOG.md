@@ -7,6 +7,22 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **`provider_routing`** (on `solvers:` and per grader spec): a verbatim
+  OpenRouter provider-routing object (e.g. `{order: [anthropic],
+  allow_fallbacks: false}`) sent with every `openrouter/*` request — pins the
+  upstream so cached runs don't silently land on a marker-ignoring host
+  (Bedrock/Vertex, the live cache_read=0 footgun). Pass-through, never
+  renamed; never enters condition ids (the manifest's config echo records the
+  requested routing, `endpoints_effective` what answered). Setting it in a
+  section with no `openrouter/*` model warns (inert knob — never blocks).
+  New hint `openrouter-unpinned-cache` fires when an `openrouter/anthropic/*`
+  model runs cached without it. Estimator stage projections now carry their
+  stage-relevant warnings (`StageEstimate.warnings`, append-only); `grade`
+  now relays grade-stage estimator warnings pre-gate like `generate` always
+  did. The `model_factory` callback (Python API) now receives a third
+  `model_args` dict argument.
+
+### Added
 - **Waves — re-observation over time** (`generate --wave LABEL` /
   `run_generate(prep, wave=...)`, and the matching `grade --wave`): re-run
   the same design scope as a new **epoch block** (wave *w* with

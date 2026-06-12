@@ -60,9 +60,15 @@ def mock_judge_callable(model: str):
     return fn
 
 
-def resolve_model(model: str, stage: str) -> Union[str, Model]:
-    """Non-mock ids pass through as strings; mock ids get a stage-suited callable."""
+def resolve_model(
+    model: str, stage: str, model_args: "dict[str, Any] | None" = None
+) -> Union[str, Model]:
+    """Non-mock ids pass through as strings (or as a Model carrying request
+    extras when model_args is non-empty — see _endpoints.model_args_for);
+    mock ids get a stage-suited callable."""
     if not is_mock_model(model):
+        if model_args:
+            return get_model(model, **model_args)
         return model
     factory = mock_judge_callable if stage == "grade" else mock_generate_callable
     return get_model(model, custom_outputs=factory(model))

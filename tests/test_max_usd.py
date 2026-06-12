@@ -10,7 +10,7 @@ from itemeval.grade._run import run_grade
 from conftest import write_study_files
 
 
-def _forbidden_factory(model: str, stage: str):
+def _forbidden_factory(model: str, stage: str, model_args=None):
     pytest.fail("model factory called — budget cap must stop the run before any API call")
 
 

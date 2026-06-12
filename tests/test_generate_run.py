@@ -97,7 +97,7 @@ def test_generate_condition_filter(study):
 def test_generate_eval_failure_reported_not_raised(study, monkeypatch):
     _, prep = study
 
-    def broken_factory(model, stage):
+    def broken_factory(model, stage, model_args=None):
         raise RuntimeError("provider exploded")
 
     result = run_generate(prep, model_factory=broken_factory)

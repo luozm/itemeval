@@ -5,11 +5,13 @@ from typing import TYPE_CHECKING, Any
 import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
+from itemeval._endpoints import cache_provider_of, model_args_for
 from itemeval._errors import StoreError
 from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
     detect_empty_solutions,
+    detect_openrouter_unpinned_cache,
     detect_unpriced_models,
 )
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
@@ -20,6 +22,7 @@ from itemeval.budget._pricing import (
     PricingProvenance,
     batch_providers_used,
     lookup_price,
+    provider_of,
 )
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
@@ -280,6 +283,7 @@ def run_grade(
     parse_failures = 0
     total_usd = 0.0
     judge_models: list[str] = []  # grader models of judge conditions that ran
+    unpinned_cached: list[str] = []  # openrouter/anthropic judges cached without routing
     repeated_prefix_calls = 0  # judge calls beyond each same-item group's leader
     factory = model_factory or resolve_model
 
@@ -313,6 +317,7 @@ def run_grade(
                 [ledger_row(run_id, "grade", cond.id, "(verifiable)", rows, None)],
             )
         else:
+            grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
             task = build_judge_task(
                 pending,
                 prep.items_by_id,
@@ -328,7 +333,11 @@ def run_grade(
             try:
                 logs = inspect_ai.eval(
                     task,
-                    model=factory(cond.grader_model, "grade"),
+                    model=factory(
+                        cond.grader_model,
+                        "grade",
+                        model_args_for(cond.grader_model, provider_routing=grader_routing),
+                    ),
                     display=resolve_display(display),
                     log_dir=str(prep.paths.logs_dir("grade", cond.id)),
                     log_format="eval",
@@ -360,6 +369,14 @@ def run_grade(
             rows = _judge_rows(prep, cond, pending, log, run_id)
             local_rows = local_cache_rows(rows)
             judge_models.append(cond.grader_model)
+            # Judge tasks always request cache_prompt="auto" (markers on), so
+            # an unpinned openrouter/anthropic judge is a cached-but-routable run.
+            if (
+                grader_routing is None
+                and provider_of(cond.grader_model) == "openrouter"
+                and cache_provider_of(cond.grader_model) == "anthropic"
+            ):
+                unpinned_cached.append(cond.grader_model)
             repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
             endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model)
             log_file = rel_to_study(prep.paths, log.location)
@@ -412,6 +429,7 @@ def run_grade(
                 cache_read_tokens=sum(r.cache_read_tokens for r in run_reports),
                 real_provider=any(not is_mock_model(m) for m in judge_models),
             ),
+            detect_openrouter_unpinned_cache(sorted(set(unpinned_cached))),
             detect_empty_solutions(empty_total, empty_skipped, on_empty, empty_stop_reasons),
             detect_unpriced_models(
                 sorted({m for m in judge_models if lookup_price(prep.pricing, m) is None})

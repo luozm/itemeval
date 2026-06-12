@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
+from itemeval._endpoints import routing_warnings
 from itemeval._hints import Hint, detect_unpriced_models
 from itemeval._templates import render_template
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
@@ -63,6 +64,9 @@ class StageEstimate(BaseModel):
     completed_cells: int = 0  # completed (condition x item x epoch) cells in scope
     total_cells: int = 0
     rows_replaced: int = 0  # existing rows the planned run would overwrite
+    # Stage-relevant subset of Estimate.warnings (append-only): what generate/
+    # grade relay pre-gate without cross-stage noise.
+    warnings: list[str] = Field(default_factory=list)
 
 
 class Estimate(BaseModel):
@@ -156,7 +160,7 @@ def estimate_study(
     effective_ids = set(item_ids)
     rerun_empty = prep.config.solvers.on_empty == "rerun"
     include_empty = prep.config.solvers.on_empty == "grade"
-    warnings: list[str] = []
+    gen_warnings, grade_warnings = routing_warnings(prep.config)
 
     if wave is not None:
         _, offset = resolve_wave(solutions_df, wave, reps)
@@ -194,8 +198,8 @@ def estimate_study(
         calls = len(items) * reps
         input_tokens = in_tokens(items)
         max_out = cond.gen_params.max_tokens
-        if max_out is None and "uncapped-generation" not in " ".join(warnings):
-            warnings.append(
+        if max_out is None and "uncapped-generation" not in " ".join(gen_warnings):
+            gen_warnings.append(
                 "uncapped-generation: no max_tokens configured for the generate "
                 f"stage; assuming {DEFAULT_OUTPUT_TOKENS_GENERATE} output tokens "
                 "per call (actuals may exceed the estimate)"
@@ -311,7 +315,7 @@ def estimate_study(
         )
 
     def stage_total(
-        stage: str, conditions: "list[ConditionEstimate]", delta: dict
+        stage: str, conditions: "list[ConditionEstimate]", delta: dict, stage_warnings: "list[str]"
     ) -> StageEstimate:
         usd = sum(c.usd or 0.0 for c in conditions)
         return StageEstimate(
@@ -328,10 +332,11 @@ def estimate_study(
             completed_cells=delta["completed"],
             total_cells=delta["total"],
             rows_replaced=delta["replaced"],
+            warnings=stage_warnings,
         )
 
-    gen = stage_total("generate", gen_conditions, gen_delta)
-    grade = stage_total("grade", grade_conditions, grade_delta)
+    gen = stage_total("generate", gen_conditions, gen_delta, gen_warnings)
+    grade = stage_total("grade", grade_conditions, grade_delta, grade_warnings)
     unpriced = detect_unpriced_models(sorted({*gen.unpriced_models, *grade.unpriced_models}))
     return Estimate(
         study=prep.config.study,
@@ -340,7 +345,7 @@ def estimate_study(
         generate=gen,
         grade=grade,
         total_usd=gen.usd + grade.usd,
-        warnings=warnings,
+        warnings=gen_warnings + grade_warnings,
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
         hints=[unpriced] if unpriced else [],
         datasets=dataset_provenance(prep.datasets),

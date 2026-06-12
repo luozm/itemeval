@@ -64,7 +64,7 @@ def test_grade_resume_skips(study):
     assert all(r.status == "skipped" for r in second.conditions)
 
 
-def _bad_judge_factory(model, stage):
+def _bad_judge_factory(model, stage, model_args=None):
     def fn(input, tools, tool_choice, config) -> ModelOutput:
         out = ModelOutput.from_content(model="bad", content="no json at all", stop_reason="stop")
         out.usage = ModelUsage(input_tokens=5, output_tokens=5, total_tokens=10)
@@ -193,7 +193,7 @@ def test_verifiable_grading_no_model(study, tmp_path):
     cfg2._work_dir = cfg.work_dir
     prep2 = prepare_study(cfg2)
 
-    def forbidden_factory(model, stage):
+    def forbidden_factory(model, stage, model_args=None):
         raise AssertionError("verifiable grading must not resolve a model")
 
     result = run_grade(prep2, model_factory=forbidden_factory)
