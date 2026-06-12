@@ -67,14 +67,22 @@ def _store_is_empty(prep, stage: str, condition_filter: "list[str] | None") -> b
     return df[df[col].isin(selected)].empty
 
 
+def _pct_complete(st) -> str:
+    pct = 100.0 * st.completed_cells / max(st.total_cells, 1)
+    return f"{pct:.0f}% complete"
+
+
 def _print_estimate(est, stage: str) -> None:
     stages = {"generate": est.generate, "grade": est.grade}
     selected = list(stages.items()) if stage == "all" else [(stage, stages[stage])]
     for name, st in selected:
+        delta = ""
+        if st.completed_cells > 0:
+            delta = f" — {_fmt_usd(st.remaining_usd)} remaining ({_pct_complete(st)})"
         print(
             f"{name.upper()} — {st.calls} calls, "
             f"{st.input_tokens:,} input tok, {st.output_tokens:,} output tok, "
-            f"projected {_fmt_usd(st.usd)}"
+            f"projected {_fmt_usd(st.usd)}{delta}"
         )
         rows = [
             [
@@ -93,7 +101,10 @@ def _print_estimate(est, stage: str) -> None:
         print(f"total projected: {_fmt_usd(est.total_usd)}")
     for w in est.warnings:
         print(f"warning: {w}")
-    print("(estimate projects the full policy-effective grid; completed work is not subtracted)")
+    print(
+        "(projected figures cover the full policy-effective grid; the gate "
+        "applies to the remaining figure — completed work is never re-paid)"
+    )
 
 
 def _print_pricing(prov) -> None:
@@ -139,15 +150,13 @@ def _cmd_estimate(args) -> int:
     return 0
 
 
-def _check_gate(est_usd: float, cfg, assume_yes: bool):
+def _check_gate(est_usd: float, cfg, assume_yes: bool, machine: bool = False):
     from itemeval.budget._gate import check_gate
 
-    return check_gate(est_usd, cfg.budget, assume_yes)
+    return check_gate(est_usd, cfg.budget, assume_yes, machine=machine)
 
 
-def _gate_stop_doc(
-    stage: str, study: str, est_usd: float, est, gate, config_arg: str, hints=()
-) -> str:
+def _gate_stop_doc(stage: str, study: str, st, est, gate, config_arg: str, hints=()) -> str:
     """JSON document emitted on a gate stop under --json (exit 3/4): an agent
     still gets the projected cost, the gate reason, and the rerun command."""
     import json
@@ -155,7 +164,11 @@ def _gate_stop_doc(
     doc = {
         "study": study,
         "stage": stage,
-        "estimate_usd": est_usd,
+        "estimate_usd": st.remaining_usd,  # what this run would spend (gate input)
+        "estimate_full_usd": st.usd,
+        "completed_cells": st.completed_cells,
+        "total_cells": st.total_cells,
+        "rows_replaced": st.rows_replaced,
         "pricing": est.pricing.model_dump(mode="json"),
         "gate": gate.model_dump(mode="json"),
         "rerun": f"itemeval {stage} {config_arg} --yes",
@@ -203,24 +216,34 @@ def _cmd_generate(args) -> int:
     from itemeval.generate._run import run_generate
 
     cfg, prep = _load(args)
-    est = estimate_study(prep)
+    est = estimate_study(prep, force=args.force)
+    st = est.generate
     if not args.json:
         _print_pricing(est.pricing)
+        delta = ""
+        if st.completed_cells > 0:
+            delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
         print(
-            f"projected generate cost: {_fmt_usd(est.generate.usd)} "
+            f"projected generate cost: {_fmt_usd(st.remaining_usd)}{delta} "
             f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
         )
+        if st.rows_replaced:
+            print(
+                f"this run replaces {st.rows_replaced} existing rows "
+                "(re-runs replay byte-identically from the local response cache "
+                "at $0 where available)"
+            )
         for w in est.warnings:
             print(f"warning: {w}")
-    gate = _check_gate(est.generate.usd, cfg, args.yes)
-    pilot = _pilot_hint(prep, cfg, "generate", est.generate.usd, args.condition)
+    gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
+    pilot = _pilot_hint(prep, cfg, "generate", st.remaining_usd, args.condition)
     if not gate.proceed:
         if args.json:
             print(
                 _gate_stop_doc(
                     "generate",
                     cfg.study,
-                    est.generate.usd,
+                    st,
                     est,
                     gate,
                     args.config,
@@ -239,10 +262,12 @@ def _cmd_generate(args) -> int:
         force=args.force,
         condition_filter=args.condition,
         display=display,
-        estimate_usd=est.generate.usd,
+        estimate_usd=st.remaining_usd,
+        estimate_full_usd=st.usd,
     )
     result.pricing = est.pricing
-    result.estimate_usd = est.generate.usd
+    result.estimate_usd = st.remaining_usd
+    result.rows_replaced = st.rows_replaced
     result.gate = gate
     if pilot:
         result.hints = [*result.hints, pilot]
@@ -262,22 +287,32 @@ def _cmd_grade(args) -> int:
     from itemeval.grade._run import run_grade
 
     cfg, prep = _load(args)
-    est = estimate_study(prep)
+    est = estimate_study(prep, force=args.force)
+    st = est.grade
     if not args.json:
         _print_pricing(est.pricing)
+        delta = ""
+        if st.completed_cells > 0:
+            delta = f" remaining of {_fmt_usd(st.usd)} full grid ({_pct_complete(st)})"
         print(
-            f"projected grade cost: {_fmt_usd(est.grade.usd)} "
+            f"projected grade cost: {_fmt_usd(st.remaining_usd)}{delta} "
             f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
         )
-    gate = _check_gate(est.grade.usd, cfg, args.yes)
-    pilot = _pilot_hint(prep, cfg, "grade", est.grade.usd, args.condition)
+        if st.rows_replaced:
+            print(
+                f"this run replaces {st.rows_replaced} existing rows "
+                "(re-runs replay byte-identically from the local response cache "
+                "at $0 where available)"
+            )
+    gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
+    pilot = _pilot_hint(prep, cfg, "grade", st.remaining_usd, args.condition)
     if not gate.proceed:
         if args.json:
             print(
                 _gate_stop_doc(
                     "grade",
                     cfg.study,
-                    est.grade.usd,
+                    st,
                     est,
                     gate,
                     args.config,
@@ -296,10 +331,12 @@ def _cmd_grade(args) -> int:
         graders=args.grader,
         rubrics=args.rubric,
         display=display,
-        estimate_usd=est.grade.usd,
+        estimate_usd=st.remaining_usd,
+        estimate_full_usd=st.usd,
     )
     result.pricing = est.pricing
-    result.estimate_usd = est.grade.usd
+    result.estimate_usd = st.remaining_usd
+    result.rows_replaced = st.rows_replaced
     result.gate = gate
     if pilot:
         result.hints = [*result.hints, pilot]

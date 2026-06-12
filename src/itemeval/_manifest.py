@@ -83,7 +83,8 @@ class Manifest(BaseModel):
     grid_generate: list[ConditionManifest]
     grid_grade: list[ConditionManifest]
     conditions_run: list[str]
-    estimate_usd: float | None
+    estimate_usd: float | None  # remaining (what this run could spend) since 0.2
+    estimate_full_usd: float | None = None  # full-grid projection alongside
     cache: bool
 
 
@@ -119,6 +120,7 @@ def build_manifest(
     run_id: str,
     conditions_run: "list[str]",
     estimate_usd: "float | None",
+    estimate_full_usd: "float | None" = None,
 ) -> Manifest:
     cfg = prep.config
     base = cfg.config_dir or cfg.work_dir
@@ -171,6 +173,7 @@ def build_manifest(
         ],
         conditions_run=conditions_run,
         estimate_usd=estimate_usd,
+        estimate_full_usd=estimate_full_usd,
         cache=cfg.cache,
     )
 

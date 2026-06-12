@@ -51,8 +51,10 @@ itemeval estimate CONFIG [--stage {generate,grade,all}] [--refresh-pricing] [--j
 Prints per-stage and per-condition projections (calls, tokens, USD), flags
 unpriced models, and warns when generation is uncapped (no `max_tokens`).
 `--refresh-pricing` pulls current per-token prices from the OpenRouter API
-into a local cache first. The estimate always projects the **full**
-policy-effective grid; completed work is not subtracted (conservative).
+into a local cache first. Projections show the **full** policy-effective
+grid plus the **remaining** figure (completed cells subtracted — what the
+next run can actually spend; the money gate operates on it). See
+[Budget-and-Costs#estimation](Budget-and-Costs.md#estimation).
 
 ## `generate` — stage 1 (resumable)
 

@@ -7,6 +7,29 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Delta-aware estimates**: each stage projection now carries
+  `remaining_usd`/`full_usd`/`remaining_calls`/`completed_cells`/
+  `total_cells`/`rows_replaced` alongside the unchanged `usd` (full grid,
+  append-only). `generate`/`grade` print
+  `projected … cost: $4.10 remaining of $11.30 full grid (63% complete)`
+  on partially complete studies, and run manifests record both figures
+  (`estimate_usd` = remaining, new `estimate_full_usd`).
+- **Replacement statement at the money gate**: when a planned run would
+  overwrite existing rows (`--force`, epoch extension, `on_empty: rerun`),
+  the pre-gate block states `this run replaces N existing rows (…)` as part
+  of the single confirmation; `rows_replaced` rides the estimate and run
+  JSON.
+
+### Changed
+- **The money gate now operates on the remaining figure** — what the run can
+  actually spend; completed work is never re-paid or re-gated. A study with
+  a $100 full grid and $1 remaining passes a $5 `confirm_above_usd` without
+  prompting; `--force` restores gating on the full selection.
+- **The gate never prompts under `--json`** (closes the documented
+  UX-PATTERNS gap): proceed under threshold or with `--yes`, otherwise exit
+  3 after emitting the JSON document. `check_gate` gains a `machine` flag.
+
+### Added
 - `--policy {dev,full-interactive,full-batch}` on
   `estimate`/`generate`/`grade`/`status`: override `budget.policy` for one
   invocation without editing the config — the zero-edit pilot flow

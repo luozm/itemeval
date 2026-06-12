@@ -189,8 +189,8 @@ as compiler diagnostics). Facts of record stay on stdout.
   agent is the audience most likely to act on it.
 - `--json` declares a **machine consumer**: the gate never prompts under
   `--json` — proceed under threshold or with `--yes`, otherwise exit 3 with
-  the rerun line. *(Known gap, June 2026: `check_gate` checks only TTY and
-  `--yes`; fix when this document becomes binding.)*
+  the rerun line (and the JSON document still emitted before the stop).
+  Implemented via `check_gate(..., machine=True)`.
 
 ### Turning hints off
 
@@ -260,7 +260,7 @@ feature adding a side effect must add a row here.
 | Pricing refresh | network → OpenRouter; writes `~/.cache/itemeval/pricing.json` | **compliant** — provenance line | (the model to copy) |
 | Batch job creation | provider-side job | partial | `batch: submitted job <id> (anthropic) — collect with the same command later` |
 | `export/` rewrite | study dir (disposable view) | prints paths | keep; wording must say *rewritten* |
-| Replacing existing result rows | solutions/gradings parquet | **silent** (resume semantics) | planned: stated in the estimate and covered by the single money gate (Law 2) |
+| Replacing existing result rows | solutions/gradings parquet | **compliant** — `this run replaces N existing rows (…)` in the pre-gate block; `rows_replaced` in estimate/run JSON | stated in the estimate and covered by the single money gate (Law 2) |
 
 ---
 

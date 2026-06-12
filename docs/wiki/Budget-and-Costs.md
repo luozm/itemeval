@@ -17,19 +17,42 @@ cap can never be talked past.
 - dollars: tokens × the pricing table, with a 0.5 multiplier for
   batch-eligible conditions.
 
-The estimate covers the full policy-effective grid (resume state is not
-subtracted) and is a planning number, not an invoice — target accuracy is
-"within ~2× of actuals".
+The estimate reports two figures per stage. The **full** projection covers
+the whole policy-effective grid; the **remaining** projection subtracts
+already-complete cells (using the same predicates the runners use to decide
+what to run), so it is exactly what the next run can spend. On a partially
+complete study the lines read:
+
+```
+projected generate cost: $4.10 remaining of $11.30 full grid (63% complete)
+```
+
+JSON parity (append-only; `usd` keeps meaning the full grid):
+`remaining_usd`, `full_usd`, `remaining_calls`, `completed_cells`,
+`total_cells`, and `rows_replaced` on each `StageEstimate`. `--force` sets
+remaining = full (everything selected re-runs). Either way the estimate is a
+planning number, not an invoice — target accuracy is "within ~2× of actuals".
+
+When the planned run would overwrite existing rows (`--force`, epoch
+extension, `on_empty: rerun` re-attempts), the projection block states it as
+part of the same single confirmation:
+`this run replaces 48 existing rows (…)` — never a second prompt.
 
 ## The gate
 
-`generate` and `grade` compare their stage's projection against the config:
+`generate` and `grade` compare their stage's **remaining** projection (what
+this run can actually spend — completed work is never re-paid) against the
+config:
 
 1. projection > `budget.max_usd` → **abort, exit 4** — never overridable;
 2. projection ≤ `confirm_above_usd` → proceed;
 3. `--yes` → proceed;
-4. interactive terminal → ask `Proceed? [y/N]`;
+4. interactive terminal (and not `--json`) → ask `Proceed? [y/N]`;
 5. otherwise → **exit 3** with "re-run with --yes to confirm".
+
+Under `--json` the gate never prompts — it proceeds under threshold or with
+`--yes`, otherwise exits 3 after emitting the JSON document (projected cost,
+gate reason, rerun command, hints).
 
 CI/scripting pattern: set `confirm_above_usd` to your comfort level, pass
 `--yes`, and set `max_usd` as the backstop.

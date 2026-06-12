@@ -62,7 +62,8 @@ class GradeResult(BaseModel):
     hints: list[Hint] = Field(default_factory=list)
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
-    estimate_usd: "float | None" = None
+    estimate_usd: "float | None" = None  # remaining figure (gate input)
+    rows_replaced: "int | None" = None  # existing rows this run planned to overwrite
     gate: "GateResult | None" = None
 
 
@@ -176,6 +177,7 @@ def run_grade(
     display: "str | None" = None,
     model_factory: "ModelFactory | None" = None,
     estimate_usd: "float | None" = None,
+    estimate_full_usd: "float | None" = None,
 ) -> GradeResult:
     run_id = run_id or new_run_id("grade")
     prep.paths.ensure()
@@ -215,7 +217,9 @@ def run_grade(
                 continue
         selected.append(cond)
 
-    manifest = build_manifest(prep, "grade", run_id, [c.id for c in selected], estimate_usd)
+    manifest = build_manifest(
+        prep, "grade", run_id, [c.id for c in selected], estimate_usd, estimate_full_usd
+    )
     manifest_path = write_manifest(manifest, prep.paths)
 
     reports: list[ConditionRunReport] = []

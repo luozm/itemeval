@@ -143,6 +143,10 @@ duplicates work:
 - **Parse failures** stay final (use `--force` to redo).
 - `--force` re-runs everything selected; `--condition <id|prefix|slug>` (and
   `--grader`/`--rubric` for grade) narrows a run.
+- When a planned run would overwrite existing rows (`--force`, epoch
+  extension after raising `replications`, `on_empty: rerun`), the pre-gate
+  block states it — `this run replaces N existing rows (…)` — as part of the
+  single money confirmation, and the run JSON carries `rows_replaced`.
 
 Interrupting a run (Ctrl-C, a crash, a provider outage mid-run) needs no special
 handling — just run the same command again.

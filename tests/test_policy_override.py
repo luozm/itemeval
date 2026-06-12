@@ -87,7 +87,8 @@ def test_pilot_hint_absent_on_rerun(gated_study, capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin", type("S", (), {"isatty": lambda self: False})())
     assert cli.main(["generate", str(gated_study), "--yes"]) == 0
     capsys.readouterr()
-    assert cli.main(["generate", str(gated_study)]) == 3  # gate engages again
+    # grow the scope so the gate engages again (remaining > 0); store is non-empty
+    assert cli.main(["generate", str(gated_study), "--policy", "full-interactive"]) == 3
     err = capsys.readouterr().err
     assert "pilot" not in err and "--policy dev" not in err  # store no longer empty
 

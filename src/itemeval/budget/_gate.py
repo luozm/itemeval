@@ -20,9 +20,14 @@ def check_gate(
     budget: BudgetConfig,
     assume_yes: bool,
     interactive: "bool | None" = None,
+    machine: bool = False,
 ) -> GateResult:
     if interactive is None:
         interactive = sys.stdin.isatty()
+    if machine:
+        # --json declares a machine consumer: never prompt, even on a TTY —
+        # proceed under threshold or with --yes, otherwise exit 3.
+        interactive = False
     if budget.max_usd is not None and estimate_usd > budget.max_usd:
         return GateResult(
             proceed=False,
