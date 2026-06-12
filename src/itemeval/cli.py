@@ -206,11 +206,18 @@ def _pilot_hint(prep, cfg, stage: str, est_usd: float, condition_filter):
 
 
 def _print_local_cache(result) -> None:
-    """Reuse announced as loudly as fetching (Law 1)."""
+    """Reuse and provider-side job creation announced (Law 1)."""
     if result.local_cache_rows:
         print(
             f"{result.local_cache_rows} calls answered from local cache ($0) — "
             f"cache dir: {result.local_cache_dir}"
+        )
+    if result.batch and result.batch_providers:
+        # best-effort: inspect manages provider batch jobs internally and does
+        # not surface job ids — never fake one.
+        print(
+            f"batch: enabled ({', '.join(result.batch_providers)}) — "
+            "provider-side jobs created; resume with the same command"
         )
 
 
@@ -405,6 +412,7 @@ def _cmd_export(args) -> int:
     if args.json:
         print(result.model_dump_json(indent=2))
         return 0
+    print("export: rewrote export/ — gradings_long.parquet + .csv, ledger.csv (disposable view)")
     print(f"rows: {result.rows}")
     print(f"gradings: {result.gradings_parquet} + {result.gradings_csv}")
     print(f"ledger:   {result.ledger_csv}")

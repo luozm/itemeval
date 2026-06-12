@@ -98,6 +98,9 @@ class GenerateResult(BaseModel):
     # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
     local_cache_rows: int = 0
     local_cache_dir: "str | None" = None  # set when local_cache_rows > 0
+    # Provider batch mode (Law 1: provider-side job creation is announced):
+    batch: bool = False
+    batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
@@ -515,6 +518,7 @@ def run_generate(
         if h is not None
     ]
     local_total = sum(r.local_cache_rows for r in reports)
+    batch_on = prep.plan.batch is not None
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,
@@ -526,4 +530,8 @@ def run_generate(
         datasets=dataset_provenance(prep.datasets),
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,
+        batch=batch_on,
+        batch_providers=(
+            sorted({provider_of(m) for m in run_models} & BATCH_PROVIDERS) if batch_on else []
+        ),
     )

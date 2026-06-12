@@ -258,8 +258,8 @@ feature adding a side effect must add a row here.
 | Revision pin write | `dataset_locks.json` (study dir, but **decides future runs**) | **compliant** — pin clause printed on change only | `dataset: … — revision pinned in dataset_locks.json` (printed on change only) |
 | Local response cache read/write | `~/Library/Caches/inspect_ai/generate` (macOS) / `~/.cache/inspect_ai` (Linux) | **compliant** — run-level summary line + `local_cache_rows`/`local_cache_dir` on results and per-condition reports | summary line: `12 calls answered from local cache ($0) — cache dir: <path>` |
 | Pricing refresh | network → OpenRouter; writes `~/.cache/itemeval/pricing.json` | **compliant** — provenance line | (the model to copy) |
-| Batch job creation | provider-side job | partial | `batch: submitted job <id> (anthropic) — collect with the same command later` |
-| `export/` rewrite | study dir (disposable view) | prints paths | keep; wording must say *rewritten* |
+| Batch job creation | provider-side job | **compliant (best-effort)** — `batch: enabled (anthropic) — provider-side jobs created; resume with the same command` + `batch`/`batch_providers` on run results; inspect does not surface job ids (follow-up: per-job-id line if inspect's API ever exposes them — never fake an id) | `batch: submitted job <id> (anthropic) — collect with the same command later` |
+| `export/` rewrite | study dir (disposable view) | **compliant** — `export: rewrote export/ — … (disposable view)` | keep; wording must say *rewritten* |
 | Replacing existing result rows | solutions/gradings parquet | **compliant** — `this run replaces N existing rows (…)` in the pre-gate block; `rows_replaced` in estimate/run JSON | stated in the estimate and covered by the single money gate (Law 2) |
 
 ---

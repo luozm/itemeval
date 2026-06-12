@@ -7,6 +7,19 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Batch announcement**: when a run goes through a provider batch API,
+  `generate`/`grade` print
+  `batch: enabled (<providers>) — provider-side jobs created; resume with
+  the same command`; run results gain `batch`/`batch_providers`
+  (append-only). Best-effort: inspect manages the jobs internally and does
+  not expose job ids — none are faked.
+
+### Changed
+- `export` now states the side effect honestly:
+  `export: rewrote export/ — gradings_long.parquet + .csv, ledger.csv
+  (disposable view)`.
+
+### Added
 - **Python-surface consent: `max_usd=`** on `run_generate`/`run_grade` —
   when the stage's *remaining* projection exceeds it, the run raises the new
   `itemeval.BudgetExceededError` **before any API call**; never prompts
