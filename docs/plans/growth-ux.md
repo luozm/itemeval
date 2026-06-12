@@ -1,6 +1,8 @@
 # Implementation plan — study growth UX (scale-up · snapshots · waves)
 
-**Status: approved plan, not yet implemented.** Written 2026-06-11.
+**Status: IMPLEMENTED 2026-06-12** (all workstreams, in the combined order
+below, together with the ux-compliance plan; see CHANGELOG `[Unreleased]`).
+Kept as the design record. Originally written 2026-06-11.
 This file is the working brief for implementation sessions: it carries all
 context a fresh session needs. Read these first, in order:
 

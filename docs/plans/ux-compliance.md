@@ -1,6 +1,8 @@
 # Implementation plan — UX-PATTERNS compliance backlog
 
-**Status: approved plan, not yet implemented.** Written 2026-06-11, from a
+**Status: IMPLEMENTED 2026-06-12** (all steps, in growth-ux.md's combined
+order; see CHANGELOG `[Unreleased]`). Kept as the design record.
+Originally written 2026-06-11, from a
 full code scan against `docs/UX-PATTERNS.md` (binding). This file is the
 working brief for implementation sessions. Read first, in order:
 
