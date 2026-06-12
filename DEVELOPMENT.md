@@ -16,6 +16,32 @@ feature must follow (output, side effects, consent), see
 - Upper-bound pins (`<X`) are allowed only as a temporary response to a known
   breakage, with a linked issue and removal plan.
 
+## inspect_ai boundary
+
+itemeval is a design-and-accounting façade over inspect_ai, the execution
+engine. They meet at one narrow waist: build a `Task`, call `eval()`, flatten
+the `EvalLog`. Rules for any code touching the boundary:
+
+- **Wrap, don't fork.** If inspect has it (providers, retry, batch, caching,
+  logs), call it. Extend only via published extension points, drop-in
+  compatible (e.g. `_cachegate.gated_generate` is an `@solver`). Bypass a
+  subsystem only when its abstraction conflicts with item-level provenance
+  (e.g. `scorer=None`, scores parsed post-hoc) — and say why in code.
+- **Pass through, don't rename.** Model id strings, API-key env vars,
+  `INSPECT_DISPLAY`/display modes, and `GenerateConfig` knob names surface to
+  users unchanged; itemeval docs explain every knob so users never need
+  inspect's docs. One documented escape hatch: raw `.eval` logs are kept and
+  indexed, openable with `inspect view`.
+- **Flatten at the boundary.** inspect types never cross the public API —
+  results are itemeval pydantic models and flat parquet/CSV; `EvalLog` types
+  appear only under `TYPE_CHECKING` outside the waist.
+- **Keep the contact surface small.** inspect imports live only in the task
+  builders (`generate/_task`, `grade/_judge`), orchestrators
+  (`generate/_run`, `grade/_run`), and extensions (`_cachegate`,
+  `_mockmodels`); config/design/store/budget/CLI stay engine-free, and
+  `import itemeval` stays lazy so no-API commands never pay inspect's import
+  cost. This small waist is exactly the watch list for upgrades below.
+
 ## inspect_ai upgrade pipeline
 
 inspect-ai is the load-bearing dependency and releases frequently. Upgrades are

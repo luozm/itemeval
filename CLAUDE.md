@@ -2,9 +2,11 @@
 
 Publishable Python package: item-level LLM evaluation on inspect_ai.
 `README.md` is the spec; `ROADMAP.md` is the milestone plan — keep it updated
-as milestones complete. `DEVELOPMENT.md` defines the inspect_ai upgrade
-pipeline and the versioning/release process — follow it for any dependency
-bump or release; update `CHANGELOG.md` ([Unreleased]) in the same change that
+as milestones complete. `DEVELOPMENT.md` defines the inspect_ai boundary rules
+(wrap don't fork; pass through don't rename; flatten at the public API; keep
+inspect imports confined to the task-builder/orchestrator/extension modules),
+the upgrade pipeline, and the versioning/release process — follow it for any
+code touching inspect_ai, dependency bump, or release; update `CHANGELOG.md` ([Unreleased]) in the same change that
 makes a user-visible difference. `docs/UX-PATTERNS.md` is the binding UX
 contract (no silent side effects, hint framework, consent rules, knob
 buckets) — every feature, new or touched, must pass its development
