@@ -99,8 +99,9 @@ def test_study_card_front_matter_and_body(completed_study):
 
 def test_study_card_deterministic_given_fixed_stores(completed_study):
     cfg = load_config(completed_study)
-    r1 = export_study(cfg, snapshot="a1")
-    r2 = export_study(cfg, snapshot="a2")
+    # names with non-hex characters: they must never collide with run-id text
+    r1 = export_study(cfg, snapshot="snap-x")
+    r2 = export_study(cfg, snapshot="snap-y")
 
     def normalized(result):
         text = (cfg.study_dir / result.snapshot.card_path).read_text()
