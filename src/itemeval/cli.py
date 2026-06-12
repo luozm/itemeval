@@ -119,14 +119,27 @@ def _cmd_estimate(args) -> int:
     return 0
 
 
-def _run_gate(est_usd: float, cfg, assume_yes: bool) -> "int | None":
+def _check_gate(est_usd: float, cfg, assume_yes: bool):
     from itemeval.budget._gate import check_gate
 
-    gate = check_gate(est_usd, cfg.budget, assume_yes)
-    if not gate.proceed:
-        print(f"itemeval: {gate.reason}", file=sys.stderr)
-        return gate.exit_code
-    return None
+    return check_gate(est_usd, cfg.budget, assume_yes)
+
+
+def _gate_stop_doc(stage: str, study: str, est_usd: float, est, gate, config_arg: str) -> str:
+    """JSON document emitted on a gate stop under --json (exit 3/4): an agent
+    still gets the projected cost, the gate reason, and the rerun command."""
+    import json
+
+    doc = {
+        "study": study,
+        "stage": stage,
+        "estimate_usd": est_usd,
+        "pricing": est.pricing.model_dump(mode="json"),
+        "gate": gate.model_dump(mode="json"),
+        "rerun": f"itemeval {stage} {config_arg} --yes",
+        "hints": [],
+    }
+    return json.dumps(doc, indent=2)
 
 
 def _print_reports(reports) -> None:
@@ -156,26 +169,40 @@ def _cmd_generate(args) -> int:
 
     cfg, prep = _load(args)
     est = estimate_study(prep)
-    _print_pricing(est.pricing)
-    print(
-        f"projected generate cost: {_fmt_usd(est.generate.usd)} "
-        f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
-    )
-    for w in est.warnings:
-        print(f"warning: {w}")
-    code = _run_gate(est.generate.usd, cfg, args.yes)
-    if code is not None:
-        return code
+    if not args.json:
+        _print_pricing(est.pricing)
+        print(
+            f"projected generate cost: {_fmt_usd(est.generate.usd)} "
+            f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
+        )
+        for w in est.warnings:
+            print(f"warning: {w}")
+    gate = _check_gate(est.generate.usd, cfg, args.yes)
+    if not gate.proceed:
+        if args.json:
+            print(_gate_stop_doc("generate", cfg.study, est.generate.usd, est, gate, args.config))
+        else:
+            print(f"itemeval: {gate.reason}", file=sys.stderr)
+        return gate.exit_code
+    # --json declares a machine consumer: silence inspect's live display unless
+    # the operator explicitly chose one, so stdout stays pure JSON.
+    display = args.display if args.display is not None else ("none" if args.json else None)
     result = run_generate(
         prep,
         force=args.force,
         condition_filter=args.condition,
-        display=args.display,
+        display=display,
         estimate_usd=est.generate.usd,
     )
-    _print_reports(result.conditions)
-    print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
-    print(f"manifest: {result.manifest_path}")
+    result.pricing = est.pricing
+    result.estimate_usd = est.generate.usd
+    result.gate = gate
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        _print_reports(result.conditions)
+        print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
+        print(f"manifest: {result.manifest_path}")
     return 1 if any(r.status == "error" for r in result.conditions) else 0
 
 
@@ -185,23 +212,35 @@ def _cmd_grade(args) -> int:
 
     cfg, prep = _load(args)
     est = estimate_study(prep)
-    _print_pricing(est.pricing)
-    print(
-        f"projected grade cost: {_fmt_usd(est.grade.usd)} "
-        f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
-    )
-    code = _run_gate(est.grade.usd, cfg, args.yes)
-    if code is not None:
-        return code
+    if not args.json:
+        _print_pricing(est.pricing)
+        print(
+            f"projected grade cost: {_fmt_usd(est.grade.usd)} "
+            f"(confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
+        )
+    gate = _check_gate(est.grade.usd, cfg, args.yes)
+    if not gate.proceed:
+        if args.json:
+            print(_gate_stop_doc("grade", cfg.study, est.grade.usd, est, gate, args.config))
+        else:
+            print(f"itemeval: {gate.reason}", file=sys.stderr)
+        return gate.exit_code
+    display = args.display if args.display is not None else ("none" if args.json else None)
     result = run_grade(
         prep,
         force=args.force,
         condition_filter=args.condition,
         graders=args.grader,
         rubrics=args.rubric,
-        display=args.display,
+        display=display,
         estimate_usd=est.grade.usd,
     )
+    result.pricing = est.pricing
+    result.estimate_usd = est.grade.usd
+    result.gate = gate
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 1 if any(r.status == "error" for r in result.conditions) else 0
     _print_reports(result.conditions)
     print(
         f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
@@ -414,6 +453,11 @@ def _build_parser() -> argparse.ArgumentParser:
     ):
         p = add(name, fn, help_text)
         p.add_argument("-y", "--yes", action="store_true", help="skip the cost confirmation gate")
+        p.add_argument(
+            "--json",
+            action="store_true",
+            help="emit the run result as JSON on stdout (silences live display)",
+        )
         p.add_argument("--force", action="store_true", help="re-run even completed work")
         p.add_argument(
             "--condition",

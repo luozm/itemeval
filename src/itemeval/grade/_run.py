@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._errors import StoreError
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
+from itemeval.budget._gate import GateResult
+from itemeval.budget._pricing import PricingProvenance
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.design._grid import GradeCondition
@@ -50,6 +52,10 @@ class GradeResult(BaseModel):
     empty_total: int = 0  # scoped empty (no-error) solutions
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
+    # Filled by the CLI for `--json` parity (Python callers compute their own):
+    pricing: "PricingProvenance | None" = None
+    estimate_usd: "float | None" = None
+    gate: "GateResult | None" = None
 
 
 def _base_row(

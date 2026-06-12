@@ -10,8 +10,10 @@ from pydantic import BaseModel, ConfigDict
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
+from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
+    PricingProvenance,
     cost_usd,
     lookup_price,
     provider_of,
@@ -59,6 +61,10 @@ class GenerateResult(BaseModel):
     rows_written: int
     total_usd: float
     manifest_path: str
+    # Filled by the CLI for `--json` parity (Python callers compute their own):
+    pricing: "PricingProvenance | None" = None
+    estimate_usd: "float | None" = None
+    gate: "GateResult | None" = None
 
 
 def resolve_display(display: "str | None") -> str:

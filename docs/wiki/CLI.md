@@ -53,7 +53,7 @@ policy-effective grid; completed work is not subtracted (conservative).
 
 ```
 itemeval generate CONFIG [-y/--yes] [--force] [--condition F]...
-                  [--display {none,plain,rich,full}]
+                  [--display {none,plain,rich,full}] [--json]
 ```
 
 Flow: estimate → print projection → **gate** → run each generate condition
@@ -67,15 +67,20 @@ reported and the rest continue (final exit 1).
   slug — e.g. `--condition gpt-5-mini_minimal_default`.
 - `--display` passes through to inspect (default `none`; try `rich`
   interactively).
+- `--json` emits the run result as a single JSON document on stdout (the
+  `GenerateResult` fields plus `pricing`, `estimate_usd`, and the `gate`
+  outcome) and silences the live display unless `--display` is passed. A
+  gate stop still emits a JSON document (projected cost, gate reason, the
+  `--yes` rerun command) before exiting 3/4.
 
 ## `grade` — stage 2 (resumable, re-runnable)
 
 ```
 itemeval grade CONFIG [-y/--yes] [--force] [--condition F]...
-               [--grader N]... [--rubric N]... [--display ...]
+               [--grader N]... [--rubric N]... [--display ...] [--json]
 ```
 
-Same flow over grade conditions. Verifiable conditions cost $0 and need no
+Same flow over grade conditions (including `--json`, as on `generate`). Verifiable conditions cost $0 and need no
 model. `--grader`/`--rubric` (repeatable) narrow to specific judges/rubrics —
 useful for adding a new grader over existing solutions. The summary line
 reports `parse_failures` (rows kept with `parse_ok=false`).

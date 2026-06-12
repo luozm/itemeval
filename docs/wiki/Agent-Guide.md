@@ -32,16 +32,19 @@ see `CLAUDE.md` in the repo.)
 ```
 itemeval init DIR [--with-templates]            # scaffold config.yaml (no API calls)
 itemeval estimate CONFIG [--refresh-pricing] [--json]   # projected $; NO model calls
-itemeval generate CONFIG [--yes] [--force] [--condition F]...  # stage 1 (paid)
-itemeval grade    CONFIG [--yes] [--force] [--grader N] [--rubric N] [--condition F]...  # stage 2 (paid if judge)
+itemeval generate CONFIG [--yes] [--json] [--force] [--condition F]...  # stage 1 (paid)
+itemeval grade    CONFIG [--yes] [--json] [--force] [--grader N] [--rubric N] [--condition F]...  # stage 2 (paid if judge)
 itemeval export   CONFIG [--json]               # tables + ledger (no API calls)
 itemeval status   CONFIG [--json]               # completion matrix (no API calls)
 ```
 
 - `estimate`, `status`, `export` never call a model API and are always safe.
   First-ever run downloads the dataset from the HF Hub (free).
-- `--json` (on `estimate`/`status`/`export`) emits the full structured report —
-  **prefer it over parsing human-readable stdout.**
+- `--json` (on every command) emits the full structured report — **prefer it
+  over parsing human-readable stdout.** On `generate`/`grade` it carries the
+  run result plus `pricing`, `estimate_usd`, and the `gate` outcome, and a
+  gate stop still emits a JSON document (projected cost, gate reason, the
+  `--yes` rerun command) before exit 3/4.
 - `-C/--base-dir DIR` anchors the output tree (`studies/`); default is the
   current directory. Inputs (prompts/rubrics) always resolve relative to the
   config file.

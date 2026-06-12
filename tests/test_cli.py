@@ -89,6 +89,66 @@ def test_display_defaults_to_live_and_forwards_override(
     assert captured["display"] == "plain"
 
 
+def test_generate_and_grade_json_stdout_pure(tmp_path, offline_adapter, capsys):
+    config = write_study_files(tmp_path)
+    assert cli.main(["generate", str(config), "--yes", "--json"]) == 0
+    out = capsys.readouterr().out
+    doc = json.loads(out)  # stdout must be exactly one JSON document
+    assert doc["study"] == "tstudy"
+    assert doc["rows_written"] == 8  # 2 models x 2 dev items x 2 reps
+    assert doc["pricing"]["source"]
+    assert doc["gate"]["proceed"] is True and doc["gate"]["exit_code"] == 0
+    assert doc["estimate_usd"] is not None
+
+    assert cli.main(["grade", str(config), "--yes", "--json"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["rows_written"] == 8
+    assert doc["parse_failures"] == 0
+    assert doc["gate"]["proceed"] is True
+
+
+def test_generate_json_gate_stop_emits_document(tmp_path, offline_adapter, capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", type("S", (), {"isatty": lambda self: False})())
+    config_yaml = write_study_files(tmp_path).read_text()
+    config = tmp_path / "gated.yaml"
+    config.write_text(config_yaml.replace("confirm_above_usd: 100", "confirm_above_usd: 0.0"))
+    assert cli.main(["generate", str(config), "--json"]) == 3
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["stage"] == "generate"
+    assert doc["gate"]["proceed"] is False and doc["gate"]["exit_code"] == 3
+    assert doc["rerun"].endswith("--yes")
+    assert doc["estimate_usd"] >= 0
+
+
+@pytest.mark.parametrize("stage", ["generate", "grade"])
+def test_json_forces_display_none(tmp_path, offline_adapter, monkeypatch, stage):
+    import importlib
+
+    module = f"itemeval.{stage}._run"
+    run_mod = importlib.import_module(module)
+    result_cls = run_mod.GenerateResult if stage == "generate" else run_mod.GradeResult
+    extra = (
+        {"rows_written": 0, "total_usd": 0.0}
+        if stage == "generate"
+        else {"rows_written": 0, "parse_failures": 0, "total_usd": 0.0}
+    )
+    captured = {}
+
+    def fake_run(prep, **kwargs):
+        captured["display"] = kwargs.get("display", "MISSING")
+        return result_cls(
+            run_id="r", study=prep.config.study, conditions=[], manifest_path="m", **extra
+        )
+
+    monkeypatch.setattr(run_mod, f"run_{stage}", fake_run)
+    config = write_study_files(tmp_path)
+    assert cli.main([stage, str(config), "--yes", "--json"]) == 0
+    assert captured["display"] == "none"
+    # an explicit --display still wins over the --json default
+    assert cli.main([stage, str(config), "--yes", "--json", "--display", "plain"]) == 0
+    assert captured["display"] == "plain"
+
+
 def test_missing_template_exits_2(tmp_path, offline_adapter, capsys):
     config = write_study_files(tmp_path)
     (tmp_path / "prompts" / "solver" / "minimal.md").unlink()

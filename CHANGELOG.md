@@ -7,6 +7,13 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- `--json` on `generate` and `grade` (every command now has it): stdout
+  carries exactly one JSON document — the run result extended with `pricing`,
+  `estimate_usd`, and a `gate` outcome object — and inspect's live display is
+  silenced unless `--display` is passed explicitly. A gate stop under
+  `--json` still emits a JSON document (projected cost, gate reason, rerun
+  command, `hints`) before exiting 3/4, so an agent gets structure even on a
+  stop. New JSON keys are append-only; exit codes unchanged.
 - **Cache-aware execution scheduling** (docs/FUTURE.md §1.6, validated in a
   live pilot): maximize provider prompt-cache discounts (~75–90% off repeated
   input tokens).
