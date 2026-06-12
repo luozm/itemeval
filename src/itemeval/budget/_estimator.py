@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
-from itemeval._endpoints import routing_warnings
-from itemeval._hints import Hint, detect_unpriced_models
+from itemeval._endpoints import min_cacheable_prefix, routing_warnings
+from itemeval._hints import Hint, detect_split_head_below_min, detect_unpriced_models
 from itemeval._templates import render_template
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import estimate_tokens
@@ -18,7 +18,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
-from itemeval.grade._judge import build_judge_input
+from itemeval.grade._judge import build_judge_input, judge_head_text
 
 if TYPE_CHECKING:
     from itemeval._prepare import PreparedStudy
@@ -67,6 +67,9 @@ class StageEstimate(BaseModel):
     # Stage-relevant subset of Estimate.warnings (append-only): what generate/
     # grade relay pre-gate without cross-stage noise.
     warnings: list[str] = Field(default_factory=list)
+    # Stage-relevant estimate-time hints (append-only); generate/grade merge
+    # them into the run's hints so they surface on all three commands.
+    hints: list[Hint] = Field(default_factory=list)
 
 
 class Estimate(BaseModel):
@@ -162,6 +165,37 @@ def estimate_study(
     include_empty = prep.config.solvers.on_empty == "grade"
     gen_warnings, grade_warnings = routing_warnings(prep.config)
 
+    # split-head-below-min detection (W4): shared heads of split layouts whose
+    # chars/4 estimate falls below the provider's minimum cacheable prefix,
+    # aggregated per (stage, model, minimum) — one hint line per run, not per
+    # condition. Only providers with a known minimum are checked (never guess).
+    head_stats: "dict[tuple[str, str, int], dict]" = {}
+
+    def note_heads(stage: str, model: str, min_tok: int, head_tokens: "list[int]") -> None:
+        if not head_tokens:
+            return
+        s = head_stats.setdefault((stage, model, min_tok), {"below": 0, "total": 0, "head": None})
+        s["below"] += sum(1 for t in head_tokens if t < min_tok)
+        s["total"] += len(head_tokens)
+        s["head"] = head_tokens[0]
+
+    def stage_hints(stage: str) -> "list[Hint]":
+        out = []
+        for (s, model, min_tok), v in head_stats.items():
+            if s != stage:
+                continue
+            h = detect_split_head_below_min(
+                stage=s,
+                heads_below=v["below"],
+                heads_total=v["total"],
+                min_tokens=min_tok,
+                model=model,
+                head_tokens=v["head"],
+            )
+            if h is not None:
+                out.append(h)
+        return out
+
     if wave is not None:
         _, offset = resolve_wave(solutions_df, wave, reps)
     else:
@@ -183,6 +217,16 @@ def estimate_study(
     gen_delta = {"usd": 0.0, "calls": 0, "completed": 0, "total": 0, "replaced": 0}
     for cond in prep.grid.generate:
         template = prep.solver_templates[cond.prompt_name]
+
+        min_tok = min_cacheable_prefix(cond.model)
+        idx = template.text.find("{input}")
+        if cond.split_prompt and min_tok is not None and idx > 0:
+            head_text = template.text[:idx]
+            if "{id}" in head_text:  # per-item head (mirrors generate/_task.py)
+                heads = [estimate_tokens(render_template(head_text, {"id": it.id})) for it in items]
+            else:  # static head: one shared prefix for the whole condition
+                heads = [estimate_tokens(head_text)]
+            note_heads("generate", cond.model, min_tok, heads)
 
         def in_tokens(subset, template=template):
             return (
@@ -278,6 +322,14 @@ def estimate_study(
             )
             continue
         rubric = prep.rubric_templates[cond.rubric_name]
+        min_tok = min_cacheable_prefix(cond.grader_model)
+        if cond.split_rubric and min_tok is not None:
+            heads = [
+                estimate_tokens(head)
+                for it in items
+                if (head := judge_head_text(it, rubric)) is not None
+            ]
+            note_heads("grade", cond.grader_model, min_tok, heads)
         calls = 0
         input_tokens = 0
         for gen_cond in prep.grid.generate:
@@ -319,6 +371,7 @@ def estimate_study(
     ) -> StageEstimate:
         usd = sum(c.usd or 0.0 for c in conditions)
         return StageEstimate(
+            hints=stage_hints(stage),
             stage=stage,
             calls=sum(c.calls for c in conditions),
             input_tokens=sum(c.input_tokens for c in conditions),
@@ -347,6 +400,6 @@ def estimate_study(
         total_usd=gen.usd + grade.usd,
         warnings=gen_warnings + grade_warnings,
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
-        hints=[unpriced] if unpriced else [],
+        hints=[*gen.hints, *grade.hints, *([unpriced] if unpriced else [])],
         datasets=dataset_provenance(prep.datasets),
     )

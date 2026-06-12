@@ -287,22 +287,16 @@ def _run_stage(args, stage, runner) -> int:
             print(f"warning: {w}")
     gate = _check_gate(st.remaining_usd, cfg, args.yes, machine=args.json)
     pilot = _pilot_hint(prep, cfg, stage, st.remaining_usd, args.condition)
+    # Estimate-time hints for this stage (e.g. split-head-below-min) surface
+    # on the run commands too — merged into the run's hints, or emitted with
+    # the stop document on a gate stop.
+    pre_hints = [*st.hints, *([pilot] if pilot else [])]
     if not gate.proceed:
         if args.json:
-            print(
-                _gate_stop_doc(
-                    stage,
-                    cfg.study,
-                    st,
-                    est,
-                    gate,
-                    args.config,
-                    hints=[pilot] if pilot else (),
-                )
-            )
+            print(_gate_stop_doc(stage, cfg.study, st, est, gate, args.config, hints=pre_hints))
         else:
             print(f"itemeval: {gate.reason}", file=sys.stderr)
-            emit_hints([pilot] if pilot else [])
+            emit_hints(pre_hints)
         return gate.exit_code
     # --json declares a machine consumer: silence inspect's live display unless
     # the operator explicitly chose one, so stdout stays pure JSON.
@@ -312,8 +306,8 @@ def _run_stage(args, stage, runner) -> int:
     result.estimate_usd = st.remaining_usd
     result.rows_replaced = st.rows_replaced
     result.gate = gate
-    if pilot:
-        result.hints = [*result.hints, pilot]
+    if pre_hints:
+        result.hints = [*result.hints, *pre_hints]
     if args.json:
         print(result.model_dump_json(indent=2))
     else:

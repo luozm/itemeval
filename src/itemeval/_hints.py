@@ -85,6 +85,46 @@ def detect_cache_zero_reads(
     )
 
 
+def detect_split_head_below_min(
+    *,
+    stage: str,
+    heads_below: int,
+    heads_total: int,
+    min_tokens: int,
+    model: str,
+    head_tokens: "int | None" = None,
+) -> "Hint | None":
+    """A split layout's shared head falls below the provider's cache minimum.
+
+    Estimate-time: split_prompt/split_rubric is on but the shared head (per
+    condition when static, per item otherwise) estimates below the provider's
+    minimum cacheable prefix — the provider cache silently does nothing for
+    those groups. Token counts are the chars/4 heuristic; the caller only
+    reports heads clearly below (est < min, no fudge factor).
+    """
+    if heads_below <= 0:
+        return None
+    option = "split_prompt" if stage == "generate" else "split_rubric"
+    if heads_total == 1:
+        message = (
+            f"{option} is on but the shared head is ~{head_tokens} tokens, "
+            f"under {model}'s ~{min_tokens}-token cache minimum (chars/4 "
+            "estimate) — it will silently do nothing"
+        )
+    else:
+        noun = "prompt" if stage == "generate" else "judge"
+        message = (
+            f"{option} is on but {heads_below}/{heads_total} {noun} heads are "
+            f"under {model}'s ~{min_tokens}-token cache minimum (chars/4 "
+            "estimate) — those groups will not engage the provider cache"
+        )
+    return Hint(
+        code="split-head-below-min",
+        message=message,
+        learn_more="Cost-Savings#two-gotchas",
+    )
+
+
 def detect_openrouter_unpinned_cache(models: "list[str]") -> "Hint | None":
     """Anthropic models ran cached through OpenRouter without provider_routing.
 

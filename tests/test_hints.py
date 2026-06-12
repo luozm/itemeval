@@ -42,6 +42,52 @@ def test_detect_empty_solutions():
     assert detect_empty_solutions(0, 0, "skip", {}) is None
 
 
+def test_detect_split_head_below_min_single_static_head():
+    from itemeval._hints import detect_split_head_below_min
+
+    h = detect_split_head_below_min(
+        stage="generate",
+        heads_below=1,
+        heads_total=1,
+        min_tokens=4096,
+        model="anthropic/claude-haiku-4-5",
+        head_tokens=900,
+    )
+    assert h is not None and h.code == "split-head-below-min"
+    assert "split_prompt" in h.message and "~900 tokens" in h.message
+    assert "silently do nothing" in h.message
+    assert h.learn_more == "Cost-Savings#two-gotchas"
+
+
+def test_detect_split_head_below_min_per_item_counts():
+    from itemeval._hints import detect_split_head_below_min
+
+    h = detect_split_head_below_min(
+        stage="grade",
+        heads_below=7,
+        heads_total=40,
+        min_tokens=4096,
+        model="anthropic/claude-haiku-4-5",
+    )
+    assert h is not None and "split_rubric" in h.message
+    assert "7/40 judge heads" in h.message and "4096" in h.message
+
+
+def test_detect_split_head_below_min_none_when_all_clear():
+    from itemeval._hints import detect_split_head_below_min
+
+    assert (
+        detect_split_head_below_min(
+            stage="grade",
+            heads_below=0,
+            heads_total=40,
+            min_tokens=4096,
+            model="anthropic/claude-haiku-4-5",
+        )
+        is None
+    )
+
+
 def test_detect_openrouter_unpinned_cache():
     h = detect_openrouter_unpinned_cache(["openrouter/anthropic/claude-haiku-4.5"])
     assert h is not None and h.code == "openrouter-unpinned-cache"
@@ -149,3 +195,18 @@ def test_grade_json_carries_empty_solutions_hint(tmp_path, offline_adapter, caps
     assert cli.main(["grade", str(config), "--yes", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert any(h["code"] == "empty-solutions" for h in doc["hints"])
+
+
+def test_gate_stop_json_carries_estimate_time_hints(tmp_path, offline_adapter, capsys):
+    """W4 wiring: split-head-below-min surfaces on generate, even on a gate stop."""
+    from conftest import TEST_CONFIG_YAML, write_study_files
+
+    yaml_text = TEST_CONFIG_YAML.replace(
+        "  models: [mockllm/solver-a, mockllm/solver-b]",
+        "  models: [anthropic/claude-haiku-4-5]\n  split_prompt: true",
+    ).replace("  confirm_above_usd: 100", "  confirm_above_usd: 0")
+    config = write_study_files(tmp_path, yaml_text)
+    rc = cli.main(["generate", str(config), "--json"])  # gate stops: no API call
+    assert rc == 3
+    doc = json.loads(capsys.readouterr().out)
+    assert any(h["code"] == "split-head-below-min" for h in doc["hints"])

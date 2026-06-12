@@ -21,6 +21,7 @@ __all__ = [
     "build_judge_input",
     "build_judge_messages",
     "build_judge_task",
+    "judge_head_text",
     "judge_sample_id",
 ]
 
@@ -79,6 +80,18 @@ def build_judge_messages(
     head = render_template(rubric.text[:idx], values)
     tail = render_template(rubric.text[idx:], values) + JUDGE_FORMAT_SUFFIX
     return [ChatMessageSystem(content=head), ChatMessageUser(content=tail)]
+
+
+def judge_head_text(item: Item, rubric: Template) -> "str | None":
+    """The split-rubric layout's shared head for `item` (rendered rubric text
+    before {solution}) — what same-item judge calls share as a cache prefix.
+    None when the rubric has nothing before {solution} (build_judge_messages
+    falls back to a single message there). Used by the estimator for the
+    min-cacheable-prefix check and the cache projection."""
+    idx = rubric.text.find("{solution}")
+    if idx <= 0:
+        return None
+    return render_template(rubric.text[:idx], _render_values(item, ""))
 
 
 def judge_sample_id(gen_condition_id: str, item_id: str, epoch: int) -> str:

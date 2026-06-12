@@ -85,11 +85,15 @@ seconds in exchange for ~half price; on *big* runs you get both — cheaper
 #### Two gotchas
 
 The discount never applies to the model's *output* (its
-answers are always full price — judge-style work benefits most); and Anthropic
-only discounts reusable parts longer than ~1,000–4,000 tokens, silently doing
-nothing below that. Check the `cache_read=… hit_rows=…` numbers itemeval now
-prints on every run — zeros on a big run mean the discount isn't engaging
-(that situation also triggers the `cache-zero-reads` hint).
+answers are always full price — judge-style work benefits most); and providers
+only discount reusable parts longer than a minimum (OpenAI ~1,000 tokens;
+Anthropic ~500–4,000 depending on the model), silently doing nothing below
+that. itemeval now checks this *before* you spend: if a split layout's shared
+part estimates below the minimum, the `split-head-below-min` hint fires at
+estimate time and on the run itself. After the run, check the
+`cache_read=… hit_rows=…` numbers it prints — zeros on a big run mean the
+discount isn't engaging (that situation also triggers the `cache-zero-reads`
+hint).
 
 ### 4. Batch mode — ~50% off, but slow
 

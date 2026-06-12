@@ -54,6 +54,37 @@ def test_cache_provider_of_maps_openrouter_to_upstream():
     assert cache_provider_of("openai/gpt-5-mini") == "openai"
 
 
+# --- min cacheable prefix (W4 table; numbers checked 2026-06-12) ---
+
+
+def test_min_cacheable_prefix_per_provider():
+    from itemeval._endpoints import min_cacheable_prefix
+
+    assert min_cacheable_prefix("openai/gpt-5-mini") == 1024
+    assert min_cacheable_prefix("deepseek/deepseek-chat") == 64
+    # anthropic is model-aware
+    assert min_cacheable_prefix("anthropic/claude-haiku-4-5") == 4096
+    assert min_cacheable_prefix("anthropic/claude-opus-4-6") == 4096
+    assert min_cacheable_prefix("anthropic/claude-opus-4-7") == 2048
+    assert min_cacheable_prefix("anthropic/claude-opus-4-8") == 1024
+    assert min_cacheable_prefix("anthropic/claude-sonnet-4-6") == 1024
+    assert min_cacheable_prefix("anthropic/claude-fable-5") == 512
+    assert min_cacheable_prefix("anthropic/claude-mythos-5-preview") == 2048
+    # google is model-aware; pre-2.5 has no implicit caching
+    assert min_cacheable_prefix("google/gemini-2.5-flash") == 2048
+    assert min_cacheable_prefix("google/gemini-3.5-flash") == 4096
+    assert min_cacheable_prefix("google/gemini-1.5-pro") is None
+    # openrouter ids obey the upstream's minimums (dot spelling normalized)
+    assert min_cacheable_prefix("openrouter/anthropic/claude-haiku-4.5") == 4096
+    assert min_cacheable_prefix("openrouter/openai/gpt-5-mini") == 1024
+    # no documented minimum / no caching through inspect: omitted, never guessed
+    assert min_cacheable_prefix("grok/grok-4") is None
+    assert min_cacheable_prefix("together/llama-4") is None
+    assert min_cacheable_prefix("mistral/mistral-large") is None
+    assert min_cacheable_prefix("bedrock/anthropic.claude") is None
+    assert min_cacheable_prefix("mockllm/solver-a") is None
+
+
 # --- inert-routing warnings ---
 
 

@@ -5,7 +5,7 @@ this mapping is ``resolve_model()`` (``_mockmodels.py``), which turns a
 non-empty dict into ``get_model(model, **args)``.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from itemeval.budget._pricing import provider_of
 
@@ -19,6 +19,63 @@ def cache_provider_of(model: str) -> str:
     if segments[0] == "openrouter" and len(segments) > 1:
         return segments[1]
     return segments[0]
+
+
+def _model_name(model: str) -> str:
+    """Bare model name, dot-normalized: openrouter ids use claude-haiku-4.5,
+    direct ids claude-haiku-4-5 — compare one spelling."""
+    return model.split("/")[-1].lower().replace(".", "-")
+
+
+def _anthropic_min(model: str) -> int:
+    # Anthropic per-model minimum cacheable prompt length, checked 2026-06-12
+    # (platform.claude.com prompt-caching docs): 512 Fable 5 / Mythos 5;
+    # 2048 Mythos Preview, Opus 4.7, Haiku 3.5; 4096 Haiku 4.5, Opus 4.6,
+    # Opus 4.5; 1024 everything else (Opus 4.8, Sonnet 4.x, Opus 4/4.1).
+    name = _model_name(model)
+    if "fable" in name or "mythos" in name:
+        return 2048 if "preview" in name else 512
+    if any(m in name for m in ("haiku-4-5", "opus-4-6", "opus-4-5")):
+        return 4096
+    if any(m in name for m in ("opus-4-7", "haiku-3-5")):
+        return 2048
+    return 1024
+
+
+def _google_min(model: str) -> "int | None":
+    # Gemini implicit-caching minimums, checked 2026-06-12 (ai.google.dev):
+    # 2048 for Gemini 2.5 Flash/Pro; 4096 for Gemini 3.x+ (3.5 Flash, 3.1 Pro).
+    # Pre-2.5 Gemini and non-Gemini Google models have no implicit caching.
+    name = _model_name(model)
+    if "gemini-2-5" in name:
+        return 2048
+    if any(g in name for g in ("gemini-3", "gemini-4", "gemini-5")):
+        return 4096
+    return None
+
+
+# Minimum cacheable prefix per cache provider (the upstream for openrouter/*
+# ids). Providers absent here either don't cache through inspect or document
+# no minimum — omitted, never guessed (grok: caching automatic but no minimum
+# documented; together: none on serverless; mistral: opt-in via a request
+# param inspect doesn't send; bedrock: inspect strips cache fields). Numbers
+# checked 2026-06-12 against each provider's docs; see the per-provider
+# helpers above and docs/COST-OPTIMIZATION.md.
+MIN_CACHEABLE_PREFIX_TOKENS: "dict[str, Union[int, Callable[[str], int | None]]]" = {
+    "openai": 1024,
+    "anthropic": _anthropic_min,
+    "google": _google_min,
+    "deepseek": 64,
+}
+
+
+def min_cacheable_prefix(model: str) -> "int | None":
+    """Provider minimum cacheable prefix for `model`'s prompts; None when the
+    provider doesn't cache (through inspect) or documents no minimum."""
+    entry = MIN_CACHEABLE_PREFIX_TOKENS.get(cache_provider_of(model))
+    if entry is None:
+        return None
+    return entry(model) if callable(entry) else entry
 
 
 def model_args_for(

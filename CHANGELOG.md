@@ -7,6 +7,21 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **`split-head-below-min` hint** (estimate-time): when `split_prompt` /
+  `split_rubric` is on but the shared head's token estimate (chars/4) falls
+  below the provider's minimum cacheable prefix, one hint line names the
+  count, model, and minimum — the silent-no-op gotcha observed live (e.g.
+  `7/40 judge heads under anthropic/…'s ~4096-token cache minimum`). Backed
+  by a new per-provider minimums table
+  (`itemeval._endpoints.MIN_CACHEABLE_PREFIX_TOKENS`, model-aware for
+  Anthropic and Gemini, numbers checked 2026-06-12 against provider docs;
+  providers documenting no minimum are omitted — never guessed). Estimate
+  stage projections carry their stage's hints (`StageEstimate.hints`,
+  append-only), and `generate`/`grade` now surface estimate-time hints too —
+  merged into the run's hints, and emitted with the stop document on a gate
+  stop.
+
+### Added
 - **`provider_routing`** (on `solvers:` and per grader spec): a verbatim
   OpenRouter provider-routing object (e.g. `{order: [anthropic],
   allow_fallbacks: false}`) sent with every `openrouter/*` request — pins the

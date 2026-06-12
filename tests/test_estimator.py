@@ -7,6 +7,33 @@ from itemeval.budget._estimator import (
 )
 
 
+def _prepared(tmp_path, yaml_text, prompt=None):
+    from conftest import write_study_files
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+
+    config = write_study_files(tmp_path, yaml_text)
+    if prompt is not None:
+        (tmp_path / "prompts" / "solver" / "minimal.md").write_text(prompt)
+    cfg = load_config(config)
+    return cfg, prepare_study(cfg)
+
+
+def _split_yaml(model="anthropic/claude-haiku-4-5", split_prompt=True, split_rubric=True):
+    from conftest import TEST_CONFIG_YAML
+
+    text = TEST_CONFIG_YAML.replace(
+        "  models: [mockllm/solver-a, mockllm/solver-b]",
+        f"  models: [{model}]" + ("\n  split_prompt: true" if split_prompt else ""),
+    )
+    if split_rubric:
+        text = text.replace(
+            "    model: mockllm/judge",
+            "    model: anthropic/claude-haiku-4-5\n    split_rubric: true",
+        )
+    return text
+
+
 def test_estimate_demo_arithmetic(study):
     _, prep = study
     est = estimate_study(prep)
@@ -111,3 +138,52 @@ def test_judge_default_output_tokens(study):
     prep2 = prepare_study(cfg2)
     est = estimate_study(prep2)
     assert est.grade.output_tokens == est.grade.calls * DEFAULT_OUTPUT_TOKENS_JUDGE
+
+
+# --- split-head-below-min (W4): estimate-time detection, per stage ---
+
+
+def test_split_head_below_min_fires_per_stage(tmp_path, offline_adapter):
+    _, prep = _prepared(tmp_path, _split_yaml())
+    est = estimate_study(prep)
+    gen_hint = next(h for h in est.generate.hints if h.code == "split-head-below-min")
+    assert "split_prompt" in gen_hint.message and "silently do nothing" in gen_hint.message
+    grade_hint = next(h for h in est.grade.hints if h.code == "split-head-below-min")
+    # per-item judge heads: 2 dev items, both far below the 4096 minimum
+    assert "2/2 judge heads" in grade_hint.message and "split_rubric" in grade_hint.message
+    assert {h.code for h in est.hints} >= {"split-head-below-min"}
+
+
+def test_split_head_no_hint_when_split_off(tmp_path, offline_adapter):
+    _, prep = _prepared(tmp_path, _split_yaml(split_prompt=False, split_rubric=False))
+    est = estimate_study(prep)
+    assert not any(h.code == "split-head-below-min" for h in est.hints)
+
+
+def test_split_head_no_hint_for_provider_without_known_minimum(tmp_path, offline_adapter):
+    # grok documents no minimum; mock judge has no caching entry — never guess
+    _, prep = _prepared(tmp_path, _split_yaml(model="grok/grok-4", split_rubric=False))
+    est = estimate_study(prep)
+    assert not any(h.code == "split-head-below-min" for h in est.hints)
+
+
+def test_split_head_boundary_at_minimum(tmp_path, offline_adapter):
+    # static head of exactly 4096 estimated tokens (chars/4): not below -> no hint
+    yaml_text = _split_yaml(split_rubric=False)
+    _, prep = _prepared(tmp_path, yaml_text, prompt=("y" * 4 * 4096) + "{input}")
+    est = estimate_study(prep)
+    assert not any(h.code == "split-head-below-min" for h in est.generate.hints)
+    # one estimated token below the minimum -> fires
+    _, prep = _prepared(tmp_path, yaml_text, prompt=("y" * (4 * 4096 - 4)) + "{input}")
+    est = estimate_study(prep)
+    assert any(h.code == "split-head-below-min" for h in est.generate.hints)
+
+
+def test_split_head_openrouter_anthropic_obeys_anthropic_minimum(tmp_path, offline_adapter):
+    _, prep = _prepared(
+        tmp_path,
+        _split_yaml(model="openrouter/anthropic/claude-haiku-4.5", split_rubric=False),
+    )
+    est = estimate_study(prep)
+    hint = next(h for h in est.generate.hints if h.code == "split-head-below-min")
+    assert "4096" in hint.message
