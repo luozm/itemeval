@@ -66,8 +66,6 @@ def _print_estimate(est, stage: str) -> None:
             for c in st.conditions
         ]
         print(_fmt_table(["condition", "model", "calls", "in_tok", "out_tok", "usd"], rows))
-        if st.unpriced_models:
-            print(f"unpriced models: {', '.join(st.unpriced_models)}")
         print()
     if stage == "all":
         print(f"total projected: {_fmt_usd(est.total_usd)}")
@@ -101,11 +99,10 @@ def _print_cost_report(rep) -> None:
             for p in rep.by_provider
         ]
         print(_fmt_table(["provider", "calls", "spend", "list_price", "saved"], rows))
-    if rep.unpriced_models:
-        print(f"unpriced models (excluded from savings): {', '.join(rep.unpriced_models)}")
 
 
 def _cmd_estimate(args) -> int:
+    from itemeval._hints import emit_hints
     from itemeval.budget._estimator import estimate_study
 
     _, prep = _load(args)
@@ -116,6 +113,7 @@ def _cmd_estimate(args) -> int:
     print(f"study: {est.study}  (policy: {est.policy})")
     _print_pricing(est.pricing)
     _print_estimate(est, args.stage)
+    emit_hints(est.hints)
     return 0
 
 
@@ -164,6 +162,7 @@ def _print_reports(reports) -> None:
 
 
 def _cmd_generate(args) -> int:
+    from itemeval._hints import emit_hints
     from itemeval.budget._estimator import estimate_study
     from itemeval.generate._run import run_generate
 
@@ -203,10 +202,12 @@ def _cmd_generate(args) -> int:
         _print_reports(result.conditions)
         print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
         print(f"manifest: {result.manifest_path}")
+        emit_hints(result.hints)
     return 1 if any(r.status == "error" for r in result.conditions) else 0
 
 
 def _cmd_grade(args) -> int:
+    from itemeval._hints import emit_hints
     from itemeval.budget._estimator import estimate_study
     from itemeval.grade._run import run_grade
 
@@ -247,21 +248,27 @@ def _cmd_grade(args) -> int:
         f"spend: {_fmt_usd(result.total_usd)}"
     )
     if result.empty_total:
+        # Self-contained fact only; the advice lives at Error-Handling#empty-completions
+        # (relayed by the empty-solutions hint — advice never rides the summary block).
         breakdown = ", ".join(f"{k}×{v}" for k, v in result.empty_stop_reasons.items())
         if result.empty_skipped:
             print(
                 f"empty solutions: {result.empty_skipped} excluded from grading "
-                f"[{breakdown}] — on_empty={result.on_empty}; raise max_tokens, or set "
-                f"solvers.on_empty to rerun (regenerate) or grade (score as-is)"
+                f"[{breakdown}] — on_empty={result.on_empty}"
             )
         else:
-            print(f"empty solutions: {result.empty_total} graded as-is [{breakdown}]")
+            print(
+                f"empty solutions: {result.empty_total} graded as-is "
+                f"[{breakdown}] — on_empty={result.on_empty}"
+            )
     print(f"manifest: {result.manifest_path}")
+    emit_hints(result.hints)
     return 1 if any(r.status == "error" for r in result.conditions) else 0
 
 
 def _cmd_export(args) -> int:
     from itemeval._config import load_config
+    from itemeval._hints import emit_hints
     from itemeval.store._export import export_study
 
     result = export_study(load_config(args.config, work_dir=getattr(args, "base_dir", None)))
@@ -283,6 +290,7 @@ def _cmd_export(args) -> int:
     if not result.internally_reconciled:
         print("warning: ledger does not match row sums; inspect ledger.csv", file=sys.stderr)
     print("(reconciliation against provider dashboards is a manual step)")
+    emit_hints(result.hints)
     return 0
 
 

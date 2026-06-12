@@ -6,9 +6,16 @@ import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._errors import StoreError
+from itemeval._hints import (
+    Hint,
+    detect_cache_zero_reads,
+    detect_empty_solutions,
+    detect_unpriced_models,
+)
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
+from itemeval._mockmodels import is_mock_model
 from itemeval.budget._gate import GateResult
-from itemeval.budget._pricing import PricingProvenance
+from itemeval.budget._pricing import PricingProvenance, lookup_price
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.design._grid import GradeCondition
@@ -52,6 +59,7 @@ class GradeResult(BaseModel):
     empty_total: int = 0  # scoped empty (no-error) solutions
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
+    hints: list[Hint] = Field(default_factory=list)
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None
@@ -215,6 +223,8 @@ def run_grade(
     rows_written = 0
     parse_failures = 0
     total_usd = 0.0
+    judge_models: list[str] = []  # grader models of judge conditions that ran
+    repeated_prefix_calls = 0  # judge calls beyond each same-item group's leader
     factory = model_factory or resolve_model
 
     for cond in selected:
@@ -291,6 +301,8 @@ def run_grade(
                 )
                 continue
             rows = _judge_rows(prep, cond, pending, log, run_id)
+            judge_models.append(cond.grader_model)
+            repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
             endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model)
             log_file = rel_to_study(prep.paths, log.location)
             usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
@@ -330,6 +342,24 @@ def run_grade(
     if endpoints_effective:
         finalize_manifest(manifest_path, endpoints_effective=endpoints_effective)
 
+    run_reports = [r for r in reports if r.status == "run"]
+    scheduled = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
+    hints = [
+        h
+        for h in (
+            detect_cache_zero_reads(
+                scheduled=scheduled,
+                repeated_prefix_calls=repeated_prefix_calls,
+                cache_read_tokens=sum(r.cache_read_tokens for r in run_reports),
+                real_provider=any(not is_mock_model(m) for m in judge_models),
+            ),
+            detect_empty_solutions(empty_total, empty_skipped, on_empty, empty_stop_reasons),
+            detect_unpriced_models(
+                sorted({m for m in judge_models if lookup_price(prep.pricing, m) is None})
+            ),
+        )
+        if h is not None
+    ]
     return GradeResult(
         run_id=run_id,
         study=prep.config.study,
@@ -342,4 +372,5 @@ def run_grade(
         empty_total=empty_total,
         empty_skipped=empty_skipped,
         empty_stop_reasons=empty_stop_reasons,
+        hints=hints,
     )

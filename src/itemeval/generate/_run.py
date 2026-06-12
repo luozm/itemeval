@@ -5,10 +5,11 @@ from functools import reduce
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import inspect_ai
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from itemeval._hints import Hint, detect_cache_zero_reads, detect_unpriced_models
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
-from itemeval._mockmodels import resolve_model
+from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
@@ -61,6 +62,7 @@ class GenerateResult(BaseModel):
     rows_written: int
     total_usd: float
     manifest_path: str
+    hints: list[Hint] = Field(default_factory=list)
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None
@@ -296,6 +298,7 @@ def run_generate(
     reports: list[ConditionRunReport] = []
     rows_written = 0
     total_usd = 0.0
+    run_models: list[str] = []  # models of conditions that actually ran
     sampling_effective: dict[str, Any] = {}
     endpoints_effective: dict[str, Any] = {}
     factory = model_factory or resolve_model
@@ -386,6 +389,7 @@ def run_generate(
             continue
 
         rows = rows_from_generate_log(log, cond, prep, run_id)
+        run_models.append(cond.model)
         endpoints_effective[cond.id] = endpoint_info(log, cond.model)
         n = _solutions.upsert_solutions(prep.paths, rows)
         rows_written += n
@@ -432,6 +436,30 @@ def run_generate(
             sampling_effective=sampling_effective or None,
             endpoints_effective=endpoints_effective or None,
         )
+    run_reports = [r for r in reports if r.status == "run"]
+    scheduled = (
+        prep.config.budget.cache_schedule != "off"
+        and prep.plan.batch is None
+        and prep.plan.replications > 1
+    )
+    hints = [
+        h
+        for h in (
+            detect_cache_zero_reads(
+                scheduled=scheduled,
+                # gated epochs beyond each item's leader should read the cache
+                repeated_prefix_calls=sum(
+                    max(0, r.rows_written - r.items_run) for r in run_reports
+                ),
+                cache_read_tokens=sum(r.cache_read_tokens for r in run_reports),
+                real_provider=any(not is_mock_model(m) for m in run_models),
+            ),
+            detect_unpriced_models(
+                sorted({m for m in run_models if lookup_price(prep.pricing, m) is None})
+            ),
+        )
+        if h is not None
+    ]
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,
@@ -439,4 +467,5 @@ def run_generate(
         rows_written=rows_written,
         total_usd=total_usd,
         manifest_path=rel_to_study(prep.paths, manifest_path),
+        hints=hints,
     )

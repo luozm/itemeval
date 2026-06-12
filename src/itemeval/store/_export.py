@@ -3,10 +3,11 @@
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._config import ExperimentConfig
 from itemeval._errors import StoreError
+from itemeval._hints import Hint, detect_unpriced_models
 from itemeval.budget._pricing import PricingProvenance, describe_pricing, load_pricing
 from itemeval.budget._report import CostReport, cost_report
 from itemeval.store._base import _coerce_to_schema, rel_to_study
@@ -82,6 +83,7 @@ class ExportResult(BaseModel):
     cost: CostReport
     # Which pricing table the cost figures were computed against.
     pricing: PricingProvenance
+    hints: list[Hint] = Field(default_factory=list)
 
 
 _SOLUTION_COLS = {
@@ -181,6 +183,7 @@ def export_study(config: ExperimentConfig) -> ExportResult:
     pricing = load_pricing(config.budget.pricing_path, config._input_base)
     report = cost_report(ledger, pricing)
     provenance = describe_pricing(pricing, refreshed=False)
+    unpriced = detect_unpriced_models(report.unpriced_models)
 
     return ExportResult(
         rows=len(long),
@@ -192,4 +195,5 @@ def export_study(config: ExperimentConfig) -> ExportResult:
         internally_reconciled=reconciled,
         cost=report,
         pricing=provenance,
+        hints=[unpriced] if unpriced else [],
     )

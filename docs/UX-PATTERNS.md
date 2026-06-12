@@ -227,16 +227,20 @@ hint: <observed fact, plain words> — learn more: <wiki-page#anchor>
 5. Hints print **after** the summary, dim, on **stderr**. They never delay,
    block, or change anything (Law 2).
 
-**Initial catalog** (status: ☑ signal exists today, needs a code / ☐ planned):
+The framework lives in `src/itemeval/_hints.py` (the `Hint` model, the
+stderr renderer with the budget of 2, `ITEMEVAL_HINTS`, and one pure
+detector function per code); results carry `hints` as structured data.
+
+**Catalog** (status: ✅ implemented / ☐ planned):
 
 | Code | Fires when | Example line | Owning doc |
 |---|---|---|---|
-| ☑ `cache-zero-reads` | run repeats long text, scheduling on, but `cache_read = 0` | `hint: 116 calls repeated a long rubric but no provider discount engaged — learn more: Cost-Savings#two-gotchas` | Cost-Savings |
+| ✅ `cache-zero-reads` | run repeats long text, scheduling on, but `cache_read = 0` | `hint: 116 calls repeated a shared prompt prefix but no provider cache discount engaged — learn more: Cost-Savings#two-gotchas` | Cost-Savings |
 | ☐ `split-head-below-min` | split enabled, shared head below the provider's minimum (estimable pre-call) | `hint: split_rubric is on but the shared part (~3.9k tokens) is below Anthropic's 4k minimum — it will silently do nothing — learn more: Cost-Savings#two-gotchas` | Cost-Savings |
 | ☐ `anthropic-openrouter-no-split` | Anthropic model via OpenRouter without split options (known zero discount) | `hint: anthropic via OpenRouter won't get cache discounts without split_rubric — learn more: Cost-Savings#prompt-packaging` | Cost-Savings |
-| ☑ `empty-solutions` | N completions empty with no API error | `hint: 21 solutions are empty (reasoning used the whole token budget) — learn more: Error-Handling#empty` | Error-Handling |
+| ✅ `empty-solutions` | N completions empty with no API error | `hint: 21 solutions are empty — completed without an API error but produced no gradable text [model_length×21] — learn more: Error-Handling#empty-completions` | Error-Handling |
 | ☐ `dev-policy-at-scale` | config defines many items but `dev` policy runs 2 | `hint: ran 2 of 500 items (policy: dev) — learn more: Budget-and-Costs#policies` | Budget-and-Costs |
-| ☑ `unpriced-models` | a model has no pricing entry | `hint: 1 model unpriced — dollars missing, run unaffected — learn more: Budget-and-Costs#pricing-table` | Budget-and-Costs |
+| ✅ `unpriced-models` | a model has no pricing entry | `hint: 1 model unpriced (x/y) — dollars missing, run unaffected — learn more: Budget-and-Costs#pricing-table` | Budget-and-Costs |
 
 ---
 

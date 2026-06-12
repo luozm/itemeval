@@ -3,8 +3,9 @@
 from typing import TYPE_CHECKING
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from itemeval._hints import Hint, detect_unpriced_models
 from itemeval._templates import render_template
 from itemeval._util import estimate_tokens
 from itemeval.budget._pricing import (
@@ -64,6 +65,7 @@ class Estimate(BaseModel):
     total_usd: float
     warnings: list[str]
     pricing: PricingProvenance  # which prices these projections used
+    hints: list[Hint] = Field(default_factory=list)
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
@@ -188,6 +190,7 @@ def estimate_study(prep: "PreparedStudy", solutions_df: "pd.DataFrame | None" = 
 
     gen = stage_total("generate", gen_conditions)
     grade = stage_total("grade", grade_conditions)
+    unpriced = detect_unpriced_models(sorted({*gen.unpriced_models, *grade.unpriced_models}))
     return Estimate(
         study=prep.config.study,
         policy=prep.plan.policy,
@@ -196,4 +199,5 @@ def estimate_study(prep: "PreparedStudy", solutions_df: "pd.DataFrame | None" = 
         total_usd=gen.usd + grade.usd,
         warnings=warnings,
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
+        hints=[unpriced] if unpriced else [],
     )

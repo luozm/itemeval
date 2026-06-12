@@ -107,6 +107,23 @@ both condition tables with `done/expected`, error and parse-failure counts,
 spend per stage, and manifest count. `--json` emits the full structured
 report (also available for `estimate` and `export`).
 
+## Hints
+
+Commands may end with up to two dim `hint:` lines on **stderr** — one
+observed fact from this run plus a doc pointer
+(`hint: <fact> — learn more: <wiki-page#anchor>`). Hints never change
+behavior and never block. Set `ITEMEVAL_HINTS=off` to silence them in the
+text rendering; under `--json` they always ride as structured data in the
+`hints` array (`{code, message, learn_more}`), uncapped.
+
+Hint codes are stable and append-only:
+
+| Code | Fires when |
+|---|---|
+| `cache-zero-reads` | same-prefix calls were scheduled for a provider cache discount but none engaged |
+| `empty-solutions` | completions finished without an API error but produced no gradable text |
+| `unpriced-models` | a model has no pricing-table entry (dollar columns missing; run unaffected) |
+
 ## Typical session
 
 ```bash

@@ -7,6 +7,25 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Hint framework** (`docs/UX-PATTERNS.md`): commands may end with up to two
+  dim `hint:` lines on stderr — one observed fact from this run plus a wiki
+  pointer; hints never change behavior and never block. `ITEMEVAL_HINTS=off`
+  silences the text rendering; in `--json` the full list always rides as a
+  `hints` array on the result (`Estimate`, `GenerateResult`, `GradeResult`,
+  `ExportResult`). Initial coded hints (stable, append-only):
+  `cache-zero-reads` (same-prefix calls scheduled but no provider cache
+  discount engaged), `empty-solutions` (completions with no API error and no
+  gradable text), `unpriced-models` (replaces the inline `unpriced models:`
+  lines on estimate/export).
+
+### Changed
+- The `grade` empty-solutions summary line is now fact-only
+  (`empty solutions: 21 excluded from grading [model_length×21] —
+  on_empty=skip`); the remediation advice moved to the wiki
+  (Error-Handling#empty-completions), pointed to by the `empty-solutions`
+  hint.
+
+### Added
 - `--json` on `generate` and `grade` (every command now has it): stdout
   carries exactly one JSON document — the run result extended with `pricing`,
   `estimate_usd`, and a `gate` outcome object — and inspect's live display is
