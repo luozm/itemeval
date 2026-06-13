@@ -5,7 +5,15 @@ each works, what it measurably saves (price **and** time), the trade-offs, and
 the routing guidance (direct API vs OpenRouter). All numbers are from the live
 validation pilot of 2026-06-11 (~$2.6 total: haiku-4.5 + gpt-5-mini, via
 OpenRouter and via the direct APIs; artifacts were under
-`/tmp/itemeval-cachepilot`). The user-facing version of this page is
+`/tmp/itemeval-cachepilot`). A follow-up tail pilot of 2026-06-12 (~$0.12,
+artifacts under `/tmp/itemeval-tailpilot`) validated the cache-tail features
+live: the `provider_routing` pin held (all calls answered by the Anthropic
+first-party upstream, visible in `endpoints_effective` and the per-call
+`provider` field), OpenAI keyed caching hit across separate runs of the same
+condition (a later wave read 1152 cached tokens per call from the
+pilot-warmed head), and the discounted projection stayed within 2× of actuals
+even when the projected discount did not engage (the `cache-zero-reads` hint
+fired as designed). The user-facing version of this page is
 [docs/wiki/Cost-Savings.md](wiki/Cost-Savings.md).
 
 ## The mechanism stack
@@ -54,8 +62,11 @@ pinned to the Anthropic upstream; both arms gated)
   Rule of thumb: below ~20 calls per condition you are trading time for
   money; above that you get both.
 - **Layout (split) is about whether the discount can engage at all** on
-  Anthropic-family models: required through OpenRouter (single-block text
-  prompts get no cache marker), optional on the direct API (it auto-caches
+  Anthropic-family models: required through OpenRouter (re-checked live
+  2026-06-12 on inspect 0.3.239 — its openrouter provider now inserts
+  message-level `cache_control` markers, but a monolithic prompt is a single
+  string-content user message, which the placement scheme never marks:
+  `cache_write=0` on every call), optional on the direct API (it auto-caches
   the last block), but still strictly better when the template head is shared
   across items (one cache write instead of one per item).
 - **Output tokens are never discounted.** End-to-end savings scale with the
@@ -159,7 +170,7 @@ or automatic token-prefix caching on every upstream:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `cache_read=0` everywhere, Anthropic via OpenRouter, monolithic prompts | no marker on single-block text messages | `split_prompt` / `split_rubric: true` |
+| `cache_read=0` everywhere, Anthropic via OpenRouter, monolithic prompts | no marker on single-block text messages | `split_prompt` / `split_rubric: true` (the `anthropic-openrouter-no-split` hint flags this at estimate time, and the estimator projects no discount for this layout — full price, honestly) |
 | `cache_read=0`, split layout, Anthropic | shared head below the per-model minimum (4096 Haiku 4.5/Opus 4.5–4.6; 2048 Opus 4.7/Haiku 3.5; 1024 Opus 4.8/Sonnet 4.x; 512 Fable/Mythos 5 — checked 2026-06-12) — silent no-op | lengthen the head or accept no caching; the `split-head-below-min` hint flags this at estimate time |
 | `cache_read=0`, OpenRouter, markers correct | routed to Bedrock/other upstream | `provider_routing: {order: [anthropic], allow_fallbacks: false}` (the `openrouter-unpinned-cache` hint flags this) |
 | `cache_read=0`, direct OpenAI, burst | simultaneous arrivals; no entry registered yet | `cache_schedule: auto` (default) |
@@ -188,7 +199,10 @@ scheduled hits land), so the money gate compares the price the run *should*
 cost. The corrective feedback loop is the post-run `cache-zero-reads` hint:
 if the projected discount didn't materialize, the run says so. There is
 deliberately no haircut/confidence knob — the pair of "optimistic projection
-+ loud zero-reads signal" replaces it.
++ loud zero-reads signal" replaces it. One exception to "best case": layouts
+where the discount is structurally unreachable — Anthropic-style monolithic
+prompts via OpenRouter (no marker ever lands) — are projected at full price
+and flagged by the `anthropic-openrouter-no-split` hint instead.
 
 ## Open follow-ups (FUTURE.md §1.6 tail)
 

@@ -47,7 +47,11 @@ Per-milestone exit criteria and what landed are detailed in CHANGELOG 0.1.0.
   hint; `split-head-below-min` hint with a verified per-provider
   minimum-cacheable-prefix table; cache-aware estimator (the money gate now
   compares the *discounted* projection); automatic OpenAI
-  `prompt_cache_key`/24h-retention on scheduled direct runs.
+  `prompt_cache_key`/24h-retention on scheduled direct runs. Validated live
+  2026-06-12 (~$0.12 tail pilot): pin honored (every call answered by the
+  Anthropic first-party upstream), keyed cache hits across separate runs,
+  discounted projection within 2× of actuals when the discount missed, and
+  monolithic-via-OpenRouter confirmed still uncached on inspect 0.3.239.
 
 - ✅ 2026-06-11 — Cache-aware execution scheduling (FUTURE.md §1.6), validated
   live: provider cache observability in run summaries; `solvers.cache_prompt`
