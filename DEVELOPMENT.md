@@ -102,7 +102,9 @@ token stored). One-time setup: on PyPI, add a trusted publisher for the project
 publish itself runs in `.github/workflows/release.yml`, triggered when a GitHub
 release is published; locally you only build/tag.
 
-**Release checklist** (applies from v0.1.0, ROADMAP M7):
+**Release checklist** (applies from v0.1.0, ROADMAP M7). To run it
+hands-off, hand `docs/prompts/release.md` to an agent — it encodes these
+steps as runnable commands.
 
 1. Tests and lint green: `./.venv/bin/python -m pytest && ./.venv/bin/python -m ruff check .`
 2. Move `[Unreleased]` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading.
