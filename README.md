@@ -11,8 +11,9 @@ design-driven layer on [inspect_ai](https://inspect.aisi.org.uk), it is made
 for item-response-level analysis (psychometrics, IRT, mixed-model, judge
 reliability), **never just aggregate scores**.
 
-**Status: v0.1.0 — first public release.**
-See [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
+**Status: v0.2.0.**
+See the [changelog](https://github.com/luozm/itemeval/blob/main/CHANGELOG.md)
+and [ROADMAP.md](https://github.com/luozm/itemeval/blob/main/ROADMAP.md).
 
 ## Who is this for
 
