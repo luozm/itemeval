@@ -6,6 +6,8 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-12
+
 ### Added
 - **OpenRouter upstream provenance**: for `openrouter/*` models, the
   manifest's `endpoints_effective` entry now records `upstream` — the host
