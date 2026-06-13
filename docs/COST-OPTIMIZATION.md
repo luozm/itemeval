@@ -8,8 +8,9 @@ OpenRouter and via the direct APIs; artifacts were under
 `/tmp/itemeval-cachepilot`). A follow-up tail pilot of 2026-06-12 (~$0.12,
 artifacts under `/tmp/itemeval-tailpilot`) validated the cache-tail features
 live: the `provider_routing` pin held (all calls answered by the Anthropic
-first-party upstream, visible in `endpoints_effective` and the per-call
-`provider` field), OpenAI keyed caching hit across separate runs of the same
+first-party upstream — verified then from per-call `provider` fields in the
+raw logs; recorded directly as `endpoints_effective.upstream` since),
+OpenAI keyed caching hit across separate runs of the same
 condition (a later wave read 1152 cached tokens per call from the
 pilot-warmed head), and the discounted projection stayed within 2× of actuals
 even when the projected discount did not engage (the `cache-zero-reads` hint
@@ -124,7 +125,11 @@ verbatim — no renamed keys (slugs from `openrouter.ai/api/v1/providers`; the
 Anthropic first-party upstream is lowercase `anthropic`, checked 2026-06-12).
 Optimization knob: it never enters condition ids; the manifest's config echo
 records what routing was requested and `endpoints_effective` what actually
-answered. Setting it in a section with no `openrouter/*` model warns (inert
+answered — including, for openrouter models, the `upstream` host the calls
+landed on (the response's `provider` field: `"Anthropic"`, `"Amazon
+Bedrock"`, ...; distinct values within one run are comma-joined). A change
+of upstream across runs of the same model raises an endpoint-drift warning
+(`_driftcheck.py`) naming `provider_routing` as the fix. Setting it in a section with no `openrouter/*` model warns (inert
 knob, never blocks). An `openrouter/anthropic/*` model running cached
 *without* it fires the `openrouter-unpinned-cache` hint.
 

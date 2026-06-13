@@ -104,12 +104,16 @@ def grade_drift_warnings(grid, gradings_df) -> "list[str]":
     return warnings
 
 
-def _manifest_served_history(manifests_dir: Path) -> "tuple[dict[str, list], str | None]":
-    """Per model id: [(created_at, served_model), ...] from immutable manifests."""
+def _manifest_served_history(
+    manifests_dir: Path,
+) -> "tuple[dict[str, list], dict[str, list], str | None]":
+    """Per model id: [(created_at, served_model), ...] and, for openrouter
+    models, [(created_at, upstream), ...] from immutable manifests."""
     history: dict[str, list] = {}
+    upstreams: dict[str, list] = {}
     latest: "str | None" = None
     if not manifests_dir.is_dir():
-        return history, latest
+        return history, upstreams, latest
     for path in sorted(manifests_dir.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -128,10 +132,13 @@ def _manifest_served_history(manifests_dir: Path) -> "tuple[dict[str, list], str
                 cond_models[c["id"]] = model
         for cond_id, info in (data.get("endpoints_effective") or {}).items():
             served = (info or {}).get("served_model")
+            up = (info or {}).get("upstream")
             model = cond_models.get(cond_id)
             if served and model:
                 history.setdefault(model, []).append((created, served))
-    return history, latest
+            if up and model:
+                upstreams.setdefault(model, []).append((created, up))
+    return history, upstreams, latest
 
 
 def endpoint_drift_warnings(
@@ -139,7 +146,7 @@ def endpoint_drift_warnings(
 ) -> "list[str]":
     """Best-effort: compares past runs to past runs (served_model is only
     known after a run) and flags a long gap since the last run as a proxy."""
-    history, latest = _manifest_served_history(manifests_dir)
+    history, upstreams, latest = _manifest_served_history(manifests_dir)
     warnings = []
     for model in models:
         entries = sorted(history.get(model) or [])
@@ -149,6 +156,15 @@ def endpoint_drift_warnings(
                 f"{model} previously answered as {entries[-2][1]} and now-latest "
                 f"{entries[-1][1]} across past runs ({', '.join(served)}); provider "
                 "may serve a newer snapshot — rows are distinguishable by run_id"
+            )
+        hosts_seen = sorted(upstreams.get(model) or [])
+        hosts = sorted({u for _, u in hosts_seen})
+        if len(hosts) > 1:
+            warnings.append(
+                f"{model} previously answered from upstream {hosts_seen[-2][1]} and "
+                f"now-latest {hosts_seen[-1][1]} across past runs ({', '.join(hosts)}); "
+                "caching and pricing differ per host (e.g. Bedrock ignores cache "
+                "markers) — pin with provider_routing"
             )
     if latest:
         try:

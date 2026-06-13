@@ -7,6 +7,18 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **OpenRouter upstream provenance**: for `openrouter/*` models, the
+  manifest's `endpoints_effective` entry now records `upstream` — the host
+  OpenRouter actually routed to (the response's `provider` field, e.g.
+  `"Anthropic"` vs `"Amazon Bedrock"`; distinct values within one run are
+  comma-joined, None when no recorded response carried the field). Verifying
+  a `provider_routing` pin is now a one-look manifest check instead of
+  reading raw eval logs, and a change of upstream across runs of the same
+  model raises an endpoint-drift warning naming `provider_routing` as the
+  fix — upstreams differ in caching and pricing (Bedrock ignores cache
+  markers), so a silent reroute is a silent price change.
+
+### Added
 - **OpenAI keyed caching, automatic** (no new knob): when cache scheduling is
   active (`budget.cache_schedule` on, not batch), direct `openai/*` requests
   carry `prompt_cache_key: itemeval/<study>/<condition_id>` — stable across

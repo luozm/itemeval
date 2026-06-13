@@ -282,14 +282,36 @@ def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
     """Resolved endpoint for a condition's eval: which provider/account/version
     actually answered. `base_url` is None on the provider's default endpoint;
     a non-null value means traffic was routed elsewhere (Azure/proxy/gateway).
-    `served_model` is the provider-returned snapshot id (e.g. a dated version)."""
+    `served_model` is the provider-returned snapshot id (e.g. a dated version).
+
+    For openrouter/* models, `upstream` is the host OpenRouter routed to —
+    the response's `provider` field ("Anthropic", "Amazon Bedrock", ...),
+    i.e. the thing `provider_routing` pins and the host whose caching/pricing
+    rules applied. Distinct values across the run's calls are comma-joined
+    (mixed routing is itself worth seeing); None when no recorded response
+    carried the field (e.g. mock models)."""
     base_url = getattr(log.eval, "model_base_url", None)
     served_model = None
     for sample in log.samples or []:
         if sample.output and sample.output.model:
             served_model = sample.output.model
             break
-    return {"provider": provider_of(model), "base_url": base_url, "served_model": served_model}
+    info: dict[str, Any] = {
+        "provider": provider_of(model),
+        "base_url": base_url,
+        "served_model": served_model,
+    }
+    if provider_of(model) == "openrouter":
+        seen: set[str] = set()
+        for sample in log.samples or []:
+            for ev in sample.events or []:
+                call = getattr(ev, "call", None)
+                resp = getattr(call, "response", None) or {}
+                up = resp.get("provider")
+                if isinstance(up, str) and up:
+                    seen.add(up)
+        info["upstream"] = ", ".join(sorted(seen)) if seen else None
+    return info
 
 
 def rows_from_generate_log(

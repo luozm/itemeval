@@ -69,6 +69,31 @@ def test_endpoint_drift_from_divergent_manifests(tmp_path):
     assert endpoint_drift_warnings(["other/model"], manifests, gap_days=10_000) == []
 
 
+def test_upstream_drift_from_divergent_manifests(tmp_path):
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    model = "openrouter/anthropic/claude-haiku-4.5"
+    for i, upstream in enumerate(["Anthropic", "Amazon Bedrock"]):
+        manifests.joinpath(f"r{i}.json").write_text(
+            json.dumps(
+                {
+                    "created_at": f"2026-06-0{i + 1}T00:00:00Z",
+                    "grid_generate": [{"id": "c1", "slug": "s", "payload": {"model": model}}],
+                    "grid_grade": [],
+                    "endpoints_effective": {
+                        "c1": {"served_model": "claude-4.5-haiku-20251001", "upstream": upstream}
+                    },
+                }
+            )
+        )
+    warnings = endpoint_drift_warnings([model], manifests, gap_days=10_000)
+    assert len(warnings) == 1
+    assert "Anthropic" in warnings[0] and "Amazon Bedrock" in warnings[0]
+    assert "provider_routing" in warnings[0]
+    # a stable upstream stays silent
+    assert endpoint_drift_warnings(["other/model"], manifests, gap_days=10_000) == []
+
+
 def test_endpoint_gap_warning(tmp_path):
     manifests = tmp_path / "manifests"
     manifests.mkdir()

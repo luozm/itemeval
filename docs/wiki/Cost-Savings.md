@@ -155,7 +155,10 @@ The object is passed to OpenRouter verbatim, so anything from
 [OpenRouter's provider-routing docs](https://openrouter.ai/docs/guides/routing/provider-selection)
 works. itemeval reminds you when this matters: a cached
 `openrouter/anthropic/*` run without it gets the `openrouter-unpinned-cache`
-hint. In short: OpenAI, Grok, and Gemini models cache fine through OpenRouter
+hint. And you can verify the pin held after any run: the run's manifest
+records which host actually answered (`endpoints_effective` → `upstream`,
+e.g. `"Anthropic"` vs `"Amazon Bedrock"`), and if the upstream changes
+between runs of the same model, the next run warns you. In short: OpenAI, Grok, and Gemini models cache fine through OpenRouter
 as-is; Anthropic and DeepSeek-style open models need the pin; OpenAI's keyed
 caching and all batch APIs need a direct key.
 

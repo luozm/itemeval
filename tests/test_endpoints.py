@@ -139,6 +139,46 @@ def test_provider_routing_round_trips_to_manifest_echo():
     }
 
 
+# --- endpoint provenance: the OpenRouter upstream lands in endpoint_info ---
+
+
+def _fake_log(model_responses, base_url=None, served="anthropic/claude-4.5-haiku-20251001"):
+    """Minimal EvalLog stand-in: one sample per response payload."""
+    from types import SimpleNamespace as NS
+
+    samples = [
+        NS(output=NS(model=served), events=[NS(call=NS(response=resp))]) for resp in model_responses
+    ]
+    return NS(eval=NS(model_base_url=base_url), samples=samples)
+
+
+def test_endpoint_info_records_openrouter_upstream():
+    from itemeval.generate._run import endpoint_info
+
+    log = _fake_log([{"provider": "Anthropic"}, {"provider": "Anthropic"}])
+    info = endpoint_info(log, "openrouter/anthropic/claude-haiku-4.5")
+    assert info["upstream"] == "Anthropic"
+    assert info["provider"] == "openrouter"
+
+
+def test_endpoint_info_joins_mixed_upstreams():
+    from itemeval.generate._run import endpoint_info
+
+    log = _fake_log([{"provider": "Anthropic"}, {"provider": "Amazon Bedrock"}])
+    info = endpoint_info(log, "openrouter/anthropic/claude-haiku-4.5")
+    assert info["upstream"] == "Amazon Bedrock, Anthropic"
+
+
+def test_endpoint_info_upstream_none_without_field_and_absent_for_direct():
+    from itemeval.generate._run import endpoint_info
+
+    # no recorded response carries the field (e.g. mock models): key present, None
+    log = _fake_log([{}])
+    assert endpoint_info(log, "openrouter/anthropic/claude-haiku-4.5")["upstream"] is None
+    # direct models: not an OpenRouter question — no key at all
+    assert "upstream" not in endpoint_info(log, "anthropic/claude-haiku-4-5")
+
+
 # --- runner wiring: factory receives the args; the unpinned hint fires ---
 
 
@@ -194,6 +234,23 @@ def test_generate_unpinned_cached_openrouter_anthropic_hints(tmp_path, offline_a
     assert all(args == {} for _, _, args in seen)
     hint = next(h for h in result.hints if h.code == "openrouter-unpinned-cache")
     assert "openrouter/anthropic/claude-haiku-4.5" in hint.message
+
+
+def test_openrouter_manifest_endpoint_carries_upstream(tmp_path, offline_adapter):
+    import json
+
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+    from itemeval.generate._run import run_generate
+
+    config = _openrouter_study(tmp_path)
+    prep = prepare_study(load_config(config))
+    result = run_generate(prep, model_factory=_mock_stand_in_factory([]), display="none")
+    manifest = json.loads((prep.paths.study_dir / result.manifest_path).read_text())
+    one = next(iter(manifest["endpoints_effective"].values()))
+    # the key is present for openrouter models; mock calls record no HTTP
+    # response, so the value is None here (live runs carry e.g. "Anthropic")
+    assert "upstream" in one and one["upstream"] is None
 
 
 # --- OpenAI keyed caching (W2) ---
