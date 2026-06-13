@@ -107,14 +107,21 @@ hands-off, hand `docs/prompts/release.md` to an agent — it encodes these
 steps as runnable commands.
 
 1. Tests and lint green: `./.venv/bin/python -m pytest && ./.venv/bin/python -m ruff check .`
-2. Move `[Unreleased]` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading.
-3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`).
+2. Move `[Unreleased]` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading, then
+   **consolidate them to one header per change-type** (`Added`/`Changed`/…) —
+   entries accrue as many separate `### Added` blocks during development, which
+   render as stacked "Added" headers on the release. Preserve every bullet's
+   text; add a short summary lead and the `[X.Y.Z]` / `[Unreleased]` footer links.
+3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`); bump the
+   `**Status: …**` line in `README.md`.
 4. Optionally verify the build locally: `uv build` (the same command CI runs).
 5. Commit `release: vX.Y.Z`; tag and push: `git tag vX.Y.Z && git push origin main --tags`.
-6. Create a GitHub release from the tag (body = the changelog section). Publishing
-   to PyPI is automatic: the `release: published` event triggers `release.yml`,
-   which runs `uv build && uv publish` via trusted publishing. Watch the Actions
-   run and confirm the new version appears on PyPI.
+6. Create a GitHub release from the tag with **curated user-facing highlights**
+   (themed, plain-language — *not* the raw changelog dump), ending with a link to
+   the full changelog section. Publishing to PyPI is automatic: the
+   `release: published` event triggers `release.yml`, which runs
+   `uv build && uv publish` via trusted publishing. Watch the Actions run and
+   confirm the new version appears on PyPI.
 7. Bump to the next dev version (e.g. `0.2.0.dev0`) in a follow-up commit.
 
 Consuming studies pin itemeval like any dependency: editable path source during
