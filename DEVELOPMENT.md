@@ -112,8 +112,13 @@ steps as runnable commands.
    entries accrue as many separate `### Added` blocks during development, which
    render as stacked "Added" headers on the release. Preserve every bullet's
    text; add a short summary lead and the `[X.Y.Z]` / `[Unreleased]` footer links.
-3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`); bump the
-   `**Status: …**` line in `README.md`.
+3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`), and sync the
+   hand-maintained status docs (each has gone stale at least once): the
+   `**Status: …**` line in `README.md`; `ROADMAP.md` — rename the in-progress
+   section to `Shipped (vX.Y.Z)`, make it list *everything* the release shipped
+   (cross-check the consolidated changelog), and reconcile the backlog tiers
+   (drop/mark completed items); and the `> **Status:**` line of any shipped
+   backlog section in `docs/FUTURE.md`.
 4. Optionally verify the build locally: `uv build` (the same command CI runs).
 5. Commit `release: vX.Y.Z`; tag and push: `git tag vX.Y.Z && git push origin main --tags`.
 6. Create a GitHub release from the tag with **curated user-facing highlights**

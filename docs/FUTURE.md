@@ -148,7 +148,7 @@ later if demand shows.
 
 ### 1.6 Cache-aware execution scheduling (maximize provider prompt-cache discounts)
 
-> **Status: SHIPPED in 0.2 (2026-06-11)** and validated in a live pilot
+> **Status: SHIPPED in 0.2.0 (2026-06-11)** and validated in a live pilot
 > (~$2.2 via OpenRouter). What landed: cache observability in run summaries;
 > judge dataset ordering; `solvers.cache_prompt`; `budget.cache_schedule`
 > (warm-then-fan-out gate); `graders.<name>.split_rubric` and
@@ -500,6 +500,12 @@ third component next to cache/batch.
 (reuse savings are an attribution, not a discount). ~80 lines.
 
 ### 3.4 Study card generator
+
+> **Status: PARTIALLY SHIPPED in 0.2.0.** `export --snapshot NAME` writes a
+> self-describing `STUDY_CARD.md` into each snapshot (design grid, dataset
+> pins, template hashes, spend, completion, per-condition table). What remains
+> is the *standalone* `itemeval card CONFIG` command below — rendering a card
+> without taking a snapshot.
 
 **Motivation.** Reproducibility marketing: one command that renders a study
 into a shareable Markdown "study card" — design grid, dataset pins, template
