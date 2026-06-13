@@ -121,6 +121,65 @@ def test_anthropic_write_surcharge_shown_honestly_on_tiny_judge_groups(tmp_path,
     assert judge.usd > base
 
 
+def test_openrouter_anthropic_monolithic_excludes_discount_with_hint(tmp_path, offline_adapter):
+    """Monolithic via OpenRouter cannot engage Anthropic markers (verified
+    live 2026-06-12): no discount projected, full price, hint fires."""
+    prep = _prep(tmp_path, model="openrouter/anthropic/claude-haiku-4.5")
+    est = estimate_study(prep)
+    cond = est.generate.conditions[0]
+    assert cond.cache_read_tokens == 0 and cond.cache_write_tokens == 0
+    assert cond.cache_discount_usd == 0.0
+    assert cond.usd == pytest.approx(cond.input_tokens * IN_RATE / 1e6)
+    codes = [h.code for h in est.generate.hints]
+    assert "anthropic-openrouter-no-split" in codes
+
+
+def test_openrouter_anthropic_split_keeps_discount_no_hint(tmp_path, offline_adapter):
+    """The split layout places markers fine via OpenRouter (verified live):
+    discount projected, no anthropic-openrouter-no-split hint."""
+    prep = _prep(
+        tmp_path,
+        model="openrouter/anthropic/claude-haiku-4.5",
+        extra_solver="\n  split_prompt: true",
+    )
+    est = estimate_study(prep)
+    cond = est.generate.conditions[0]
+    assert cond.cache_discount_usd > 0
+    assert all(h.code != "anthropic-openrouter-no-split" for h in est.generate.hints)
+
+
+def test_direct_anthropic_monolithic_keeps_discount(tmp_path, offline_adapter):
+    """Direct Anthropic auto-caches monolithic prompts (verified live
+    2026-06-11): the OpenRouter exclusion must not touch direct models."""
+    prep = _prep(tmp_path, model="anthropic/claude-haiku-4-5")
+    est = estimate_study(prep)
+    cond = est.generate.conditions[0]
+    assert cond.cache_discount_usd > 0
+    assert all(h.code != "anthropic-openrouter-no-split" for h in est.generate.hints)
+
+
+def test_openrouter_anthropic_judge_without_split_rubric_hints(tmp_path, offline_adapter):
+    """Grade side: an OpenRouter Anthropic judge running monolithic rubrics
+    gets the hint (the discount was already structurally excluded)."""
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+
+    yaml_text = TEST_CONFIG_YAML.replace(
+        "    model: mockllm/judge", "    model: openrouter/anthropic/claude-haiku-4.5"
+    )
+    config = write_study_files(tmp_path, yaml_text)
+    prep = prepare_study(load_config(config))
+    prep.pricing = _pricing(
+        "mockllm/solver-a", "mockllm/solver-b", "openrouter/anthropic/claude-haiku-4.5"
+    )
+    est = estimate_study(prep)
+    judge = next(c for c in est.grade.conditions if c.model.startswith("openrouter/"))
+    assert judge.cache_discount_usd == 0.0
+    codes = [h.code for h in est.grade.hints]
+    assert "anthropic-openrouter-no-split" in codes
+    assert all(h.code != "anthropic-openrouter-no-split" for h in est.generate.hints)
+
+
 def test_batch_excludes_cache_discount(tmp_path, offline_adapter):
     prep = _prep(tmp_path, budget_extra="  policy: full-batch\n")
     est = estimate_study(prep)

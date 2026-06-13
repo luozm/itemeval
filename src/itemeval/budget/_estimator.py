@@ -6,7 +6,12 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._endpoints import min_cacheable_prefix, routing_warnings
-from itemeval._hints import Hint, detect_split_head_below_min, detect_unpriced_models
+from itemeval._hints import (
+    Hint,
+    detect_anthropic_openrouter_no_split,
+    detect_split_head_below_min,
+    detect_unpriced_models,
+)
 from itemeval._templates import render_template
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import estimate_tokens
@@ -248,6 +253,12 @@ def estimate_study(
     # condition. Only providers with a known minimum are checked (never guess).
     head_stats: "dict[tuple[str, str, int], dict]" = {}
 
+    # anthropic-openrouter-no-split: models whose projected discount was
+    # suppressed because monolithic prompts via OpenRouter cannot engage the
+    # provider cache (no cache_control breakpoint lands on a single
+    # string-content user message — verified live 2026-06-12, inspect 0.3.239).
+    no_split_models: "dict[str, set[str]]" = {"generate": set(), "grade": set()}
+
     def note_heads(stage: str, model: str, min_tok: int, head_tokens: "list[int]") -> None:
         if not head_tokens:
             return
@@ -271,6 +282,9 @@ def estimate_study(
             )
             if h is not None:
                 out.append(h)
+        h = detect_anthropic_openrouter_no_split(stage=stage, models=sorted(no_split_models[stage]))
+        if h is not None:
+            out.append(h)
         return out
 
     if wave is not None:
@@ -322,12 +336,21 @@ def estimate_study(
         # group keys: condition when a split head is static, item otherwise;
         # without split, an item's epochs share the entire rendered prompt.
         anth = anthropic_style_caching(cond.model)
-        cache_on = (
+        would_cache = (
             scheduling
             and reps > 1
             and min_tok is not None
             and not (anth and prep.config.solvers.cache_prompt == "off")
         )
+        # Anthropic-style markers cannot land on monolithic prompts routed
+        # through OpenRouter: a single string-content user message gets no
+        # cache_control breakpoint from inspect's openrouter provider, so the
+        # discount is structurally unreachable — not best-case-optimistic
+        # (verified live 2026-06-12, inspect 0.3.239; COST-OPTIMIZATION.md).
+        or_mono = anth and not cond.split_prompt and provider_of(cond.model) == "openrouter"
+        cache_on = would_cache and not or_mono
+        if would_cache and or_mono:
+            no_split_models["generate"].add(cond.model)
 
         def cache_groups(
             subset,
@@ -486,6 +509,14 @@ def estimate_study(
         # prefix providers share the head automatically either way.
         anth = anthropic_style_caching(cond.grader_model)
         cache_on = scheduling and min_tok is not None and (not anth or cond.split_rubric)
+        if (
+            scheduling
+            and min_tok is not None
+            and anth
+            and not cond.split_rubric
+            and provider_of(cond.grader_model) == "openrouter"
+        ):
+            no_split_models["grade"].add(cond.grader_model)
 
         def head_tokens_of(item_id, rubric=rubric):
             it = prep.items_by_id.get(item_id)

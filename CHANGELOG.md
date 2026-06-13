@@ -37,6 +37,19 @@ All notable changes to itemeval are documented here. Format follows
   `cache-zero-reads` hint is the corrective feedback loop.
 
 ### Added
+- **`anthropic-openrouter-no-split` hint + honest projection for the layout
+  it flags** (estimate-time): an Anthropic-style model running *monolithic*
+  prompts through OpenRouter can never engage the provider cache — inspect's
+  openrouter provider places no `cache_control` breakpoint on a single
+  string-content user message (verified live 2026-06-12 on inspect 0.3.239:
+  `cache_write=0` on every call at full price). The estimator no longer
+  projects a discount for these conditions — the money gate compares the
+  full price they will actually cost — and the new hint names the model and
+  the fix (`split_prompt` / `split_rubric`, or the direct API). Direct
+  Anthropic monolithic and split-via-OpenRouter projections are unchanged
+  (both verifiably cache).
+
+### Added
 - **`split-head-below-min` hint** (estimate-time): when `split_prompt` /
   `split_rubric` is on but the shared head's token estimate (chars/4) falls
   below the provider's minimum cacheable prefix, one hint line names the

@@ -88,6 +88,23 @@ def test_detect_split_head_below_min_none_when_all_clear():
     )
 
 
+def test_detect_anthropic_openrouter_no_split():
+    from itemeval._hints import detect_anthropic_openrouter_no_split
+
+    h = detect_anthropic_openrouter_no_split(
+        stage="generate", models=["openrouter/anthropic/claude-haiku-4.5"]
+    )
+    assert h is not None and h.code == "anthropic-openrouter-no-split"
+    assert "openrouter/anthropic/claude-haiku-4.5" in h.message
+    assert "split_prompt" in h.message
+    assert h.learn_more == "Cost-Savings#prompt-packaging"
+    g = detect_anthropic_openrouter_no_split(
+        stage="grade", models=["openrouter/anthropic/claude-haiku-4.5"]
+    )
+    assert g is not None and "split_rubric" in g.message
+    assert detect_anthropic_openrouter_no_split(stage="generate", models=[]) is None
+
+
 def test_detect_openrouter_unpinned_cache():
     h = detect_openrouter_unpinned_cache(["openrouter/anthropic/claude-haiku-4.5"])
     assert h is not None and h.code == "openrouter-unpinned-cache"

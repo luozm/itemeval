@@ -72,6 +72,10 @@ Your prompt has a reusable part (instructions, rubric, problem) and a changing
 part (the specific answer). These options send them as two pieces so the
 provider can recognize the reusable part. Required for Anthropic models called
 through OpenRouter; helpful everywhere. The model sees exactly the same text.
+If you run an Anthropic model through OpenRouter *without* the split option,
+itemeval says so up front (the `anthropic-openrouter-no-split` hint, at
+estimate time) and projects full price — that combination verifiably gets no
+discount at all.
 
 **What we measured (real runs, June 2026):**
 
@@ -111,6 +115,11 @@ through OpenRouter**.
 New configs run on the first 2 items (`dev` policy) until you scale up;
 projected costs above `confirm_above_usd` ask first; `max_usd` is a hard stop
 nothing can override; and `estimate` projects the bill with zero API calls.
+One thing to know about projections: output is priced at your `max_tokens`
+cap, since nothing else bounds it before the run. A generous cap (say, a
+reasoning model with a fat budget producing short answers) over-states the
+estimate — never under — so a real bill far below the projection usually
+just means your cap is roomy.
 
 ## Your own API key vs OpenRouter — which to call?
 

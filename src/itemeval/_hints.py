@@ -125,6 +125,30 @@ def detect_split_head_below_min(
     )
 
 
+def detect_anthropic_openrouter_no_split(*, stage: str, models: "list[str]") -> "Hint | None":
+    """Anthropic-style models run monolithic through OpenRouter — known zero discount.
+
+    A monolithic prompt through OpenRouter is a single string-content user
+    message, which inspect's openrouter provider never marks with a
+    cache_control breakpoint (verified live 2026-06-12 on inspect 0.3.239:
+    cache_write=0 on every call). The caller passes only models whose
+    discount would otherwise have been projected; the estimator suppresses
+    it for these conditions, so the projection already shows full price.
+    """
+    if not models:
+        return None
+    option = "split_prompt" if stage == "generate" else "split_rubric"
+    return Hint(
+        code="anthropic-openrouter-no-split",
+        message=(
+            f"{', '.join(models)} won't get cache discounts via OpenRouter "
+            f"without {option} — monolithic prompts get no cache marker "
+            "(the projection shows full price)"
+        ),
+        learn_more="Cost-Savings#prompt-packaging",
+    )
+
+
 def detect_openrouter_unpinned_cache(models: "list[str]") -> "Hint | None":
     """Anthropic models ran cached through OpenRouter without provider_routing.
 
