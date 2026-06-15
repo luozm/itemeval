@@ -1,9 +1,10 @@
 # Implementation plan — dev-framework (drift-proof SDLC: docs model + guard automation)
 
-**Status: IN PROGRESS (started 2026-06-15).** Tier 0 shipped; Tier 1 in
-progress; Tier 2 pending. This is the working brief for the development
-framework — the rules that keep planning/coding/releasing consistent, and the
-automation that enforces them. Read first: `CLAUDE.md` (the rules live there),
+**Status: IN PROGRESS (started 2026-06-15).** Tier 0 + Tier 1 shipped; Tier 2's
+buildable items shipped 2026-06-15; two Tier-2 items are deferred to external
+triggers (see W2). This is the working brief for the development framework — the
+rules that keep planning/coding/releasing consistent, and the automation that
+enforces them. Read first: `CLAUDE.md` (the rules live there),
 `docs/UX-PATTERNS.md`, `DEVELOPMENT.md`.
 
 Not the same as `CONTRIBUTING.md`: this file is the *rollout plan* (what we're
@@ -87,22 +88,32 @@ The guards that turn drift into a red build. **Done.**
   when `src/` changed without `CHANGELOG.md`, nudging CC toward the same-change
   rule. Soft (never blocks), quiet when nothing to report.
 
-## W2 — Tier 2: collaboration + cross-repo + dep hygiene (PENDING)
+## W2 — Tier 2: collaboration + cross-repo + dep hygiene
 
-- **`CONTRIBUTING.md`** — the steady-state contributor playbook (lifecycle:
-  add a feature / fix a bug / release; links to the deep docs, never duplicates
-  them). The human entry point GitHub surfaces on PRs/issues.
-- **`.github/` templates** — `PULL_REQUEST_TEMPLATE.md` (same-change DoD
-  checklist + key), `ISSUE_TEMPLATE/{feature,bug}.md`, `CODEOWNERS`.
-- **Key-disjointness check** — assert no `docs/BACKLOG.md` `**Key:**` appears in
-  a CHANGELOG `Closes:` (now possible since keys exist).
-- **Scheduled dependency-update PR** — weekly inspect-ai PR + grouped rest, per
-  `docs/plans/upgrade-automation.md` (the chosen path over Renovate).
-- **Downstream smoke** — the consuming study installs the new wheel and runs an
-  API smoke, so cross-repo breakage surfaces fast.
-- **Hermetic end-to-end CLI smoke** — ships with `local-adapter` (mock models +
-  committed JSONL fixture, zero network); see that BACKLOG entry and the
-  `ci.yml` note.
+Buildable items SHIPPED 2026-06-15; two items deferred to external triggers.
+
+- **`CONTRIBUTING.md`** (SHIPPED `39e9aed`) — the steady-state contributor
+  playbook (lifecycle: add a feature / fix a bug / release; links to the deep
+  docs, never duplicates them). The human entry point GitHub surfaces on
+  PRs/issues.
+- **`.github/` templates** (SHIPPED `98df7f6`) — `PULL_REQUEST_TEMPLATE.md`
+  (same-change DoD checklist + key), `ISSUE_TEMPLATE/{feature_request,
+  bug_report}.md`, `CODEOWNERS`.
+- **Key-disjointness check** (SHIPPED `ea1d759`) — `test_docs_consistency.py`
+  asserts no `docs/BACKLOG.md` `**Key:**` appears in a CHANGELOG `Closes:`.
+- **Scheduled dependency-update PR** (SHIPPED `4190a91`) — `.github/
+  dependabot.yml`: weekly inspect-ai PR + grouped rest + monthly actions, per
+  the now-archived `docs/plans/archive/upgrade-automation.md` (Dependabot over
+  Renovate). Operational verification happens after the first push to remote.
+- **Downstream smoke** (DEFERRED) — the consuming study installs the new wheel
+  and runs an API smoke, so cross-repo breakage surfaces fast. Blocked on the
+  consuming study being a wired-up sibling repo; it lives in a separate repo, so
+  this can't be built or tested hermetically from here. Revisit when that repo
+  is ready to call a published wheel in its own CI.
+- **Hermetic end-to-end CLI smoke** (DEFERRED) — ships with `local-adapter`
+  (mock models + committed JSONL fixture, zero network); see that BACKLOG entry
+  (`local-adapter` "CI follow-on") and the `ci.yml` note. Tracked there, not
+  here.
 
 **Deliberately NOT building** (CLAUDE.md "don't over-engineer"): a generated
 docs site, a custom doc DSL, per-sentence doc tests, branch protection while
@@ -112,12 +123,16 @@ solo. Add only when a collaborator or scale demands them.
 
 ## Sequencing
 
-W0 done. W1 one commit per piece (pre-commit · snapshot tests · Claude hook).
-W2 when collaboration or the relevant feature (`local-adapter`) lands. After
-each step: `make check` green; CHANGELOG/docs updated in the same commit.
+W0 done. W1 done (one commit per piece: pre-commit · snapshot tests · Claude
+hook). W2 buildable items done (one commit per piece: key check · dependabot ·
+CONTRIBUTING · templates); the two deferred items land when their external
+trigger does (`local-adapter` for the hermetic smoke; a wired consuming repo for
+the downstream smoke). After each step: `make check` green; CHANGELOG/docs
+updated in the same commit.
 
 ## Out of scope (tracked elsewhere)
 
 - The hermetic e2e smoke — on `local-adapter` in `docs/BACKLOG.md`.
-- The scheduled upgrade PR detail — `docs/plans/upgrade-automation.md`.
+- The scheduled upgrade PR detail — `docs/plans/archive/upgrade-automation.md`
+  (implemented; archived).
 - The PyPI approval gate — `docs/BACKLOG.md` (`pypi-approval-gate`).
