@@ -56,8 +56,13 @@ no token to manage and nothing to `uv publish` locally.
    `uv run python -c "import itemeval; print(itemeval.__version__)"` prints
    `X.Y.Z`.
 
-6. **Commit + tag + push.** Stage `README.md CHANGELOG.md pyproject.toml
-   uv.lock`, then:
+6. **Commit + tag + push.** First run the release gate — it must print
+   `release gate OK` before you tag (the same check runs in `release.yml`, but
+   catching it here avoids tagging a half-prepared release):
+   ```
+   python3 scripts/release_gate.py vX.Y.Z
+   ```
+   Then stage `README.md CHANGELOG.md pyproject.toml uv.lock` and:
    ```
    git commit -m "release: vX.Y.Z"
    git tag vX.Y.Z

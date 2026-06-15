@@ -20,6 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Refuse to publish a half-prepared release: version final + consistent
+      # across pyproject/README/CHANGELOG, and [Unreleased] consumed. Stdlib
+      # only, so it runs before uv. The release prompt runs the same script
+      # locally before tagging.
+      - name: Release gate
+        run: python3 scripts/release_gate.py "${{ github.event.release.tag_name }}"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
 

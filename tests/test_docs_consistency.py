@@ -69,7 +69,9 @@ _FENCE = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
 
 def _config_examples() -> list[tuple[str, str]]:
     """(label, yaml-text) for every config that should validate."""
-    cases = [(str(p.relative_to(ROOT)), p.read_text()) for p in sorted((ROOT / "configs").glob("*.yaml"))]
+    cases = [
+        (str(p.relative_to(ROOT)), p.read_text()) for p in sorted((ROOT / "configs").glob("*.yaml"))
+    ]
     for md in [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]:
         for i, body in enumerate(_FENCE.findall(md.read_text())):
             first = next((ln for ln in body.splitlines() if ln.strip()), "")
