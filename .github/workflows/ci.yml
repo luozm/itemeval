@@ -40,3 +40,27 @@ jobs:
       # hermetic — run it manually per DEVELOPMENT.md when touching the adapter.
       - name: Pytest
         run: uv run pytest -m "not network"
+
+  docs:
+    name: docs consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv + Python
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync (locked, dev group)
+        run: uv sync --locked
+
+      # Offline doc/version/config-example consistency (make docs-check). A full
+      # end-to-end CLI smoke on mockllm is intentionally NOT here yet: every
+      # shipped dataset path is HF (needs network), so an end-to-end run can't
+      # stay in this hermetic lane until the `local-adapter` feature (0.3) adds
+      # an offline dataset source.
+      - name: Docs consistency
+        run: make docs-check
