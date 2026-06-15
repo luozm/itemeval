@@ -1,6 +1,6 @@
 """Docs stay consistent with reality.
 
-Two guards, both pure-local and offline (no network, no API) so they run in
+Three guards, all pure-local and offline (no network, no API) so they run in
 `make docs-check` / CI:
 
 1. Version SSOT — the README status line tracks the latest *released* CHANGELOG
@@ -8,6 +8,10 @@ Two guards, both pure-local and offline (no network, no API) so they run in
 2. Example configs validate — every shipped `configs/*.yaml` and every runnable
    ```yaml block in the docs (top-level ``study:``, not marked ``# sketch``)
    loads through the real ``itemeval.load_config`` schema validator.
+3. Key disjointness — a `docs/BACKLOG.md` `**Key:**` (a feature *not yet built*)
+   must never appear in a CHANGELOG `Closes:` (a feature that *shipped*). A key
+   in both means a shipped feature was left in the backlog — the exact drift the
+   same-change rule forbids.
 """
 
 from __future__ import annotations
@@ -98,3 +102,33 @@ def test_found_config_examples():
 def test_example_config_validates(label, body, tmp_path):
     (tmp_path / "config.yaml").write_text(body)
     itemeval.load_config(tmp_path / "config.yaml")  # raises ConfigError on schema drift
+
+
+# --------------------------------------------------------------------------- #
+# Backlog keys and shipped keys are disjoint
+# --------------------------------------------------------------------------- #
+def _backlog_keys() -> set[str]:
+    text = (ROOT / "docs" / "BACKLOG.md").read_text()
+    return set(re.findall(r"^\*\*Key:\*\* `([a-z0-9-]+)`", text, re.M))
+
+
+def _changelog_closed_keys() -> set[str]:
+    # `Closes: slug` or `Closes: slug-a, slug-b` (comma-separated).
+    text = (ROOT / "CHANGELOG.md").read_text()
+    keys: set[str] = set()
+    for group in re.findall(r"^Closes:\s*(.+)$", text, re.M):
+        keys.update(k.strip() for k in group.split(",") if k.strip())
+    return keys
+
+
+def test_found_backlog_keys():
+    # Guard against the extractor silently matching nothing (e.g. marker drift).
+    assert _backlog_keys(), "no `**Key:**` markers found in docs/BACKLOG.md — check the extractor"
+
+
+def test_backlog_and_shipped_keys_disjoint():
+    leaked = _backlog_keys() & _changelog_closed_keys()
+    assert not leaked, (
+        f"keys are both in docs/BACKLOG.md and a CHANGELOG `Closes:`: {sorted(leaked)} — "
+        "a shipped feature must leave the backlog (same-change rule, CLAUDE.md)"
+    )
