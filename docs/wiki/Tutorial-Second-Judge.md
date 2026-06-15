@@ -120,7 +120,7 @@ Two notes for serious measurement work:
 - Judge temperature is pinned to 0 in v0.1, so re-judging the same solution
   under the same (grader × rubric) is not a replication design — judge
   replication is on the roadmap
-  ([FUTURE.md](https://github.com/luozm/itemeval/blob/main/docs/FUTURE.md)).
+  ([BACKLOG.md](https://github.com/luozm/itemeval/blob/main/docs/BACKLOG.md)).
 - Editing a rubric file changes its content hash and therefore its condition
   id: old gradings stay under the old id, the edited rubric grades fresh. Two
   rubric versions can never silently mix ([Pipeline Concepts](Pipeline-Concepts.md)).

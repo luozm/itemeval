@@ -87,8 +87,9 @@ call paid APIs; design the logic pure so it tests without inspect where
 possible.>
 
 **Docs/CHANGELOG.** <CHANGELOG [Unreleased] entry (same commit as the
-behavior); wiki pages/anchors; rows to update in normative tables; FUTURE.md
-items this closes.>
+behavior) with a `Closes: <key>` trailer; wiki pages/anchors; rows to update in
+normative tables; the BACKLOG.md section(s) this ships — remove them in the same
+commit (the design record stays in this plan once archived).>
 
 <!-- Repeat per workstream. -->
 
@@ -108,4 +109,4 @@ doc tables updated in the same commit.
 ## Out of scope (explicitly, to prevent creep)
 
 - <each rejected/deferred item, with where it IS tracked if anywhere
-  (FUTURE.md item, upstream issue) — nothing gets dropped silently.>
+  (BACKLOG.md key, upstream issue) — nothing gets dropped silently.>

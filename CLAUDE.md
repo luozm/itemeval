@@ -7,10 +7,11 @@ analysis) in this package.
 
 ## Doc map
 
-- Spec & planning: `README.md` (the spec) · `ROADMAP.md` (committed
-  milestones — keep updated as they complete) · `docs/FUTURE.md` (backlog:
-  why/how) · `docs/plans/` (active implementation briefs, from
-  `plans/TEMPLATE.md`; done → `plans/archive/`).
+- Spec & planning: `README.md` (the spec) · `ROADMAP.md` (direction — vision,
+  themes, near-term release plan; not a feature ledger) · `docs/BACKLOG.md`
+  (candidate features not yet built — why/how, one keyed section each) ·
+  `docs/plans/` (active implementation briefs, from `plans/TEMPLATE.md`;
+  done → `plans/archive/`).
 - `docs/UX-PATTERNS.md` — **binding** UX contract (no silent side effects,
   hint framework, consent rules, knob buckets); every feature, new or
   touched, must pass its development checklist.
@@ -53,3 +54,32 @@ analysis) in this package.
   anything touching providers is mocked or marked for manual runs.
 - No real API keys in tests, fixtures, or examples.
 - Conventional commits (feat:/fix:/docs:/test:/refactor:).
+
+## Planning & docs workflow
+
+Three docs split the work by time — never duplicate a fact across them:
+- `docs/BACKLOG.md` — candidate features **not yet built** (the only backlog).
+- `ROADMAP.md` — direction + the near-term release plan; references BACKLOG
+  keys, never enumerates features or restates shipped detail.
+- `CHANGELOG.md` — what shipped.
+
+**Keys.** Every backlog feature has a stable kebab-case key declared in its
+BACKLOG section as `**Key:** \`slug\``. The key is its identity everywhere:
+branch `feat/<slug>`, plan `docs/plans/<slug>.md`, CHANGELOG `Closes: <slug>`.
+Feature status: PLANNED → COMMITTED (vX) → shipped. Plan-file status (in
+`docs/plans/`): NOT STARTED → IN PROGRESS → IMPLEMENTED.
+
+**Same-change rule.** Any user-visible change, in the *same commit*:
+1. add a `[Unreleased]` entry to `CHANGELOG.md`;
+2. if it ships a backlog feature — **remove** that section from `docs/BACKLOG.md`
+   (it is no longer a TODO; the design record stays in
+   `docs/plans/archive/<slug>.md`) and add `Closes: <slug>` to the changelog
+   entry;
+3. update the wiki if user-facing, and the UX-PATTERNS ledger/hint rows if the
+   surface changed.
+
+**SSOT formats** (tooling parses these — keep them exact): the version lives
+only in `pyproject.toml`; `README.md` carries one `**Status: vX.Y.Z.**` line
+tracking the latest *released* CHANGELOG heading; CHANGELOG headings are
+`## [X.Y.Z] - YYYY-MM-DD`. A non-runnable example YAML block starts with a
+`# sketch` comment so config-validation tooling skips it.

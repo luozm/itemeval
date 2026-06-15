@@ -170,6 +170,7 @@ src/itemeval/
 ## Experiment config (sketch)
 
 ```yaml
+# sketch — illustrative fragment, not a runnable config
 study: my_study
 benchmark:
   adapter: hf

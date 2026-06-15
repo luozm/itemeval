@@ -157,7 +157,7 @@ exists … add a scheduled weekly job" to a present-tense description of the
 Dependabot setup (weekly inspect-ai PR + grouped rest + actions updates;
 step 4's live smoke stays manual, attached to paid runs); adjust line 80's
 "quarterly" wording per the cadence-mapping decision. No CHANGELOG entry
-(not a package change). No FUTURE.md item exists for this (the follow-up
+(not a package change). No BACKLOG.md key exists for this (the follow-up
 lived in DEVELOPMENT.md).
 
 ---
@@ -225,7 +225,8 @@ anyway per the standing rule), normative doc updated in the same commit.
 - **Auto-merge of upgrade PRs** (even on green CI) — the upgrade pipeline is
   deliberately human-merged; revisit only after months of boring green PRs.
 - **PyPI publish approval gate** (GitHub `pypi` Environment + required
-  reviewer on `release.yml`) — separate ops item, tracked in FUTURE.md §4.1.
+  reviewer on `release.yml`) — separate ops item, tracked in BACKLOG.md
+  (`pypi-approval-gate`).
 - **Renovate** — rejected for now (Context); reconsider only if Dependabot's
   uv support fails the [verify] pass.
 - **Automating the release itself** (changelog rolling, version bump, tag) —

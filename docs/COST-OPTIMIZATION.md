@@ -209,7 +209,7 @@ where the discount is structurally unreachable — Anthropic-style monolithic
 prompts via OpenRouter (no marker ever lands) — are projected at full price
 and flagged by the `anthropic-openrouter-no-split` hint instead.
 
-## Open follow-ups (FUTURE.md §1.6 tail)
+## Open follow-ups (cache-scheduling tail; plan: `docs/plans/archive/cache-tail.md`)
 
 Store-level judge dedup (`dedup_identical`); cheap-then-escalate judging;
 per-cache-group OpenAI `prompt_cache_key` (needs upstream GenerateConfig

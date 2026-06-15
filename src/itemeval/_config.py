@@ -187,7 +187,7 @@ class BudgetConfig(BaseModel):
     # disables it; ignored when pricing_path pins an explicit table.
     pricing_max_age_days: float | None = Field(default=None, ge=0.0)
     # Warm-then-fan-out scheduling of same-prefix calls so replications and
-    # judge fan-outs hit provider prompt caches (see docs/FUTURE.md §1.6).
+    # judge fan-outs hit provider prompt caches (see docs/COST-OPTIMIZATION.md).
     # "auto" gates whenever a condition has same-prefix groups of ≥2 calls and
     # batch mode is off; "off" disables scheduling entirely.
     cache_schedule: Literal["auto", "off"] = "auto"

@@ -16,9 +16,8 @@ reproducibility, drift/provenance detection, and a full agent-facing surface
 (`--json` on every command, a hint framework, Python-side budget consent).
 
 ### Added
-- **Cache-aware execution scheduling** (docs/FUTURE.md §1.6, validated in a
-  live pilot): maximize provider prompt-cache discounts (~75–90% off repeated
-  input tokens).
+- **Cache-aware execution scheduling** (validated in a live pilot): maximize
+  provider prompt-cache discounts (~75–90% off repeated input tokens).
   - Cache observability: `generate`/`grade` per-condition summaries report
     provider cache reads/writes and hit rate; `ConditionRunReport` gains
     `cache_read_tokens` / `cache_write_tokens` / `cache_hit_rows`.
@@ -277,14 +276,14 @@ reproducibility, drift/provenance detection, and a full agent-facing surface
 - README rewritten value-first: leads with what the data looks like, adds a
   "Who is this for" section and a documentation hub linking the tutorials and
   agent guide.
-- `docs/FUTURE.md`: the post-0.1 feature backlog with per-feature design notes
-  (motivation, sketch, implementation plan); ROADMAP's "Later" section is now a
-  tiered summary pointing at it.
+- `docs/FUTURE.md` (now `docs/BACKLOG.md`): the post-0.1 feature backlog with
+  per-feature design notes (motivation, sketch, implementation plan); ROADMAP's
+  "Later" section is now a tiered summary pointing at it.
 - `docs/UX-PATTERNS.md`: the binding UX contract for development — two
   operators (human/agent), eight laws (no silent side effects, advice never
   acts, native consent, …), the hint framework, a normative side-effect
   ledger, and a nine-question per-feature checklist. Referenced from
-  CLAUDE.md, DEVELOPMENT.md, and FUTURE.md.
+  CLAUDE.md, DEVELOPMENT.md, and BACKLOG.md.
 
 ## [0.1.0] - 2026-06-10
 

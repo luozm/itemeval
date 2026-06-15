@@ -41,14 +41,12 @@ no token to manage and nothing to `uv publish` locally.
 3. **Sync the hand-maintained status docs** (each of these has been forgotten
    on a past release — check all three):
    - `README.md`: bump the `**Status: vOLD …**` line to `**Status: vX.Y.Z.**`.
-   - `ROADMAP.md`: rename the in-progress `## X.Y (in progress)` section to
-     `## Shipped (vX.Y.Z) ✅ YYYY-MM-DD`, and make it list **everything** the
-     release shipped — cross-check against the consolidated changelog from
-     step 2, not just what was in the section mid-cycle (it lags). Then
-     reconcile the "Later"/backlog tiers: delete or annotate any item this
-     release completed.
-   - `docs/FUTURE.md`: flip the `> **Status:**` line of any backlog section the
-     release shipped to `SHIPPED`/`PARTIALLY SHIPPED in vX.Y.Z`.
+   - `ROADMAP.md`: move the released version from the **Release plan** to
+     **History** as a one-line CHANGELOG pointer; promote the next release
+     into the plan if it's known.
+   - `docs/BACKLOG.md`: shipped features should already have *left* the file
+     under the same-change rule (each closed by a CHANGELOG `Closes: <key>`).
+     Confirm none of this release's keys remain.
 
 4. **Version.** Set `version = "X.Y.Z"` in `pyproject.toml` (drop the
    `.devN`), then `uv lock` so `uv.lock` records the release version.

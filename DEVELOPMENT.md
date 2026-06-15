@@ -1,7 +1,7 @@
 # Development Guide
 
 Process documentation for maintaining itemeval. For coding conventions see
-`CLAUDE.md`; for milestones see `ROADMAP.md`; for the UX contract every
+`CLAUDE.md`; for direction and the release plan see `ROADMAP.md`; for the UX contract every
 feature must follow (output, side effects, consent), see
 `docs/UX-PATTERNS.md`.
 
@@ -48,7 +48,7 @@ inspect-ai is the load-bearing dependency and releases frequently. Upgrades are
 **deliberate, never incidental** — routine `uv sync` keeps using the lockfile
 pin, so versions only move when we move them.
 
-Cadence: at the start of each ROADMAP milestone, and before any large paid run
+Cadence: at the start of each release cycle, and before any large paid run
 in a consuming study.
 
 1. **Check what's new**
@@ -113,12 +113,12 @@ steps as runnable commands.
    render as stacked "Added" headers on the release. Preserve every bullet's
    text; add a short summary lead and the `[X.Y.Z]` / `[Unreleased]` footer links.
 3. Set `version = "X.Y.Z"` in `pyproject.toml` (drop the `.devN`), and sync the
-   hand-maintained status docs (each has gone stale at least once): the
-   `**Status: …**` line in `README.md`; `ROADMAP.md` — rename the in-progress
-   section to `Shipped (vX.Y.Z)`, make it list *everything* the release shipped
-   (cross-check the consolidated changelog), and reconcile the backlog tiers
-   (drop/mark completed items); and the `> **Status:**` line of any shipped
-   backlog section in `docs/FUTURE.md`.
+   hand-maintained docs: the `**Status: vX.Y.Z.**` line in `README.md`; in
+   `ROADMAP.md`, move the released version from the **Release plan** to
+   **History** (a one-line CHANGELOG pointer). Shipped features should already
+   have left `docs/BACKLOG.md` under the same-change rule (each closed by a
+   CHANGELOG `Closes: <key>`); confirm none of the release's keys still appear
+   there.
 4. Optionally verify the build locally: `uv build` (the same command CI runs).
 5. Commit `release: vX.Y.Z`; tag and push: `git tag vX.Y.Z && git push origin main --tags`.
 6. Create a GitHub release from the tag with **curated user-facing highlights**
