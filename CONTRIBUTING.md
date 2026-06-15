@@ -8,6 +8,23 @@ itemeval is a publishable package: item-level LLM evaluation on `inspect_ai`. A
 study that *uses* itemeval lives in its own repo; never add study-specific
 datasets, rubrics, or analysis here.
 
+## Cheat-sheet
+
+```bash
+uv sync && make hooks   # one-time setup
+make check              # before every push — lint + fast tests (exactly what CI runs)
+make fmt                # auto-format + safe lint fixes
+```
+
+| Job | Flow |
+|---|---|
+| **Quick fix** | `git checkout -b fix/x` → edit → `make check` → commit (`fix:`) → push |
+| **Feature** | key in [BACKLOG](docs/BACKLOG.md) → branch `feat/<key>` → `docs/plans/<key>.md` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
+| **Release** | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
+
+Each job is detailed below. `make check` is the one habit; the hooks
+(`make hooks`) handle formatting and commit-message format automatically.
+
 ## The one idea
 
 Every fact has **one authoritative home**; every other place is derived from it
@@ -93,6 +110,27 @@ Maintainer-only and rare. The full process is the checklist in
 [DEVELOPMENT.md](DEVELOPMENT.md#versioning-discipline); to run it hands-off,
 hand [docs/prompts/release.md](docs/prompts/release.md) to an agent.
 `scripts/release_gate.py` refuses a half-prepared release.
+
+## Going multi-contributor
+
+Solo today: direct pushes to `main`, no required reviews — nothing forces a PR
+or an approval. When a second contributor joins, flip on the protections that
+have been waiting for exactly this moment (the PR template, CODEOWNERS, and the
+CI checks already exist):
+
+1. **Branch protection on `main`** (Settings → Rules → Rulesets):
+   - *Require a pull request before merging* — makes CODEOWNERS an auto-reviewer.
+   - *Require status checks to pass* — the CI matrix + the docs-consistency job.
+   - *Block force pushes* + *restrict deletions* — worth enabling **even while
+     solo**: pure safety, zero workflow change.
+2. **Dependabot auto-merge** (optional, and only once branch protection exists,
+   since auto-merge needs a required check to gate on): scope it to the grouped
+   `dependencies` and `actions` PRs — **never inspect-ai**, which needs the
+   manual live smoke before paid runs (DEVELOPMENT.md). Until then, merging the
+   weekly PRs by hand is the intended ~1-click chore.
+
+Don't enable PR-required protection while solo — it would just block your own
+direct pushes. It's a one-click upgrade when the time comes.
 
 ## Reporting issues
 
