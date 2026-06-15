@@ -1,6 +1,16 @@
 # Implementation plan — upgrade-automation (dependency-upgrade PRs + a release-timing rule)
 
-**Status: NOT STARTED.** Written 2026-06-12 against the repo's CI as of main
+**Status: IMPLEMENTED (2026-06-15).** W1 shipped as `.github/dependabot.yml`
+(weekly inspect-ai PR + grouped rest + monthly github-actions); the `[verify]`
+pass confirmed Dependabot's `uv` ecosystem (GA 2025-03) bumps `uv.lock` only and
+leaves `pyproject.toml` ranges alone — the wanted behavior. W2 shipped as the
+"When to release" rule in `DEVELOPMENT.md`; the discharged DEVELOPMENT.md:76-78
+follow-up was rewritten present-tense. The optional ROADMAP Ops-list line was
+skipped (no Ops list exists post-ROADMAP-rewrite; the rule lives in
+DEVELOPMENT.md). Operational verification (Dependabot parses the config, first
+PR triggers CI) happens after the user pushes to the remote default branch.
+
+Original brief below, written 2026-06-12 against the repo's CI as of main
 `a176985` (`ci.yml` runs lint + the hermetic test matrix on every
 `pull_request`; `release.yml` publishes to PyPI on a published GitHub
 Release) and inspect_ai 0.3.239 (pinned in `uv.lock`) — re-verify the pinned

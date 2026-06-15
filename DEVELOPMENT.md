@@ -73,12 +73,18 @@ in a consuming study.
    (`inspect-ai>=0.3.X,<0.3.Y`), open an issue describing the incompatibility,
    and remove the bound when fixed.
 
-Once CI exists (ROADMAP M7): add a scheduled weekly GitHub Actions job (or
-Renovate/Dependabot) that opens the upgrade PR automatically; steps 3–5 run in
-CI, step 4 stays manual.
+**Automation.** `.github/dependabot.yml` opens these PRs for you: a **weekly
+inspect-ai PR** (its own, because it's load-bearing) and a weekly **grouped PR**
+for everything else, plus monthly GitHub-Actions bumps. Each PR is a lockfile
+move that CI validates against the full matrix automatically (`ci.yml` runs on
+`pull_request` with `uv sync --locked`) — so steps 1–3 above happen on the PR.
+What stays **manual**: reading inspect-ai's release notes (step 1) and the live
+smoke (step 4), which gates *paid runs*, not the merge — merging on green unit
+tests is the documented bar. Dependabot bumps `uv.lock` only and leaves
+`pyproject.toml` ranges alone, matching the policy above.
 
-All other dependencies: `uv lock --upgrade && uv sync` quarterly, same
-branch-test-commit flow, less scrutiny.
+All other dependencies ride the weekly grouped PR; merge it when convenient
+(at least quarterly), same review flow as above with less scrutiny.
 
 ## Versioning discipline
 
@@ -101,6 +107,23 @@ token stored). One-time setup: on PyPI, add a trusted publisher for the project
 (owner `luozm`, repo `itemeval`, workflow `release.yml`, environment blank). The
 publish itself runs in `.github/workflows/release.yml`, triggered when a GitHub
 release is published; locally you only build/tag.
+
+**When to release** (pre-1.0). The checklist below says *how*; this says
+*when*. Cut a release when any of these holds — it's a judgment aid, not a
+metric:
+
+1. `[Unreleased]` contains a **semantics change to the machine surface** — gate
+   behavior, exit-code or JSON-field meaning, store/export schema. Consuming
+   studies and agents pin against these; an unreleased semantics change is a
+   drift bomb for `pip install itemeval` users. This is the load-bearing
+   trigger.
+2. A consuming study needs an `[Unreleased]` feature for a paid run — release
+   rather than have the study pin a git SHA.
+3. `[Unreleased]` has been accumulating shipped items for more than ~a month —
+   release to keep PyPI within sight of `main`.
+
+Fixes for regressions in the latest release go out as a patch release
+immediately, not batched. Minor vs patch per the pre-1.0 rules above.
 
 **Release checklist** (applies from v0.1.0, ROADMAP M7). To run it
 hands-off, hand `docs/prompts/release.md` to an agent — it encodes these

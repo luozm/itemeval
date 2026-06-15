@@ -1,0 +1,40 @@
+# Automated dependency-upgrade PRs. See docs/plans/archive/upgrade-automation.md
+# for the full rationale and DEVELOPMENT.md for how to triage the PRs.
+#
+# Why this shape:
+#  - "uv" ecosystem (GA since 2025-03): Dependabot bumps the *lockfile* and
+#    leaves pyproject.toml ranges alone — exactly our policy (uv.lock pins
+#    exact; pyproject ranges move only deliberately, DEVELOPMENT.md).
+#  - inspect-ai is load-bearing and fast-releasing, so it gets its OWN weekly
+#    PR (its release notes need reading + a manual live smoke before paid runs);
+#    everything else rolls up into one grouped weekly PR — merge when convenient.
+#  - ci.yml already runs the full lint+test matrix on `pull_request` with
+#    `uv sync --locked` and no secrets, so each PR is validated against the
+#    bumped lockfile automatically; no workflow changes needed.
+#  - github-actions entry automates action-version bumps (the repo was bitten
+#    once by a forced action-major deprecation).
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      inspect-ai: # the load-bearing dep: always its own PR
+        patterns: ["inspect-ai"]
+      dependencies: # one rolling PR for everything else (dev + runtime)
+        patterns: ["*"]
+        exclude-patterns: ["inspect-ai"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
