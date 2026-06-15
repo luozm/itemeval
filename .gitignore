@@ -15,6 +15,7 @@ build/
 .coverage
 .coverage.*
 htmlcov/
+.vscode/
 
 # Demo study outputs (itemeval generate/grade/export artifacts)
 studies/
