@@ -66,8 +66,9 @@ Three docs split the work by time — never duplicate a fact across them:
 **Keys.** Every backlog feature has a stable kebab-case key declared in its
 BACKLOG section as `**Key:** \`slug\``. The key is its identity everywhere:
 branch `feat/<slug>`, plan `docs/plans/<slug>.md`, CHANGELOG `Closes: <slug>`.
-Feature status: PLANNED → COMMITTED (vX) → shipped. Plan-file status (in
-`docs/plans/`): NOT STARTED → IN PROGRESS → IMPLEMENTED.
+Scheduling (which keys land in which release) lives only in ROADMAP, never in
+BACKLOG. Work progress lives only in the plan file (`docs/plans/<slug>.md`:
+NOT STARTED → IN PROGRESS → IMPLEMENTED). A feature leaves BACKLOG when it ships.
 
 **Same-change rule.** Any user-visible change, in the *same commit*:
 1. add a `[Unreleased]` entry to `CHANGELOG.md`;

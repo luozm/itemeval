@@ -8,13 +8,14 @@ Nothing here is promised. Every design must comply with
 [UX-PATTERNS.md](UX-PATTERNS.md) (the binding UX contract: side-effect
 announcements, hint framework, consent rules, knob buckets).
 
-**Each section carries a stable key and a status.** The key
+**Each section carries a stable key.** The key
 (`**Key:** \`slug\``) is the feature's identity everywhere else — the ROADMAP
 commitment, the branch `feat/<slug>`, the plan `docs/plans/<slug>.md`, and the
-CHANGELOG `Closes: <slug>` trailer when it ships. Status is one of:
+CHANGELOG `Closes: <slug>` trailer when it ships.
 
-- **PLANNED** — in the backlog, not scheduled.
-- **COMMITTED (vX)** — slated for a named release in ROADMAP.
+Scheduling — which keys land in which release — lives in [ROADMAP.md](../ROADMAP.md), not here. Whether a feature is actively being
+built lives in its plan file (`docs/plans/<slug>.md`: NOT STARTED → IN
+PROGRESS → IMPLEMENTED). Being in BACKLOG just means "not yet built."
 
 When a feature ships it **leaves this file** — its design record lives on in
 `docs/plans/archive/<slug>.md` and the CHANGELOG entry. A shipped feature is
@@ -33,7 +34,7 @@ Tiers reflect adoption value, not effort:
 ## Tier 1 — adoption blockers
 
 ### Local file adapter (`adapter: local`) — jsonl/csv/parquet
-**Key:** `local-adapter` · **Status:** COMMITTED (0.3)
+**Key:** `local-adapter`
 
 **Motivation.** The single most common first question for any eval tool:
 "my benchmark is a JSONL file on disk, not on HuggingFace." Today the answer
@@ -66,8 +67,15 @@ Tests are hermetic by construction (tmp files).
 **Open questions.** Glob support (`path: data/*.jsonl`)? Probably later; one
 file per entry first.
 
+**CI follow-on.** Ship a hermetic end-to-end CLI smoke alongside this:
+mock models + a tiny committed JSONL fixture (zero network, deterministic) —
+the run the HF adapter can't give CI today (ephemeral runners start with no
+HF cache, so the dataset fetch needs network). Chosen over caching a Hub
+dataset in CI, which would only be best-effort offline. See the note in
+`.github/workflows/ci.yml`.
+
 ### GitHub repo adapter (`adapter: github`)
-**Key:** `github-adapter` · **Status:** COMMITTED (0.3)
+**Key:** `github-adapter`
 
 **Motivation.** Benchmarks that live as files in a repo (competition archives,
 org-internal sets) — already promised in the README feature list.
@@ -82,7 +90,7 @@ for private). Then delegate parsing to the local-adapter readers — build
 lock plumbing shared with `local-adapter`. Cache downloads under `~/.cache/itemeval/`.
 
 ### Item subset sampling — random / stratified, seeded
-**Key:** `item-sampling` · **Status:** COMMITTED (0.3)
+**Key:** `item-sampling`
 
 **Motivation.** `dev` runs the *first N* items; serious piloting needs an
 unbiased subset ("random 50, stratified by topic, seed 7"), and measurement
@@ -110,7 +118,7 @@ given (seed, sorted item ids) — independent of row order.
 dataset or over the union? — default: union).
 
 ### Custom scorer plugin point + more built-in verifiable scorers
-**Key:** `scorer-plugins` · **Status:** COMMITTED (0.3)
+**Key:** `scorer-plugins`
 
 **Motivation.** Three built-in scorers cover integers, letters, and exact
 strings; the long tail (regex extraction, normalized text, sympy-equivalence
@@ -139,7 +147,7 @@ lives in the facet list to allow multiple scorer variants as conditions —
 leaning yes: `scorer: [{name: regex, pattern: "..."}]`.
 
 ### Reliability & agreement report (`itemeval report`)
-**Key:** `report-command` · **Status:** PLANNED
+**Key:** `report-command`
 
 **Motivation.** The target audience's first analysis is always the same:
 judge agreement, score reliability, item difficulty spread, parse-failure
@@ -169,7 +177,7 @@ later if demand shows.
 ## Tier 2 — measurement depth
 
 ### Grader replication + judge sampling configs
-**Key:** `judge-replication` · **Status:** PLANNED
+**Key:** `judge-replication`
 
 **Motivation.** Judge temperature is pinned to 0 and one judging pass is taken
 as truth. For judge-reliability work the judge itself is a measurement
@@ -192,7 +200,7 @@ minor version and note it. ~150 lines.
 high-variance judges.
 
 ### Import human ratings as a grade condition
-**Key:** `human-ratings` · **Status:** PLANNED
+**Key:** `human-ratings`
 
 **Motivation.** The gold question in every LLM-as-judge study is "how does the
 judge compare to humans?" If human scores can enter the gradings store as just
@@ -223,7 +231,7 @@ rating sheet (blind grading) — probably a `--blind` flag that drops model/
 prompt columns.
 
 ### Pairwise / comparative judging
-**Key:** `pairwise-judging` · **Status:** PLANNED
+**Key:** `pairwise-judging`
 
 **Motivation.** Much of the judge literature uses pairwise preference
 (A vs B → Bradley-Terry/Elo) rather than absolute rubric scores; position-bias
@@ -249,7 +257,7 @@ as baseline); whether ties are forced or allowed; whether this waits for
 demand signal post-0.2.
 
 ### Partial / nested crossing designs
-**Key:** `partial-crossing` · **Status:** PLANNED
+**Key:** `partial-crossing`
 
 **Motivation.** `crossing: full` only. Real designs are often partial ("model
 A only with prompt P1/P2, model B only with P3") or nested (items within
@@ -280,7 +288,7 @@ the manifest so partial designs are auditable.
 unreferenced facet values.
 
 ### Combine multiple runs on export
-**Key:** `multi-run-export` · **Status:** PLANNED
+**Key:** `multi-run-export`
 
 > Detailed, session-ready implementation plan for the grow-in-place UX
 > (scale-up affordances · snapshots + study cards · waves):
@@ -318,7 +326,7 @@ duplicates).
 check against `manifests/` + `dataset_locks.json`), CLI flag. ~120 lines.
 
 ### Wide-pivot export helpers
-**Key:** `pivot-helpers` · **Status:** PLANNED
+**Key:** `pivot-helpers`
 
 **Motivation.** Long format is the contract, but most stats stacks want one
 matrix per analysis (items × conditions). Users hand-roll the same pivots.
@@ -338,7 +346,7 @@ recipes in Tutorial 3/4; promote to code when the recipes stabilize.
 ## Tier 3 — scale and breadth
 
 ### Multimodal items
-**Key:** `multimodal-items` · **Status:** PLANNED
+**Key:** `multimodal-items`
 
 **Motivation.** Image-bearing benchmarks (charts, geometry, screenshots) are a
 growing share of evaluation work; inspect_ai already supports content-part
@@ -357,7 +365,7 @@ samples), `budget/_estimator.py` (image token heuristics), manifest (image
 content hashes). Sizable; needs its own design pass before scheduling.
 
 ### Finer-grained resume (mid-cell checkpointing)
-**Key:** `midcell-resume` · **Status:** PLANNED
+**Key:** `midcell-resume`
 
 **Motivation.** Cell-level resume exists (parquet store + response cache); a
 very large cell that dies near the end still re-walks its samples (cache makes
@@ -374,7 +382,7 @@ selection), `store/_logs.py` (find the resumable log). Investigate inspect's
 current retry API first — this may shrink to glue code.
 
 ### Savings report: count resume / response-cache reuse
-**Key:** `reuse-savings` · **Status:** PLANNED
+**Key:** `reuse-savings`
 
 **Motivation.** The 0.2 savings report covers prompt-cache + batch discounts;
 local-cache hits carry no token usage, so "you re-ran this study for free"
@@ -390,7 +398,7 @@ third component next to cache/batch.
 (reuse savings are an attribution, not a discount). ~80 lines.
 
 ### Standalone study-card command (`itemeval card`)
-**Key:** `card-command` · **Status:** PLANNED
+**Key:** `card-command`
 
 **Motivation.** 0.2.0 ships `STUDY_CARD.md` *inside* `export --snapshot` (the
 `study-card` work — see CHANGELOG 0.2.0). What remains is rendering the same
@@ -415,7 +423,7 @@ surface: `huggingface_hub` is already transitively present via `datasets`).
 ## Ops / release
 
 ### PyPI publish approval gate
-**Key:** `pypi-approval-gate` · **Status:** PLANNED
+**Key:** `pypi-approval-gate`
 
 Add a GitHub `pypi` Environment with a required-reviewer rule; reference it
 from `release.yml` (`environment: pypi`) and mirror it on the PyPI trusted
