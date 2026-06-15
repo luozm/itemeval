@@ -1,0 +1,3 @@
+# Default owner for everything — requested as a reviewer on every PR.
+# Add more specific lines (path @owner) as the project grows collaborators.
+* @luozm
