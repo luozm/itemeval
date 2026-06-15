@@ -1,0 +1,37 @@
+# Local dev hooks. Install once with `make hooks`. Fast checks only — the full
+# suite is `make check` / CI. ruff runs via the project's pinned version (uv
+# run), so there is one ruff version (uv.lock), never two.
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        # Allow the repo's conventional types, plus `release:` for release commits.
+        args: [feat, fix, docs, test, refactor, chore, ci, build, perf, revert, style, release]

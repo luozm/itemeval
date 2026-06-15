@@ -4,7 +4,7 @@
 # "passes locally" means "passes in CI".
 
 .DEFAULT_GOAL := help
-.PHONY: help sync lint fmt test test-all docs-check check build
+.PHONY: help sync lint fmt test test-all docs-check check build hooks precommit
 
 help:  ## list available targets
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -31,6 +31,12 @@ docs-check:  ## doc/version/config-example consistency tests only
 	uv run pytest tests/test_docs_consistency.py -q
 
 check: lint test  ## what CI runs: lint + fast tests (incl. docs-check)
+
+hooks:  ## install the git pre-commit + commit-msg hooks (run once)
+	uv run pre-commit install --install-hooks
+
+precommit:  ## run all pre-commit hooks against every file
+	uv run pre-commit run --all-files
 
 build:  ## build sdist + wheel into dist/
 	rm -rf dist && uv build
