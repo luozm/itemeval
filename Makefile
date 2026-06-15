@@ -4,7 +4,7 @@
 # "passes locally" means "passes in CI".
 
 .DEFAULT_GOAL := help
-.PHONY: help sync lint fmt test test-all check build
+.PHONY: help sync lint fmt test test-all docs-check check build
 
 help:  ## list available targets
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -27,7 +27,10 @@ test:  ## fast unit tests (no network)
 test-all:  ## full suite, including network (HF Hub) tests
 	uv run pytest
 
-check: lint test  ## what CI runs: lint + fast tests
+docs-check:  ## doc/version/config-example consistency tests only
+	uv run pytest tests/test_docs_consistency.py -q
+
+check: lint test  ## what CI runs: lint + fast tests (incl. docs-check)
 
 build:  ## build sdist + wheel into dist/
 	rm -rf dist && uv build
