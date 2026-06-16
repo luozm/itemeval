@@ -63,7 +63,8 @@ in a consuming study.
    git checkout -b chore/bump-inspect-ai
    uv lock --upgrade-package inspect-ai && uv sync
    ```
-3. **Unit tests** (no API calls): `./.venv/bin/python -m pytest`
+3. **Unit tests** (no API calls): `make test-all` (the whole suite, incl. the
+   HF-adapter test — an engine bump should exercise everything)
 4. **Live smoke test** (manual, costs cents): run the consuming study's pilot
    config at `dev` scope end-to-end (generate → grade → export) and confirm
    the export schema and cost ledger are unchanged.
@@ -129,7 +130,7 @@ immediately, not batched. Minor vs patch per the pre-1.0 rules above.
 hands-off, hand `docs/prompts/release.md` to an agent — it encodes these
 steps as runnable commands.
 
-1. Tests and lint green: `./.venv/bin/python -m pytest && ./.venv/bin/python -m ruff check .`
+1. Tests and lint green: `make check` (lint + fast tests — what CI gates on).
 2. Move `[Unreleased]` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading, then
    **consolidate them to one header per change-type** (`Added`/`Changed`/…) —
    entries accrue as many separate `### Added` blocks during development, which

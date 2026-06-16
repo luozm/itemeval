@@ -16,7 +16,7 @@ entries to ship. PyPI publishing is trusted-publishing (OIDC) via
 `.github/workflows/release.yml` on the `release: published` event — there is
 no token to manage and nothing to `uv publish` locally.
 
-1. **Green check.** `./.venv/bin/python -m pytest && ./.venv/bin/python -m ruff check .`
+1. **Green check.** `make check` (lint + fast tests, what CI runs).
    Stop and report if either fails.
 
 2. **Changelog.** In `CHANGELOG.md`, insert `## [X.Y.Z] - YYYY-MM-DD` (today,

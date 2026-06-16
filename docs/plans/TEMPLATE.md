@@ -102,8 +102,7 @@ One conventional commit per workstream unless stated. If a sibling plan
 shares ordering, exactly ONE file owns the combined order — link the other
 to it. End with the standing rule: -->
 
-After each step: `./.venv/bin/python -m ruff check . && ./.venv/bin/python
--m ruff format .`, `./.venv/bin/python -m pytest`, CHANGELOG and normative
+After each step: `make check` (lint + fast tests), CHANGELOG and normative
 doc tables updated in the same commit.
 
 ## Out of scope (explicitly, to prevent creep)
