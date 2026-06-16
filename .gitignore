@@ -23,5 +23,9 @@ studies/
 # Local-only files (strategy, working memory, archived design contract) — never published
 local/
 
+# Claude Code: shared project config (.claude/settings.json + hooks) IS committed;
+# personal per-machine settings are local-only and must never be.
+.claude/settings.local.json
+
 # OS
 .DS_Store
