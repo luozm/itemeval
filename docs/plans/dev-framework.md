@@ -80,6 +80,8 @@ The guards that turn drift into a red build. **Done.**
   hygiene (trailing-whitespace, EOF, check-yaml, large-files), and a
   conventional-commit message check (allowing the repo's `release:` type).
   Mirrors CI so red happens at commit, not in CI.
+- **pre-push gate** (`.pre-commit-config.yaml` `pre-push` stage): `git push` runs
+  the full `make check`, so a red push is caught locally before CI.
 - **Public-surface snapshot** (`tests/test_public_api_snapshot.py`): golden
   `itemeval.__all__` and CLI subcommand set; an accidental API/CLI change turns
   the build red and forces an intentional update + CHANGELOG entry — the pre-1.0

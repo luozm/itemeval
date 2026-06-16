@@ -16,16 +16,27 @@ make check              # before every push — lint + fast tests (exactly what 
 make fmt                # auto-format + safe lint fixes
 ```
 
-| Job | Flow |
-|---|---|
-| **Quick fix** | `git checkout -b fix/x` → edit → `make check` → commit (`fix:`) → push |
-| **Feature** | key in [BACKLOG](docs/BACKLOG.md) → branch `feat/<key>` → `docs/plans/<key>.md` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
-| **Release** | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
+| Job | Skill | Flow |
+|---|---|---|
+| **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → `make check` → commit (`fix:`) → push |
+| **Feature** | `/feature <key>` | key in [BACKLOG](docs/BACKLOG.md) → branch `feat/<key>` → `docs/plans/<key>.md` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
+| **Release** | `/release` | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
+| **Pre-push gate** | — *(auto)* | the `pre-push` hook runs `make check` on every push — nothing to type |
+| **Pre-commit audit** | `/same-change` | same-change rule as a ✓/✗ checklist (CHANGELOG · BACKLOG-disjoint · wiki · SSOT); **machine parts auto** |
+| **Engine bump** | `/upgrade-inspect` | deliberate inspect-ai lockfile bump + `make test-all` ([DEVELOPMENT.md](DEVELOPMENT.md)) |
 
-Each job is detailed below. `make check` is the one habit; the hooks
-(`make hooks`) handle formatting and commit-message format automatically.
+Each job is detailed below. `make check` is the one habit — and the `pre-push`
+git hook now runs it for you on every push (`make hooks` installs that alongside
+the formatting + commit-msg hooks), so a red push can't slip into CI.
 
-**In Claude Code:** these jobs are also manual-trigger skills (`.claude/skills/`) — `/feature <key>`, `/fix <desc>`, `/check`, `/same-change`, `/release`, `/upgrade-inspect` — each just runs the flow documented here.
+The **Skill** column is the [Claude Code](https://code.claude.com/docs/en/skills)
+shortcut for each job. The pre-push gate needs no skill — the hook is the gate.
+`/same-change` stays a skill because its core value is the wiki/UX judgment a
+hook can't make; its machine checks already ride the pre-push hook plus the
+Stop-hook CHANGELOG nudge, and Claude runs it proactively. The four **lifecycle**
+skills (`/fix`, `/feature`, `/release`, `/upgrade-inspect`) stay manual: you type
+them, Claude won't auto-run their side effects. All live in `.claude/skills/` and
+just run their row's flow, adding no rules of their own.
 
 ## The one idea
 
@@ -38,7 +49,7 @@ release gate) exist so a disagreement becomes a red build, not a surprise later.
 
 ```bash
 uv sync            # create ./.venv from the lockfile (never use system Python)
-make hooks         # install the pre-commit + commit-msg git hooks
+make hooks         # install the git hooks (pre-commit, commit-msg, pre-push)
 make help          # list every dev command
 ```
 
