@@ -30,8 +30,8 @@ consuming it live in their own repos; never put study-specific content
 ## Python environment
 
 - Managed by `uv`; all Python runs against `./.venv`, never system Python.
-- Invoke by absolute path, never activate: `./.venv/bin/python -m pytest`.
-  Never emit `source .venv/bin/activate`.
+- Run commands via the Makefile (`make help` lists targets) or `uv run <cmd>`;
+  both use `./.venv` without activating it. Never emit `source .venv/bin/activate`.
 - New deps: `uv add <pkg>` (runtime) / `uv add --dev <pkg>` (dev). Never use
   pip. `pyproject.toml` carries ranges; `uv.lock` pins exactly and is committed.
 - Recreate from scratch: `uv sync`. `./.venv` is disposable.
@@ -46,9 +46,10 @@ consuming it live in their own repos; never put study-specific content
 - Public API exported from `itemeval/__init__.py`; everything else is internal
   and free to refactor. Prefix private modules with `_`.
 - pydantic models for all config/data schemas; YAML configs validated at load.
-- Lint/format: `./.venv/bin/python -m ruff check . && ./.venv/bin/python -m ruff format .`
-- Tests: `./.venv/bin/python -m pytest`. Unit tests must not call paid APIs;
-  provider code is mocked or marked for manual runs.
+- Lint/format/test via the Makefile (the single command home — `make help`):
+  `make lint` / `make fmt` / `make test` (fast, no network) / `make check`
+  (lint + tests, what CI runs). Unit tests must not call paid APIs; provider
+  code is mocked or marked for manual runs.
 - No real API keys in tests, fixtures, or examples.
 - Conventional commits (feat:/fix:/docs:/test:/refactor:).
 

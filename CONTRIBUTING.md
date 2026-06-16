@@ -111,7 +111,7 @@ Maintainer-only and rare. The full process is the checklist in
 hand [docs/prompts/release.md](docs/prompts/release.md) to an agent.
 `scripts/release_gate.py` refuses a half-prepared release.
 
-## Going multi-contributor
+## Going multi-contributor (maintainer)
 
 Solo today: direct pushes to `main`, no required reviews — nothing forces a PR
 or an approval. When a second contributor joins, flip on the protections that
