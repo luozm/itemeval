@@ -1,17 +1,29 @@
-# Local dev hooks. Install once with `make hooks`. Fast checks only — the full
-# suite is `make check` / CI. ruff runs via the project's pinned version (uv
+# Local dev hooks. Install once with `make hooks`. The pre-commit/commit-msg
+# stages are fast (lint, hygiene, message format); the pre-push stage runs the
+# full `make check` (lint + fast tests — exactly what CI gates on) so a red push
+# is caught locally before CI. ruff runs via the project's pinned version (uv
 # run), so there is one ruff version (uv.lock), never two.
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+# Hooks without an explicit `stages:` run at commit only; commit-msg and the
+# pre-push `make check` opt into their stages below.
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
+    # These ship manifest stages incl. pre-push; pin to pre-commit so `git push`
+    # runs only `make check` (the pre-push hook below), not the hygiene fixers.
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: check-added-large-files
+        stages: [pre-commit]
 
   - repo: local
     hooks:
@@ -27,6 +39,13 @@ repos:
         language: system
         types_or: [python, pyi]
         require_serial: true
+      - id: make-check
+        name: make check (lint + fast tests — what CI gates on)
+        entry: make check
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0

@@ -32,7 +32,7 @@ docs-check:  ## doc/version/config-example consistency tests only
 
 check: lint test  ## what CI runs: lint + fast tests (incl. docs-check)
 
-hooks:  ## install the git pre-commit + commit-msg hooks (run once)
+hooks:  ## install the git hooks: pre-commit, commit-msg, pre-push (run once)
 	uv run pre-commit install --install-hooks
 
 precommit:  ## run all pre-commit hooks against every file
