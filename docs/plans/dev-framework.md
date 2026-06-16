@@ -1,8 +1,8 @@
 # Implementation plan — dev-framework (drift-proof SDLC: docs model + guard automation)
 
 **Status: IN PROGRESS (started 2026-06-15).** Tier 0 + Tier 1 shipped; Tier 2's
-buildable items shipped 2026-06-15; two Tier-2 items are deferred to external
-triggers (see W2). This is the working brief for the development framework — the
+buildable items shipped 2026-06-15 (two Tier-2 items deferred to external
+triggers, see W2); the Claude Code skill layer (W3) shipped 2026-06-16. This is the working brief for the development framework — the
 rules that keep planning/coding/releasing consistent, and the automation that
 enforces them. Read first: `CLAUDE.md` (the rules live there),
 `docs/UX-PATTERNS.md`, `DEVELOPMENT.md`.
@@ -120,6 +120,28 @@ Buildable items SHIPPED 2026-06-15; two items deferred to external triggers.
 **Deliberately NOT building** (CLAUDE.md "don't over-engineer"): a generated
 docs site, a custom doc DSL, per-sentence doc tests, branch protection while
 solo. Add only when a collaborator or scale demands them.
+
+---
+
+## W3 — Claude Code workflow skills (SHIPPED 2026-06-16)
+
+A thin agent-facing layer over the same rules: one `.claude/skills/<name>/SKILL.md`
+per lifecycle job, each a *thin orchestrator* that points at the SSOT docs above
+rather than restating them, so a skill can't drift from the rule it runs. (Custom
+slash commands and skills are the same mechanism in current Claude Code; this uses
+the skills form for its invocation control.)
+
+- **Lifecycle → slash command:** `/brainstorm` (idea → `docs/BACKLOG.md` key),
+  `/roadmap` (direction + scheduling in `ROADMAP.md`), `/feature <key>` (the full
+  implement-then-archive lifecycle), `/fix`, `/same-change` (pre-commit audit),
+  `/release` (runs `docs/prompts/release.md`), `/upgrade-inspect` (the inspect-ai
+  pipeline). CONTRIBUTING's cheat-sheet is the job → skill map.
+- **Invocation control.** Side-effecting skills set `disable-model-invocation:
+  true` (manual only — the agent must not auto-cut a release). `/same-change`
+  stays model-invocable so the agent runs the judgment audit proactively. The
+  deterministic pre-push gate is the *hook* (W1), not a skill.
+- **No new rules.** Skills encode no policy of their own; the bodies cite
+  CLAUDE.md / DEVELOPMENT.md / UX-PATTERNS as the authority.
 
 ---
 

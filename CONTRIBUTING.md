@@ -18,8 +18,10 @@ make fmt                # auto-format + safe lint fixes
 
 | Job | Skill | Flow |
 |---|---|---|
-| **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → `make check` → commit (`fix:`) → push |
+| **Brainstorm a feature** | `/brainstorm` | rough idea → pressure-test (in scope? simplest?) → a [BACKLOG](docs/BACKLOG.md) section with a `**Key:**` |
+| **Long-term goals** | `/roadmap` | discuss direction; schedule BACKLOG keys into a release in [ROADMAP](ROADMAP.md) (references keys, never restates them) |
 | **Feature** | `/feature <key>` | key in [BACKLOG](docs/BACKLOG.md) → branch `feat/<key>` → `docs/plans/<key>.md` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
+| **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → `make check` → commit (`fix:`) → push |
 | **Release** | `/release` | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
 | **Pre-push gate** | — *(auto)* | the `pre-push` hook runs `make check` on every push — nothing to type |
 | **Pre-commit audit** | `/same-change` | same-change rule as a ✓/✗ checklist (CHANGELOG · BACKLOG-disjoint · wiki · SSOT); **machine parts auto** |
@@ -30,13 +32,14 @@ git hook now runs it for you on every push (`make hooks` installs that alongside
 the formatting + commit-msg hooks), so a red push can't slip into CI.
 
 The **Skill** column is the [Claude Code](https://code.claude.com/docs/en/skills)
-shortcut for each job. The pre-push gate needs no skill — the hook is the gate.
-`/same-change` stays a skill because its core value is the wiki/UX judgment a
-hook can't make; its machine checks already ride the pre-push hook plus the
-Stop-hook CHANGELOG nudge, and Claude runs it proactively. The four **lifecycle**
-skills (`/fix`, `/feature`, `/release`, `/upgrade-inspect`) stay manual: you type
-them, Claude won't auto-run their side effects. All live in `.claude/skills/` and
-just run their row's flow, adding no rules of their own.
+shortcut for each job. The new-feature pipeline runs top-down: `/brainstorm`
+shapes an idea into a BACKLOG key, `/roadmap` schedules keys into a release,
+`/feature <key>` implements one. The pre-push gate needs no skill — the hook is
+the gate; `/same-change` stays a skill for the wiki/UX judgment a hook can't make
+(and is the one skill Claude also runs proactively — its machine checks already
+ride the pre-push hook plus the Stop-hook nudge). Every other skill is
+manual-trigger: you type it, Claude won't auto-run its side effects. All live in
+`.claude/skills/` and just run their row's flow, adding no rules of their own.
 
 ## The one idea
 
@@ -77,7 +80,7 @@ CHANGELOG `Closes: <key>`.
 
 1. **Find or declare the key.** If it's in [docs/BACKLOG.md](docs/BACKLOG.md),
    use that `**Key:**`. If not, add a backlog section first (motivation, design
-   sketch, a new key) so there's something to point at.
+   sketch, a new key — or `/brainstorm` it) so there's something to point at.
 2. **Plan it.** Copy [docs/plans/TEMPLATE.md](docs/plans/TEMPLATE.md) to
    `docs/plans/<key>.md`; that file tracks work status (NOT STARTED → IN
    PROGRESS → IMPLEMENTED). Scheduling stays in ROADMAP, not the plan.
