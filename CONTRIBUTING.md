@@ -25,6 +25,8 @@ make fmt                # auto-format + safe lint fixes
 Each job is detailed below. `make check` is the one habit; the hooks
 (`make hooks`) handle formatting and commit-message format automatically.
 
+**In Claude Code:** these jobs are also manual-trigger skills (`.claude/skills/`) — `/feature <key>`, `/fix <desc>`, `/check`, `/same-change`, `/release`, `/upgrade-inspect` — each just runs the flow documented here.
+
 ## The one idea
 
 Every fact has **one authoritative home**; every other place is derived from it
@@ -104,9 +106,19 @@ patch release promptly, not batched (see DEVELOPMENT.md "When to release").
 - The PR template's checklist is the same-change rule in checkbox form — fill it
   in honestly. CI must be green (lint + test matrix + docs consistency).
 
-## Release
+## Reporting issues
 
-Maintainer-only and rare. The full process is the checklist in
+Use the issue templates (feature request / bug report). For anything touching
+provenance, cost accounting, or the export schema, include the itemeval version
+(`uv run python -c "import itemeval; print(itemeval.__version__)"`, also recorded
+in every run manifest) and the relevant config — those are the load-bearing
+surfaces consuming studies pin against.
+
+
+# Maintainer only
+## Release (maintainer)
+
+The full process is the checklist in
 [DEVELOPMENT.md](DEVELOPMENT.md#versioning-discipline); to run it hands-off,
 hand [docs/prompts/release.md](docs/prompts/release.md) to an agent.
 `scripts/release_gate.py` refuses a half-prepared release.
@@ -131,11 +143,3 @@ CI checks already exist):
 
 Don't enable PR-required protection while solo — it would just block your own
 direct pushes. It's a one-click upgrade when the time comes.
-
-## Reporting issues
-
-Use the issue templates (feature request / bug report). For anything touching
-provenance, cost accounting, or the export schema, include the itemeval version
-(`uv run python -c "import itemeval; print(itemeval.__version__)"`, also recorded
-in every run manifest) and the relevant config — those are the load-bearing
-surfaces consuming studies pin against.
