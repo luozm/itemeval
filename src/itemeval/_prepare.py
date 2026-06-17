@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from itemeval._config import ExperimentConfig
 from itemeval._errors import ConfigError
 from itemeval._item import Item
+from itemeval._modelsample import ModelSampleResult, resolve_model_sample
 from itemeval._templates import Template, rubric_registry, solver_registry
 from itemeval.adapters._base import LoadedDataset, load_items
 from itemeval.budget._policies import EffectivePlan, apply_items_limit, effective_plan
@@ -41,6 +42,7 @@ class PreparedStudy:
     grid: Grid
     plan: EffectivePlan
     pricing: PricingTable
+    model_sample: ModelSampleResult | None = None  # set when solvers.sample drew the models
     pricing_refreshed: bool = False  # a live OpenRouter refresh ran during prepare
     policy_source: str = "config"  # "config" | "override" (a policy= argument won)
 
@@ -79,7 +81,8 @@ def prepare_study(
     plan = effective_plan(config.budget, config.facets.replications, policy=policy)
     items_effective = apply_items_limit(items_all, plan.items_limit)
 
-    grid = expand_grid(config, solver_templates, rubric_templates)
+    # Pricing is the roster source for model sampling, so resolve it (and the
+    # sample, which mutates solvers.models) before grid expansion reads them.
     pricing_refreshed = False
     if refresh_pricing_table:
         pricing = refresh_pricing()  # explicit --refresh-pricing: hard refresh
@@ -91,6 +94,9 @@ def prepare_study(
         pricing = maybe_refresh_pricing(loaded, config.budget.pricing_max_age_days)
         # maybe_refresh returns the same object on a no-op; a new one means it refreshed.
         pricing_refreshed = pricing is not loaded
+
+    model_sample = resolve_model_sample(config, pricing, paths.model_locks)
+    grid = expand_grid(config, solver_templates, rubric_templates)
     return PreparedStudy(
         config=config,
         paths=paths,
@@ -104,6 +110,7 @@ def prepare_study(
         grid=grid,
         plan=plan,
         pricing=pricing,
+        model_sample=model_sample,
         pricing_refreshed=pricing_refreshed,
         policy_source="config" if policy is None else "override",
     )

@@ -4,6 +4,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from itemeval._config import ExperimentConfig
+from itemeval._modelsample import ModelSampleResult
 from itemeval._prepare import PreparedStudy, prepare_study
 from itemeval.store import _gradings, _ledger, _solutions
 from itemeval.store._solutions import empty_solution_mask
@@ -65,6 +66,7 @@ class StatusReport(BaseModel):
     policy_source: str = "config"  # "config" | "override"
     config_path: str
     datasets: list[DatasetStatus]
+    model_sample: "ModelSampleResult | None" = None  # set when solvers.sample drew the models
     n_items_total: int
     n_items_effective: int
     replications_requested: int
@@ -253,6 +255,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
             )
             for ds in prep.datasets
         ],
+        model_sample=prep.model_sample,
         n_items_total=len(prep.items_all),
         n_items_effective=len(prep.items_effective),
         replications_requested=config.facets.replications,

@@ -16,6 +16,7 @@ from itemeval._hints import (
 )
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
+from itemeval._modelsample import ModelSampleResult
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.budget._gate import GateResult
@@ -109,6 +110,7 @@ class GenerateResult(BaseModel):
     hints: list[Hint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
     datasets: list[DatasetProvenance] = Field(default_factory=list)
+    model_sample: "ModelSampleResult | None" = None  # set when solvers.sample drew the models
     # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
     local_cache_rows: int = 0
     local_cache_dir: "str | None" = None  # set when local_cache_rows > 0
@@ -634,6 +636,7 @@ def run_generate(
         hints=hints,
         warnings=drift_warnings,
         datasets=dataset_provenance(prep.datasets),
+        model_sample=prep.model_sample,
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,
         batch=batch_on,

@@ -12,6 +12,7 @@ from itemeval._hints import (
     detect_split_head_below_min,
     detect_unpriced_models,
 )
+from itemeval._modelsample import ModelSampleResult
 from itemeval._templates import render_template
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import estimate_tokens
@@ -103,6 +104,7 @@ class Estimate(BaseModel):
     pricing: PricingProvenance  # which prices these projections used
     hints: list[Hint] = Field(default_factory=list)
     datasets: list[DatasetProvenance] = Field(default_factory=list)
+    model_sample: "ModelSampleResult | None" = None  # set when solvers.sample drew the models
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
@@ -621,4 +623,5 @@ def estimate_study(
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
         hints=[*gen.hints, *grade.hints, *([unpriced] if unpriced else [])],
         datasets=dataset_provenance(prep.datasets),
+        model_sample=prep.model_sample,
     )

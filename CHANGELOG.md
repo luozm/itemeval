@@ -6,6 +6,39 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **Candidate-model sampling** (`solvers.sample`): draw the model facet from a
+  universe instead of listing it, with the draw recorded so the study card can
+  attest how models were chosen. `solvers.sample` (mutually exclusive with
+  `solvers.models`) takes `n`, `seed`, an optional `stratify_by`, and a
+  `universe` — one of `pricing-table` (the `openrouter/*` roster itemeval's
+  pricing table already tracks; refresh it with `--refresh-pricing` to sample
+  today's roster), a file of model ids (one per line), or an inline list.
+  `stratify_by` balances the draw across `provider`, or — for a `pricing-table`
+  universe — `reasoning` / `multimodal` / `price_tier` / `context_tier`. A roster
+  universe can be narrowed with `where:` — a `provider` allowlist,
+  `max_output_usd_per_mtok` and `min_context_length` ceilings/floors, and
+  `reasoning` / `multimodal` booleans (rejected for list/file universes, which
+  are already curated). The draw is deterministic given `(seed, sorted
+  universe)`, optionally stratified (Hamilton apportionment), and pinned in a new
+  `model_locks.json` (sibling of `dataset_locks.json`): later runs reuse the
+  frozen draw, a drifting roster only **warns** (the draw stands), and a changed
+  sample spec **fails loudly** (clear the lock to re-draw). Provenance surfaces
+  in every rendering (UX-PATTERNS Law 1/6): a `models: sampled N of M …` line on
+  estimate/generate/grade/status, a `model_sample` object on each command's
+  `--json` (append-only on `Estimate`/`GenerateResult`/`GradeResult`/the status
+  report), a `model_sample` block in the run manifest, and a Design line +
+  front-matter in `STUDY_CARD.md`; `export --snapshot` copies `model_locks.json`.
+  The `pricing-table` universe is restricted to OpenRouter's **runnable text
+  models** — text in and out, with generation parameters — so it never samples
+  embedding or meta/router entries. `--refresh-pricing` now records the per-model
+  roster metadata these features read (`ModelPrice.text_model` / `reasoning` /
+  `multimodal` / `context_length`), so a `pricing-table` sample needs a refreshed
+  table (the empty-universe error says so). Tier edges are fixed: price (output
+  $/Mtok) `free` ≤`1` ≤`10` `high`; context `short` ≤32k ≤128k ≤400k `xlong`.
+
+Closes: model-sampling
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider

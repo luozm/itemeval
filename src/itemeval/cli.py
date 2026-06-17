@@ -141,6 +141,31 @@ def _print_datasets(prep) -> None:
         print(line)
 
 
+def _print_model_sample(prep) -> None:
+    """One provenance line when solvers.sample drew the models (Law 1)."""
+    ms = prep.model_sample
+    if ms is None:
+        return
+    source = {
+        "pricing-table": "the OpenRouter roster",
+        "explicit": "an inline list",
+        "file": "a model-id file",
+    }.get(ms.source, ms.source)
+    strat = f", stratified by {ms.stratify_by}" if ms.stratify_by else ""
+    if ms.pinned_now:
+        print(
+            f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}) "
+            f"from {source} — pinned in model_locks.json"
+        )
+    else:
+        drift = (
+            f"; universe changed since the pin (now {ms.universe_size}) — draw unchanged"
+            if ms.universe_drift
+            else ""
+        )
+        print(f"models: {ms.n} sampled models reused from model_locks.json (seed {ms.seed}){drift}")
+
+
 def _print_cost_report(rep) -> None:
     print(
         f"savings vs list price: {_fmt_usd(rep.total_savings_usd)} "
@@ -173,6 +198,7 @@ def _cmd_estimate(args) -> int:
         return 0
     print(f"study: {est.study}  (policy: {est.policy})")
     _print_datasets(prep)
+    _print_model_sample(prep)
     _print_pricing(est.pricing)
     _print_estimate(est, args.stage)
     emit_hints(est.hints)
@@ -276,6 +302,7 @@ def _run_stage(args, stage, runner) -> int:
     st = est.generate if stage == "generate" else est.grade
     if not args.json:
         _print_datasets(prep)
+        _print_model_sample(prep)
         _print_pricing(est.pricing)
         if stage == "generate" and args.wave:
             print(
@@ -443,6 +470,7 @@ def _cmd_status(args) -> int:
     print(f"study: {report.study}  (policy: {report.policy})")
     print(f"config: {report.config_path}")
     _print_datasets(prep)
+    _print_model_sample(prep)
     _print_pricing(describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed))
     ds_bits = ", ".join(f"{d.id}@{d.revision[:8]}: {d.n_items}" for d in report.datasets)
     print(

@@ -67,10 +67,76 @@ class BenchmarkConfig(BaseModel):
     mapping: MappingSpec
 
 
+PRICING_TABLE_UNIVERSE = "pricing-table"  # reserved `universe` keyword (the roster)
+# stratify_by dimensions that read per-model roster metadata (vs `provider`,
+# which is derivable from any model id) — valid only for a pricing-table universe.
+METADATA_STRATA = ("reasoning", "multimodal", "price_tier", "context_tier")
+StratifyBy = Literal["provider", "reasoning", "multimodal", "price_tier", "context_tier"]
+
+
+class ModelUniverseFilter(BaseModel):
+    """`solvers.sample.where`: narrow the pricing-table roster before drawing.
+
+    Roster-only (rejected for inline-list / file universes, which are already
+    curated). All fields optional; an empty filter is inert. Filters are
+    continuous/boolean — tiers are a stratify concept, not a filter.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: list[str] | None = None  # org allowlist (the model-id org segment)
+    max_output_usd_per_mtok: float | None = Field(default=None, gt=0.0)
+    reasoning: bool | None = None  # keep only reasoning (True) / non-reasoning (False) models
+    multimodal: bool | None = None  # keep only multimodal (True) / text-only (False) models
+    min_context_length: int | None = Field(default=None, ge=1)  # keep models with >= this context
+
+
+class ModelSample(BaseModel):
+    """A seeded, optionally provider-stratified draw of models from a universe.
+
+    `universe` is one of: the reserved string ``"pricing-table"`` (the
+    ``openrouter/*`` roster from the pricing table), any other string (a file
+    path of model ids, one per line), or an inline list of model ids. The draw
+    populates ``solvers.models`` and is pinned in ``model_locks.json``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    n: int = Field(ge=1)
+    seed: int
+    stratify_by: StratifyBy | None = None
+    universe: str | list[str]  # "pricing-table" | a file path | an inline list
+    where: ModelUniverseFilter | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "ModelSample":
+        if isinstance(self.universe, list):
+            if not self.universe:
+                raise ValueError("solvers.sample.universe list must be non-empty")
+            if len(set(self.universe)) != len(self.universe):
+                raise ValueError("solvers.sample.universe entries must be unique")
+            if len(self.universe) < self.n:
+                raise ValueError(
+                    f"solvers.sample.n ({self.n}) exceeds the {len(self.universe)}-id universe list"
+                )
+        roster = self.universe == PRICING_TABLE_UNIVERSE
+        if self.where is not None and not roster:
+            raise ValueError(
+                "solvers.sample.where applies only to universe: pricing-table "
+                "(inline lists and files are already curated)"
+            )
+        if self.stratify_by in METADATA_STRATA and not roster:
+            raise ValueError(
+                f"solvers.sample.stratify_by: {self.stratify_by} reads roster metadata, so it "
+                "requires universe: pricing-table; use stratify_by: provider for list/file universes"
+            )
+        return self
+
+
 class SolversConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    models: list[str] = Field(min_length=1)
+    models: list[str] = Field(default_factory=list)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
@@ -94,6 +160,9 @@ class SolversConfig(BaseModel):
     # the schema. Optimization knob; never enters condition ids (endpoint
     # identity never has — endpoint drift warnings cover served-model drift).
     provider_routing: "dict[str, Any] | None" = None
+    # Draw `models` from a universe instead of listing them. XOR with `models`:
+    # exactly one of the two must be set. Resolved + pinned at prepare time.
+    sample: "ModelSample | None" = None
 
     @field_validator("cache_prompt", mode="before")
     @classmethod
@@ -109,6 +178,13 @@ class SolversConfig(BaseModel):
         if len(set(v)) != len(v):
             raise ValueError("solvers.models must be unique")
         return v
+
+    @model_validator(mode="after")
+    def _check_models_xor_sample(self) -> "SolversConfig":
+        # Exactly one of an explicit `models` list / a `sample` draw.
+        if (self.sample is None) == (len(self.models) == 0):
+            raise ValueError("solvers must set exactly one of models / sample")
+        return self
 
 
 class ModelConfigFacet(BaseModel):

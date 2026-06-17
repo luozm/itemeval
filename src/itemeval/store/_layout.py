@@ -32,6 +32,10 @@ class StudyPaths:
         return self.study_dir / "dataset_locks.json"
 
     @property
+    def model_locks(self) -> Path:
+        return self.study_dir / "model_locks.json"
+
+    @property
     def manifests_dir(self) -> Path:
         return self.study_dir / "manifests"
 

@@ -186,6 +186,8 @@ def _write_snapshot(
         shutil.copy2(paths.export_dir / filename, tmp / filename)
     if paths.dataset_locks.is_file():
         shutil.copy2(paths.dataset_locks, tmp / "dataset_locks.json")
+    if paths.model_locks.is_file():
+        shutil.copy2(paths.model_locks, tmp / "model_locks.json")
     for run_id in run_ids:  # every manifest covering included rows
         src = paths.manifests_dir / f"{run_id}.json"
         if src.is_file():
