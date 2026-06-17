@@ -9,6 +9,7 @@ consuming it live in their own repos; never put study-specific content
 - Spec & planning: `README.md` (spec) · `ROADMAP.md` (direction — vision,
   themes, near-term release plan; not a feature ledger) · `docs/BACKLOG.md`
   (candidate features not yet built — why/how, one keyed section each) ·
+  `docs/KNOWN-ISSUES.md` (deferred bugs — the bug mirror of BACKLOG) ·
   `docs/plans/` (active briefs from `plans/TEMPLATE.md`; done → `plans/archive/`).
 - `docs/UX-PATTERNS.md` — **binding** UX contract (no silent side effects,
   hint framework, consent rules, knob buckets); every feature, new or touched,
@@ -75,6 +76,14 @@ A feature leaves BACKLOG when it ships.
    `Closes: <slug>` to the changelog entry;
 3. update the wiki if user-facing, and the UX-PATTERNS ledger/hint rows if the
    surface changed.
+
+**Bugs & chores.** Keys are for features only. A bug fix or a docs/chore change
+gets **no key, no BACKLOG entry, no plan** — just a `fix:`/`docs:` commit and a
+`[Unreleased]` CHANGELOG entry (`Fixed` for bugs), plus a wiki/UX-PATTERNS touch
+only if a documented surface changed. A bug you are *not* fixing right away goes
+in `docs/KNOWN-ISSUES.md` (symptom · where · fix sketch) and leaves it in the
+same change as its CHANGELOG `Fixed` entry. If a "fix" needs real design, it
+graduates to a feature (BACKLOG key + plan).
 
 **SSOT formats** (tooling parses these — keep them exact): the version lives
 only in `pyproject.toml`; `README.md` carries one `**Status: vX.Y.Z.**` line
