@@ -6,7 +6,8 @@ The canonical unit is an `Item`: `id`, `input` (the problem), `target`
 (reference answer, may be empty), `grading_scheme` (rubric/points text, may be
 null), `metadata`. Adapters turn benchmark rows into items via the
 `benchmark.mapping` spec; item ids must be unique across all configured
-datasets.
+datasets — when a natural key repeats across datasets, compose a unique id with
+`mapping.id` (see [Configuration](Configuration.md#composite-item-ids)).
 
 ## Facets and conditions
 

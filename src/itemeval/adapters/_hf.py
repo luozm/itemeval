@@ -1,5 +1,6 @@
 """HuggingFace dataset adapter: pinned revision + field mapping -> canonical Items."""
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,55 @@ def _dir_size_bytes(path: Path) -> "int | None":
         return None
 
 
+_ID_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+
+
+def _synthesize_id(
+    record: "dict[str, Any]", index: int, mapping: MappingSpec, dataset_id: str
+) -> str:
+    """Build Item.id from mapping.id: a column, joined columns, or a template.
+
+    Segments join with ":". A segment with "{" is a template over record columns
+    plus a synthetic "{dataset}" token (the dataset basename); a plain segment is
+    a column name (today's behavior — a single plain column is byte-for-byte
+    unchanged). None falls back to the row index.
+    """
+    if mapping.id is None:
+        return str(index)
+    segments = [mapping.id] if isinstance(mapping.id, str) else mapping.id
+    dataset_token = dataset_id.split("/")[-1]
+
+    def render(seg: str) -> str:
+        if "{" not in seg and "}" not in seg:  # plain column name
+            if seg not in record:
+                raise AdapterError(
+                    f"dataset {dataset_id!r}: mapping.id column {seg!r} not in record "
+                    f"(available: {sorted(record)})"
+                )
+            return str(record[seg])
+
+        def sub(m: "re.Match[str]") -> str:
+            key = m.group(1)
+            if key == "dataset":
+                return dataset_token
+            if key in record:
+                return str(record[key])
+            raise AdapterError(
+                f"dataset {dataset_id!r}: unknown mapping.id placeholder '{{{key}}}' "
+                f"(available: dataset, {', '.join(sorted(record))})"
+            )
+
+        rendered = _ID_PLACEHOLDER.sub(sub, seg)
+        if "{" in rendered or "}" in rendered:
+            raise AdapterError(
+                f"dataset {dataset_id!r}: malformed mapping.id segment {seg!r} "
+                "(unbalanced '{' or '}')"
+            )
+        return rendered
+
+    return ":".join(render(seg) for seg in segments)
+
+
 def _record_to_item(
     record: "dict[str, Any]", index: int, mapping: MappingSpec, dataset_id: str
 ) -> Item:
@@ -34,7 +84,7 @@ def _record_to_item(
             )
         return record[column]
 
-    item_id = str(require(mapping.id)) if mapping.id else str(index)
+    item_id = _synthesize_id(record, index, mapping, dataset_id)
 
     input_val = require(mapping.input)
     input_text = "" if input_val is None else str(input_val)

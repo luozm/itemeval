@@ -1,9 +1,9 @@
 # Implementation plan — composite-item-id (templated/composite `mapping.id` for multi-dataset pooling)
 
-**Status: IN PROGRESS (started 2026-06-17).** Written 2026-06-17 against the
-current tree (no inspect_ai surface is touched — this is a config + HF-adapter
-change only). This file is the working brief for a fresh implementation
-session: it carries all context that session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-17.** Written 2026-06-17 against the current tree
+(no inspect_ai surface was touched — a config + HF-adapter change only). This
+file is the design record; it was the working brief for the implementation
+session. The original reading order, kept for provenance:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. This feature's checklist

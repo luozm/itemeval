@@ -172,42 +172,6 @@ deps (correlations via pandas; no scipy). ~200 lines.
 careful hand-rolling — start with correlations + exact agreement, add alpha
 later if demand shows.
 
-### Composite / templated item ids for multi-dataset studies
-**Key:** `composite-item-id`
-
-**Motivation.** `mapping.id` takes a single column and `load_items` requires
-globally-unique ids across datasets. Datasets that share a natural key (a
-per-split row index; a per-release problem number repeated each year) therefore
-can't be pooled in one study — the load aborts on a duplicate id, and omitting
-`id` falls back to a per-dataset row index that collides too. Pooling related
-datasets (years, splits, variants) into one crossed design is a common need.
-
-**Design sketch.**
-
-```yaml
-benchmark:
-  datasets:
-    - {id: org/set_2025, ...}
-    - {id: org/set_2026, ...}
-  mapping:
-    id: ["{dataset}", problem_idx]   # composite -> "set_2026:6"
-```
-
-`mapping.id` accepts a single column (today), a list of columns joined with a
-separator, or a template string over record columns plus a synthetic
-`{dataset}` token. Synthesized ids must still be unique (the existing guard
-stays, now satisfiable). Single-column configs are byte-for-byte unchanged — the
-id is the join key across every store, so existing studies' ids must not move.
-
-**Implementation notes.** `_config.py` (`MappingSpec.id: str | list[str]` + the
-template form), `adapters/_hf.py` (`_record_to_item` id synthesis),
-`adapters/_base.py` (guard message points at the composite knob). ~50 lines +
-tests.
-
-**Open questions.** Separator choice (`:` vs `/`) and escaping if a value
-contains it. Whether to offer one-flag auto-namespacing (`dataset_id` prefix)
-for the common case alongside the explicit template.
-
 ### Capability legibility for agents (discover before you run)
 **Key:** `capability-legibility`
 

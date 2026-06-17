@@ -118,6 +118,13 @@ Key config rules that bite agents (full reference:
   file under `prompts_dir`/`rubrics_dir` (relative to the config file). Solver
   prompts must contain `{input}`; rubrics must contain `{input}` and
   `{solution}`.
+- Pooling datasets that share a natural key (a row index, a per-year problem
+  number) — item ids must be unique across datasets, so give them a composite
+  `mapping.id`: a list of columns, or a template with a `{dataset}` token
+  (the dataset basename), joined with `:` —
+  `mapping.id: ["{dataset}", problem_idx]` → `set_2026:6`. A single column is
+  unchanged. Without it, two datasets reusing a key abort with `duplicate item
+  id` (exit 2). See [Configuration](Configuration.md#composite-item-ids).
 - Reasoning models need `max_tokens` headroom for hidden reasoning **plus**
   the visible answer; if `grade`/`status` report `empty` solutions, raise
   `max_tokens` or lower `reasoning_effort` and set `solvers.on_empty: rerun`.
@@ -158,6 +165,7 @@ itemeval.export_study(cfg)
 |---|---|---|
 | exit 2, pydantic message naming a field | invalid config | fix that field |
 | exit 2, `local template 'x' not found` | bare name with no local file | create the file, or use `builtin:x` |
+| exit 2, `duplicate item id ... in datasets` | pooled datasets share a natural key | give items a unique id via composite `mapping.id` (e.g. `["{dataset}", <col>]`); see [Configuration](Configuration.md#composite-item-ids) |
 | exit 3 | gate wants confirmation | surface cost to user; `--yes` if authorized |
 | exit 4 | projection > `max_usd` | stop; report; user decides |
 | exit 1 + `ERROR:` on a condition line | whole condition failed (auth, provider down) | check the named exception; fix env/keys; re-run |

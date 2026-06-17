@@ -54,9 +54,24 @@ class MappingSpec(BaseModel):
 
     input: str
     target: str | None = None
-    id: str | None = None  # record column -> Item.id (else row index)
+    # record column -> Item.id (else row index). A list of segments joined with
+    # ":" (multi-column natural keys); a segment containing "{" is a template
+    # over record columns + a synthetic "{dataset}" token (the dataset basename)
+    # — e.g. ["{dataset}", problem_idx] -> "set_2026:6". A single column name is
+    # unchanged. See adapters/_hf.py:_synthesize_id and Configuration#composite-item-ids.
+    id: str | list[str] | None = None
     grading_scheme: str | None = None
     metadata: list[str] = Field(default_factory=list)
+
+    @field_validator("id")
+    @classmethod
+    def _check_id(cls, v: "str | list[str] | None") -> "str | list[str] | None":
+        if isinstance(v, list) and not v:
+            raise ValueError("mapping.id list must be non-empty")
+        for seg in [v] if isinstance(v, str) else (v or []):
+            if not seg.strip():
+                raise ValueError("mapping.id entries must be non-empty")
+        return v
 
 
 class BenchmarkConfig(BaseModel):

@@ -125,6 +125,25 @@ def test_grader_temperature_rejected():
         GraderSpec(model="m/j", temperature=0.5)
 
 
+def test_mapping_id_accepts_composite_forms():
+    from itemeval._config import MappingSpec
+
+    assert MappingSpec(input="q", id="problem_idx").id == "problem_idx"
+    assert MappingSpec(input="q", id=["{dataset}", "problem_idx"]).id == [
+        "{dataset}",
+        "problem_idx",
+    ]
+
+
+def test_mapping_id_rejects_empty():
+    from itemeval._config import MappingSpec
+
+    with pytest.raises(Exception, match="non-empty"):
+        MappingSpec(input="q", id=[])
+    with pytest.raises(Exception, match="non-empty"):
+        MappingSpec(input="q", id=["ok", " "])
+
+
 def test_load_config_missing_file(tmp_path):
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "nope.yaml")

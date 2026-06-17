@@ -134,7 +134,9 @@ def load_items(config: ExperimentConfig, locks_path: Path) -> list[LoadedDataset
             if item.id in seen:
                 raise AdapterError(
                     f"duplicate item id {item.id!r} in datasets "
-                    f"{seen[item.id]!r} and {ds.dataset_id!r}"
+                    f"{seen[item.id]!r} and {ds.dataset_id!r} — if the same natural key "
+                    "repeats across datasets, make ids unique with a composite mapping.id "
+                    '(e.g. ["{dataset}", <col>]); see Configuration#composite-item-ids'
                 )
             seen[item.id] = ds.dataset_id
     return loaded
