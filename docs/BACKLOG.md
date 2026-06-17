@@ -117,6 +117,77 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
+### Candidate-model sampling — random / stratified, seeded
+**Key:** `model-sampling`
+
+**Motivation.** Sibling to `item-sampling`, for the *model* facet. When
+candidates are drawn from a large roster (OpenRouter is ~400 models — the set
+itemeval's pricing table already tracks), no study runs the full set, so the
+model list *is* a sampling decision. Done outside the package it is invisible
+to the study card, so the manifest can't attest how models were chosen — a
+hole in reproducibility-by-construction for the model dimension. Recording
+`(universe, n, seed, stratify_by)` + the drawn ids closes it, and lets `model`
+serve as a defensible **random facet** (generalize to the roster) when a design
+wants that, not only the usual fixed facet.
+
+**Design sketch.** Models live in `solvers.models`, so the knob is
+`solvers.sample` (mirroring `item-sampling`'s `benchmark.sample`), XOR with
+an explicit `solvers.models`:
+
+```yaml
+solvers:
+  sample:
+    n: 20
+    seed: 7
+    stratify_by: provider          # provider = the model-id org segment
+    universe: pricing-table        # | a file path | an inline list of ids
+    where:                         # roster-only filter
+      provider: [anthropic, openai, google]
+      max_output_usd_per_mtok: 15
+```
+
+Resolve the universe, draw, and the drawn ids populate `solvers.models` before
+grid expansion — so crossing/estimator/grid see an ordinary model list.
+Deterministic given `(seed, sorted universe ids)`. Pinned like a dataset: a new
+`model_locks.json` records the universe content hash + full universe +
+`(n, seed, stratify_by, where)` + resulting ids. The lock freezes the draw:
+later runs reuse it; a roster that drifts only *warns* (draw stands), while a
+changed sample spec **fails loudly** (clear the lock to re-draw). `status`/resume
+see a stable model set; the manifest + `STUDY_CARD.md` record the same facts →
+provenance complete, and "fixed after sampling once" falls out of the lock.
+
+**Universe sources (v1, all already on disk).** An inline list, a **file** of
+ids (input-path-relative-to-config rule), or `pricing-table` (the `openrouter/*`
+roster itemeval's pricing table already tracks). A *live* roster fetch is **not**
+planned — the pricing table *is* the roster and is refreshed by the existing
+`--refresh-pricing` mechanism, so no new network path is needed. The roster is
+narrowed by a v1 `where:` filter — a `provider` allowlist + `max_output_usd_per_mtok`
+ceiling — because the raw ~400-model roster includes free/toy/non-chat models
+(a provider allowlist also acts as a junk filter).
+
+**Follow-on (designed, not v1).** Recorded so the design isn't lost:
+- **Richer `stratify_by`** — strata beyond `provider` (model family, price
+  tier). Needs per-model metadata itemeval doesn't hold yet; v1 stratifies only
+  by the org segment of the model id.
+- **Modality-aware filtering** — exclude non-chat/embedding/vision models from
+  the roster (the real fix for roster junk). Needs `refresh_pricing` to keep
+  OpenRouter's architecture/modality fields, which it currently drops (prices
+  only) — a pricing-cache schema change. Until then `pricing-table` is
+  best-effort; the explicit list/file is the fully-curated path.
+
+**Implementation notes.** `_config.py` (`solvers.models` becomes optional, XOR a
+new `sample` model + `where`), `_prepare.py` (resolve universe + draw, after the
+pricing table loads since that's the roster source), a `model_locks.json` writer
+paralleling `dataset_locks.json`, `_manifest.py` + the study-card renderer
+(record). `stratify_by: provider` derives the org segment (handling the
+`openrouter/<org>/<model>` shape). Estimator/grid unchanged (canonical model
+list). Engine-free (no inspect import). ~120–160 lines + hermetic tests
+(stub roster).
+
+**Open questions.** Interaction with `--condition` filters and
+`partial-crossing` (sampled models are an ordinary facet list, so both should
+compose — confirm at build time).
+
 ### Custom scorer plugin point + more built-in verifiable scorers
 **Key:** `scorer-plugins`
 
