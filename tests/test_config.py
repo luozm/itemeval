@@ -146,3 +146,80 @@ def test_load_config_rejects_non_mapping(tmp_path):
     p.write_text("- just\n- a list\n")
     with pytest.raises(ConfigError, match="mapping"):
         load_config(p)
+
+
+def test_solvers_sample_pricing_table_with_where():
+    import yaml
+
+    data = yaml.safe_load(README_SKETCH)
+    data["solvers"] = {
+        "sample": {
+            "n": 20,
+            "seed": 7,
+            "stratify_by": "provider",
+            "universe": "pricing-table",
+            "where": {"provider": ["anthropic", "openai"], "max_output_usd_per_mtok": 15},
+        }
+    }
+    cfg = ExperimentConfig.model_validate(data)
+    assert cfg.solvers.models == []  # filled by the draw at prepare time
+    assert cfg.solvers.sample.n == 20
+    assert cfg.solvers.sample.where.provider == ["anthropic", "openai"]
+
+
+def test_solvers_models_xor_sample():
+    import yaml
+
+    both = yaml.safe_load(README_SKETCH)
+    both["solvers"]["sample"] = {"n": 2, "seed": 1, "universe": "pricing-table"}
+    with pytest.raises(Exception, match="exactly one of models / sample"):
+        ExperimentConfig.model_validate(both)
+
+    neither = yaml.safe_load(README_SKETCH)
+    neither["solvers"].pop("models")
+    with pytest.raises(Exception, match="exactly one of models / sample"):
+        ExperimentConfig.model_validate(neither)
+
+
+def test_sample_inline_list_universe():
+    import yaml
+
+    data = yaml.safe_load(README_SKETCH)
+    data["solvers"] = {"sample": {"n": 2, "seed": 1, "universe": ["m/a", "m/b", "m/c"]}}
+    cfg = ExperimentConfig.model_validate(data)
+    assert cfg.solvers.sample.universe == ["m/a", "m/b", "m/c"]
+
+    data["solvers"]["sample"]["n"] = 5  # n > universe size
+    with pytest.raises(Exception, match="exceeds"):
+        ExperimentConfig.model_validate(data)
+
+    data["solvers"]["sample"] = {"n": 2, "seed": 1, "universe": ["m/a", "m/a", "m/b"]}
+    with pytest.raises(Exception, match="unique"):
+        ExperimentConfig.model_validate(data)
+
+
+def test_sample_where_rejected_for_curated_universe():
+    import yaml
+
+    for universe in (["m/a", "m/b"], "models.txt"):  # inline list and file path
+        data = yaml.safe_load(README_SKETCH)
+        data["solvers"] = {
+            "sample": {"n": 1, "seed": 1, "universe": universe, "where": {"provider": ["m"]}}
+        }
+        with pytest.raises(Exception, match="pricing-table"):
+            ExperimentConfig.model_validate(data)
+
+
+def test_sample_stratify_and_extra_forbid():
+    import yaml
+
+    base = {"n": 2, "seed": 1, "universe": "pricing-table"}
+    for sample in (
+        {**base, "stratify_by": "family"},
+        {**base, "bogus": 1},
+        {**base, "where": {"x": 1}},
+    ):
+        data = yaml.safe_load(README_SKETCH)
+        data["solvers"] = {"sample": sample}
+        with pytest.raises(Exception):
+            ExperimentConfig.model_validate(data)
