@@ -20,7 +20,7 @@ make fmt                # auto-format + safe lint fixes
 |---|---|---|
 | **Brainstorm a feature** | `/brainstorm` | rough idea → pressure-test (in scope? simplest?) → a [BACKLOG](docs/BACKLOG.md) section with a `**Key:**` |
 | **Long-term goals** | `/roadmap` | discuss direction; schedule BACKLOG keys into a release in [ROADMAP](ROADMAP.md) (references keys, never restates them) |
-| **Feature** | `/feature <key>` | key in [BACKLOG](docs/BACKLOG.md) → branch `feat/<key>` → `docs/plans/<key>.md` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
+| **Feature** | `/feature <key>` | key in [BACKLOG](docs/BACKLOG.md) → plan `docs/plans/<key>.md` → commit docs to `main` → branch `feat/<key>` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
 | **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → `make check` → commit (`fix:`) → push |
 | **Release** | `/release` | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
 | **Pre-push gate** | — *(auto)* | the `pre-push` hook runs `make check` on every push — nothing to type |
@@ -84,22 +84,31 @@ CHANGELOG `Closes: <key>`.
 2. **Plan it.** Copy [docs/plans/TEMPLATE.md](docs/plans/TEMPLATE.md) to
    `docs/plans/<key>.md`; that file tracks work status (NOT STARTED → IN
    PROGRESS → IMPLEMENTED). Scheduling stays in ROADMAP, not the plan.
-3. **Branch:** `git checkout -b feat/<key>`.
-4. **Build it.** Keep the simplest thing that satisfies the spec — no
+3. **Commit the planning docs to `main` first** — *before* branching, as
+   `docs:` commits: the BACKLOG entry (it's `/brainstorm`'s deliverable) and the
+   plan. **Don't combine them onto the feature branch.** Planning artifacts are
+   *inputs* to the feature, not its output; active plans live on `main`
+   (TEMPLATE.md); and keeping them off the branch makes the branch diff exactly
+   *the implementation + its same-change paperwork* — so the shipping commit's
+   BACKLOG **removal** (step 7) reads as a clean deletion, not the back-half of
+   an add/remove churn. If the plan investigation forced a correction to the
+   BACKLOG entry, commit that fix here too.
+4. **Branch:** `git checkout -b feat/<key>`.
+5. **Build it.** Keep the simplest thing that satisfies the spec — no
    speculative knobs (CLAUDE.md "don't over-engineer"). Code touching
    `inspect_ai` follows the boundary rules in [DEVELOPMENT.md](DEVELOPMENT.md)
    (wrap don't fork; pass through don't rename; flatten at the public API).
    New config/data schemas are pydantic models.
-5. **Pass the UX contract.** Run the development checklist in
+6. **Pass the UX contract.** Run the development checklist in
    [docs/UX-PATTERNS.md](docs/UX-PATTERNS.md) — no silent side effects, consent
    rules, hint framework, knob buckets. This is binding, not advisory.
-6. **Apply the same-change rule** (in the *same commit* as the user-visible
+7. **Apply the same-change rule** (in the *same commit* as the user-visible
    change): add a `[Unreleased]` entry to [CHANGELOG.md](CHANGELOG.md) with
    `Closes: <key>`; **remove** the shipped section from
    [docs/BACKLOG.md](docs/BACKLOG.md) (its design record lives on in the plan,
    which moves to `docs/plans/archive/`); update the wiki and the UX-PATTERNS
    ledger if the surface changed.
-7. **Green before PR:** `make check` (lint + fast tests, what CI runs). If you
+8. **Green before PR:** `make check` (lint + fast tests, what CI runs). If you
    changed the public API or CLI surface, expect
    `tests/test_public_api_snapshot.py` to go red — update the golden set
    deliberately, in the same change.
