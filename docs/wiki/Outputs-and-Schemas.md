@@ -37,11 +37,13 @@ download_bytes, pinned_now}`).
 [Configuration](Configuration#field-notes)). It pins the drawn set — the sample
 spec, the full universe and its content hash, and the resulting model ids — so
 later runs reuse the same models (a roster that drifts only warns; a changed
-sample spec fails loudly). A command prints
+sample spec — including `allocation`, `include`, or `where.released_after` —
+fails loudly). A command prints
 `models: sampled N of M … — pinned in model_locks.json` on the first draw and a
 reuse line afterward; the same facts ride JSON as `model_sample`
-(`{source, universe_size, universe_hash, n, seed, stratify_by, models,
-pinned_now, universe_drift}`) on estimate/generate/grade/status, and are
+(`{source, universe_size, universe_hash, n, seed, stratify_by, allocation,
+include, models, pinned_now, universe_drift}`) on estimate/generate/grade/status,
+and are
 recorded in each run manifest and `STUDY_CARD.md`.
 
 ## `solutions.parquet` (key: condition_id, item_id, epoch)

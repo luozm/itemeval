@@ -5,6 +5,7 @@ files exist, grader names defined) is deferred to prepare/grid-expansion so
 the README sketch validates as-is.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -85,8 +86,8 @@ class BenchmarkConfig(BaseModel):
 PRICING_TABLE_UNIVERSE = "pricing-table"  # reserved `universe` keyword (the roster)
 # stratify_by dimensions that read per-model roster metadata (vs `provider`,
 # which is derivable from any model id) — valid only for a pricing-table universe.
-METADATA_STRATA = ("reasoning", "multimodal", "price_tier", "context_tier")
-StratifyBy = Literal["provider", "reasoning", "multimodal", "price_tier", "context_tier"]
+METADATA_STRATA = ("reasoning", "multimodal", "price_tier", "context_tier", "recency")
+StratifyBy = Literal["provider", "reasoning", "multimodal", "price_tier", "context_tier", "recency"]
 
 
 class ModelUniverseFilter(BaseModel):
@@ -104,6 +105,22 @@ class ModelUniverseFilter(BaseModel):
     reasoning: bool | None = None  # keep only reasoning (True) / non-reasoning (False) models
     multimodal: bool | None = None  # keep only multimodal (True) / text-only (False) models
     min_context_length: int | None = Field(default=None, ge=1)  # keep models with >= this context
+    # Absolute YYYY-MM-DD release cutoff (uses the roster's `created` timestamp);
+    # keep only models released on/after it. Absolute, never wall-clock age, so a
+    # pinned table draws identically. Models without a `created` date are dropped.
+    released_after: str | None = None
+
+    @field_validator("released_after")
+    @classmethod
+    def _check_released_after(cls, v: "str | None") -> "str | None":
+        if v is not None:
+            try:
+                datetime.strptime(v, "%Y-%m-%d")
+            except ValueError as e:
+                raise ValueError(
+                    f"released_after must be an absolute date YYYY-MM-DD, got {v!r}"
+                ) from e
+        return v
 
 
 class ModelSample(BaseModel):
@@ -120,6 +137,14 @@ class ModelSample(BaseModel):
     n: int = Field(ge=1)
     seed: int
     stratify_by: StratifyBy | None = None
+    # Per-stratum apportionment. "proportional" (default) allocates n by stratum
+    # size (large vendors dominate); "equal" balances n across strata (requires
+    # stratify_by). Changes the drawn set, hence the grid — a design declaration.
+    allocation: Literal["proportional", "equal"] = "proportional"
+    # Pinned model ids always present, counted against n; the seeded draw fills
+    # the rest. Bypasses `where` and universe membership (purposive). When also
+    # stratified, pins count toward their stratum's balanced share (not on top).
+    include: list[str] = Field(default_factory=list)
     universe: str | list[str]  # "pricing-table" | a file path | an inline list
     where: ModelUniverseFilter | None = None
 
@@ -144,6 +169,18 @@ class ModelSample(BaseModel):
             raise ValueError(
                 f"solvers.sample.stratify_by: {self.stratify_by} reads roster metadata, so it "
                 "requires universe: pricing-table; use stratify_by: provider for list/file universes"
+            )
+        if self.allocation == "equal" and self.stratify_by is None:
+            raise ValueError(
+                "solvers.sample.allocation: equal requires stratify_by (it balances n "
+                "across strata); drop allocation or set stratify_by"
+            )
+        if len(set(self.include)) != len(self.include):
+            raise ValueError("solvers.sample.include entries must be unique")
+        if len(self.include) > self.n:
+            raise ValueError(
+                f"solvers.sample.include ({len(self.include)} ids) exceeds n ({self.n}) — "
+                "pinned models are counted against n"
             )
         return self
 

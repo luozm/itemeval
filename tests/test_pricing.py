@@ -84,6 +84,7 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
                 },
                 "supported_parameters": ["max_tokens", "temperature", "reasoning"],
                 "context_length": 131072,
+                "created": 1727308800,  # OpenRouter release timestamp (Unix seconds)
             },
             {
                 "id": "meta/router",  # no generation params -> not a runnable text model
@@ -106,6 +107,8 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
     assert price.text_model is True  # text in/out + generation params
     assert price.reasoning is True and price.multimodal is True  # has reasoning + image input
     assert price.context_length == 131072
+    assert price.created == 1727308800  # release timestamp captured for recency
+    assert table.models["openrouter/meta/router"].created is None  # absent -> None
     assert table.models["openrouter/meta/router"].text_model is False  # empty params
     assert (tmp_path / "user.json").is_file()
     # The persisted user table is now picked up by load_pricing.

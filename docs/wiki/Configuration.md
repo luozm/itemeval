@@ -114,11 +114,14 @@ budget:
       n: 20
       seed: 7
       stratify_by: provider          # optional; see the dimensions below
+      allocation: equal              # optional; equal-per-stratum (default: proportional)
+      include: [openrouter/openai/gpt-5.1]   # optional; always present, counted against n
       universe: pricing-table        # | a file path | an inline list of ids
       where:                         # pricing-table only
         provider: [anthropic, openai, google]
         max_output_usd_per_mtok: 15
         min_context_length: 131072
+        released_after: "2025-01-01" # keep only models released on/after this date
         reasoning: true              # keep only reasoning models
         multimodal: false            # keep only text-only models
   ```
@@ -129,32 +132,73 @@ budget:
   first to sample today's roster); a **file** path of ids (one per line, `#`
   comments allowed), resolved relative to the config file; or an **inline list**.
 
-  **`stratify_by`** balances the draw proportionally across one dimension:
-  `provider` (the model-id org — works for any universe), or — for a
-  `pricing-table` universe only — `reasoning`, `multimodal`, `price_tier`, or
-  `context_tier`. Tier edges are fixed: **price** (output $/Mtok) `free` /
-  `low` ≤ $1 / `mid` ≤ $10 / `high`; **context** `short` ≤ 32k / `medium` ≤ 128k
-  / `long` ≤ 400k / `xlong`.
+  **`stratify_by`** balances the draw across one dimension: `provider` (the
+  model-id org — works for any universe), or — for a `pricing-table` universe
+  only — `reasoning`, `multimodal`, `price_tier`, `context_tier`, or `recency`.
+  Tier edges are fixed: **price** (output $/Mtok) `free` / `low` ≤ $1 / `mid` ≤
+  $10 / `high`; **context** `short` ≤ 32k / `medium` ≤ 128k / `long` ≤ 400k /
+  `xlong`; **recency** buckets by the model's **release year** (UTC), a pure
+  function of the roster's `created` date so a pinned table tiers identically.
+
+  **`allocation`** (`proportional`, the default, or `equal`; requires
+  `stratify_by`) decides how `n` is split across strata. `proportional`
+  allocates by stratum size — large-roster vendors get more slots — while
+  `equal` gives every stratum the same share (capped at the models it has, with
+  the overflow redistributed). Use `equal` for balanced coverage so a big vendor
+  can't dominate and a small one can't drop to zero.
+
+  **`include`** pins must-have model ids that are **always present and counted
+  against `n`**; the seeded draw fills the remaining `n − len(include)` slots.
+  Pinned ids bypass `where` and need not be in the universe (they are purposive
+  picks). When you also stratify, pins **count toward** their stratum's balanced
+  share rather than stacking on top of it — pinning two OpenAI models inside an
+  equal-by-provider draw means OpenAI's share is met by the pins, not doubled;
+  if you pin more than a stratum's share, all pins are kept and the rest
+  rebalances.
 
   **`where`** (pricing-table only — list/file universes are already curated)
   narrows the roster before the draw: a `provider` allowlist, a
-  `max_output_usd_per_mtok` ceiling, a `min_context_length` floor, and
-  `reasoning` / `multimodal` booleans.
+  `max_output_usd_per_mtok` ceiling, a `min_context_length` floor, a
+  `released_after` **absolute** `YYYY-MM-DD` release cutoff (uses `created`;
+  drops undated models; never wall-clock age, so a pinned table draws
+  identically), and `reasoning` / `multimodal` booleans.
 
   The draw is **pinned** in `model_locks.json` beside the study: later runs reuse
   the same models, a roster that has since changed only prints a warning (the
-  pinned draw stands), and changing `n`/`seed`/`stratify_by`/`where` fails loudly
-  — delete `model_locks.json` to re-draw (existing solutions for dropped models
-  remain). The drawn set, universe size, and seed are recorded in the run
-  manifest and `STUDY_CARD.md` and printed as a `models: sampled N of M …` line.
+  pinned draw stands), and changing `n`/`seed`/`stratify_by`/`allocation`/
+  `include`/`where` fails loudly — delete `model_locks.json` to re-draw (existing
+  solutions for dropped models remain). The drawn set, universe size, and seed
+  are recorded in the run manifest and `STUDY_CARD.md` and printed as a
+  `models: sampled N of M …` line.
+
+  **Evaluating the current SOTA frontier?** The honest way to get one flagship
+  per vendor is to **name them with `include`** — "latest by release date" is not
+  a flagship proxy (vendors ship cheap `…-mini`/`…-nano`/preview variants *after*
+  the flagship), and no roster field reliably marks the flagship, so itemeval
+  does not guess one. Pin the models you mean:
+
+  ```yaml
+  solvers:
+    sample:
+      n: 5
+      seed: 7
+      universe: pricing-table
+      include:                       # the flagships you consider SOTA
+        - openrouter/anthropic/claude-opus-4.8
+        - openrouter/openai/gpt-5.1
+        - openrouter/google/gemini-3-pro
+        - openrouter/x-ai/grok-5
+        - openrouter/deepseek/deepseek-v4
+  ```
 
   The `pricing-table` universe is restricted to OpenRouter's **runnable text
   models** — those that take text and emit text and expose generation parameters
   — so embedding and meta/router entries are never sampled. The roster metadata
   that powers the universe filter, `where`, and the metadata `stratify_by`
-  dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`) is
-  captured by `--refresh-pricing`, so run a refresh once before sampling from
-  `pricing-table` (the empty-universe error reminds you).
+  dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`, and the
+  `created` release date behind `released_after` / `recency`) is captured by
+  `--refresh-pricing`, so run a refresh once before sampling from `pricing-table`
+  (the empty-universe and recency errors remind you).
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
   template in one of two namespaces, never mixed or silently shadowed:
   `builtin:NAME` resolves to a template packaged inside itemeval (run

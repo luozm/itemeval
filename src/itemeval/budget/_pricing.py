@@ -33,6 +33,10 @@ class ModelPrice(BaseModel):
     reasoning: bool | None = None  # exposes a reasoning parameter
     multimodal: bool | None = None  # accepts more than text as input
     context_length: int | None = None  # max context window (tokens)
+    # OpenRouter release timestamp, Unix seconds (the top-level `created` field;
+    # verified unit 2026-06-17). Powers `released_after` filtering and the
+    # `recency` stratify dimension; None for the packaged seed / pinned tables.
+    created: int | None = None
 
 
 class PricingTable(BaseModel):
@@ -119,6 +123,7 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             reasoning="reasoning" in params,
             multimodal=len(in_mods) > 1,
             context_length=entry.get("context_length"),
+            created=entry.get("created"),
         )
         table.models[f"openrouter/{model_id}"] = price
         if model_id not in table.models:  # seed wins for native ids
