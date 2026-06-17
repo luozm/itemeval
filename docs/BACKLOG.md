@@ -172,6 +172,79 @@ deps (correlations via pandas; no scipy). ~200 lines.
 careful hand-rolling — start with correlations + exact agreement, add alpha
 later if demand shows.
 
+### Composite / templated item ids for multi-dataset studies
+**Key:** `composite-item-id`
+
+**Motivation.** `mapping.id` takes a single column and `load_items` requires
+globally-unique ids across datasets. Datasets that share a natural key (a
+per-split row index; a per-release problem number repeated each year) therefore
+can't be pooled in one study — the load aborts on a duplicate id, and omitting
+`id` falls back to a per-dataset row index that collides too. Pooling related
+datasets (years, splits, variants) into one crossed design is a common need.
+
+**Design sketch.**
+
+```yaml
+benchmark:
+  datasets:
+    - {id: org/set_2025, ...}
+    - {id: org/set_2026, ...}
+  mapping:
+    id: ["{dataset}", problem_idx]   # composite -> "set_2026:6"
+```
+
+`mapping.id` accepts a single column (today), a list of columns joined with a
+separator, or a template string over record columns plus a synthetic
+`{dataset}` token. Synthesized ids must still be unique (the existing guard
+stays, now satisfiable). Single-column configs are byte-for-byte unchanged — the
+id is the join key across every store, so existing studies' ids must not move.
+
+**Implementation notes.** `_config.py` (`MappingSpec.id: str | list[str]` + the
+template form), `adapters/_hf.py` (`_record_to_item` id synthesis),
+`adapters/_base.py` (guard message points at the composite knob). ~50 lines +
+tests.
+
+**Open questions.** Separator choice (`:` vs `/`) and escaping if a value
+contains it. Whether to offer one-flag auto-namespacing (`dataset_id` prefix)
+for the common case alongside the explicit template.
+
+### Capability legibility for agents (discover before you run)
+**Key:** `capability-legibility`
+
+**Motivation.** A downstream agent writing a study config can't see what
+itemeval already supports without reading the source: it hand-rolls a separate
+pilot instead of `--policy dev`, guesses at valid `stratify_by`/`where` values,
+or misses template placeholders. Post-hoc hints (emitted after a command runs)
+are too late for an agent composing config and code up front — capabilities must
+be discoverable *before* execution.
+
+**Design sketch.** Two drift-resistant mechanisms in code plus a thin guide:
+1. **Self-documenting scaffold + `--help`.** `init`'s config comments enumerate
+   valid enum values inline (the `stratify_by` set, the `where` filters, the
+   policies); each subcommand's `--help` lists its choices; `--policy dev` is
+   named as *the* built-in pilot in the scaffold next-steps and in
+   `estimate`/`status` output.
+2. **Validation that teaches.** A wrong config errors with the valid set named
+   (unknown `stratify_by` → lists the options; unknown `{placeholder}` → lists
+   the supported placeholders).
+3. **A short agent guide** (`AGENTS.md` / a wiki "writing a study" page) that
+   points at 1–2 and the canonical commands and pitfalls.
+
+Plus a **UX-PATTERNS contract** line: every capability must be discoverable
+before execution (scaffold/help/guide), not only via post-hoc hints.
+
+**Implementation notes.** `cli.py` (richer `--help` choices, scaffold
+next-steps, the pilot line in `estimate`/`status`), the `init` scaffold (inline
+enum comments), `_config.py`/`_templates.py` (teaching validation errors),
+`docs/UX-PATTERNS.md` (the new contract row), `docs/wiki/` + `AGENTS.md` (the
+guide). Mostly strings and validation messages; no behaviour change. ~120 lines
++ a doc page.
+
+**Open questions.** Whether to also ship a machine-readable surface
+(`itemeval schema` emitting the pydantic JSON Schema + adapters/policies/
+placeholders) for full agent introspection — cleanest but more build; defer
+unless the scaffold/help tier proves insufficient.
+
 ---
 
 ## Tier 2 — measurement depth
@@ -341,6 +414,157 @@ DataFrame from the long table; no new file formats.
 as `itemeval.pivot_scores(...)` etc., or documentation-only. Start as wiki
 recipes in Tutorial 3/4; promote to code when the recipes stabilize.
 
+### Expressive model-sample composition (recency, equal allocation, pinned set)
+**Key:** `model-sample-composition`
+
+**Motivation.** `solvers.sample` draws a seeded random sample, but `stratify_by`
+allocates *proportionally only* (largest-remainder), so large-roster vendors
+dominate and small ones drop to zero; there is no recency dimension, so a
+price-bounded draw surfaces mostly old models nobody benchmarks; and there is no
+way to pin must-include models alongside the random draw. Real panels need
+balanced coverage, a recency floor, and a purposive+random hybrid — without
+these, an honest "random sample of current LLMs" is hard to express and users
+fall back to hand-curated frames (which weakens the generalization claim).
+
+**Design sketch.**
+
+```yaml
+solvers:
+  sample:
+    n: 25
+    seed: 42
+    where: {released_after: "2025-01-01", max_output_usd_per_mtok: 15}
+    stratify_by: provider
+    allocation: equal          # equal-per-stratum (default: proportional)
+    include: [openrouter/openai/gpt-5.1]   # always present; random fills the rest
+```
+
+- **Recency** as both a `where` filter (`released_after`, an *absolute* cutoff,
+  not wall-clock age, so a pinned table → identical draw) and a
+  `stratify_by: recency` tier. Requires persisting the OpenRouter `created`
+  timestamp on `ModelPrice` (currently never fetched).
+- **`allocation: equal | proportional`** on `ModelSample`.
+- **`include:`** pinned ids counted against `n`; the seeded draw fills the rest.
+
+**Implementation notes.** `budget/_pricing.py` (fetch + persist `created`; bump
+a pricing-table `schema_version`), `_config.py` (`released_after` on
+`ModelUniverseFilter`, `recency` in `StratifyBy`, `allocation`/`include` on
+`ModelSample`), `_modelsample.py` (recency stratum + filter, equal-allocation
+path, include-then-fill in `_draw`), provenance line + manifest. Stage in the
+plan: recency first, then allocation/include. ~150 lines + tests.
+
+**Open questions.** Equal allocation when `n` isn't divisible by stratum count
+(largest-remainder over the equal quota). Whether `include:` bypasses `where`
+(yes — purposive picks are intentional). A hint when a proportional draw
+silently zeros a stratum, even after `equal` exists.
+
+### Per-model generation config (heterogeneous rosters; structurally-missing cells)
+**Key:** `per-model-config`
+
+**Motivation.** A `model_config` facet applies one
+`reasoning_effort`/`reasoning_tokens` to *all* solvers, so a thinking-on/off
+facet can't be crossed with a heterogeneous roster: a single value can't toggle
+reasoning per provider, non-reasoning models error or no-op, and there is no way
+to mark a (model, config) cell as structurally absent. The cleanest "same base
+model, two modes" comparison is currently inexpressible over a mixed object set.
+
+**Design sketch.**
+
+```yaml
+facets:
+  model_config:
+    - name: think
+      reasoning_effort: high
+      overrides:                       # per-model reasoning settings
+        openrouter/anthropic/claude-opus-4.8: {reasoning_tokens: 8000}
+      skip_models: [openrouter/openai/gpt-3.5-turbo]   # cell recorded as missing
+```
+
+A facet keeps its global default and gains optional per-model `overrides` and a
+`skip_models` set. Skipped (model, config) cells are recorded as structurally
+missing (not run, not errored) so the grid and downstream analysis see an
+explicit hole, not a silent gap.
+
+**Implementation notes.** `_config.py` (`ModelConfigFacet.overrides`,
+`.skip_models`), `design/_grid.py` (`resolve_gen_params` per (model, facet);
+`expand_generate_grid` drops + records skipped cells), `generate/_params.py`,
+the manifest/grid record. Pre-flight: a facet requesting reasoning on a model
+the roster knows is non-reasoning fails at grid-build, not mid-run (folds in the
+late-error robustness fix). ~120 lines + tests.
+
+**Open questions.** How "this model supports reasoning" is known pre-flight
+(pricing-table `reasoning` flag vs. a runtime probe). Whether `skip_models` is
+per-facet or a global (model, facet) exclusion matrix for many holes.
+
+### Item covariates in the long export
+**Key:** `item-covariates-export`
+
+**Motivation.** `mapping.metadata: [cols]` is captured and written to
+`items.parquet`, but `read_items()` is never called, so item covariates (and
+`grading_scheme`) never reach the export — the long table has no per-item columns
+to analyze against (difficulty by topic, score by max-points, year/split).
+Studies must re-join the source dataset by hand. The capture/persist plumbing
+exists; only read-back and projection are missing.
+
+**Design sketch.** At export, join `items.parquet` into the long table by
+`(item_id, dataset_id)` and project declared covariates — flattened columns for
+declared `mapping.metadata` keys, plus `grading_scheme`, and an optional
+`score_norm` (raw `score` ÷ a declared per-item max) for cross-rubric
+comparability. The export schema stays stable for configs that declare no
+metadata.
+
+**Implementation notes.** Revive `read_items()` (`store/_items.py`), join in
+`store/_export.py` (extend `EXPORT_SCHEMA` with declared covariate columns +
+`grading_scheme` + optional `score_norm`). Reconcile stale `items.parquet` rows
+on dataset change (the KNOWN-ISSUES item — fix here or before). ~90 lines +
+tests.
+
+**Open questions.** Flatten declared keys into columns vs. one `metadata_json`
+column (lean: flatten declared, JSON the rest). Where the normalization
+denominator is declared (a `mapping`-level `max_points: <col>` vs. an export
+option). Modeling (variance components, IRT) stays in the user's stats stack —
+this only widens the table.
+
+### Two-stage rubric materialization (generate-then-grade)
+**Key:** `rubric-materialization`
+
+**Motivation.** A rubric is a single static template rendered with
+`{input, solution, target, grading_scheme, id}` in one judge call. Several
+published grading protocols are two-stage: *generate a per-item rubric from the
+reference solution, freeze it, then grade every solution with that frozen
+rubric*. Today these collapse into a one-pass construct-then-grade prompt, which
+deviates from the protocol and re-derives the rubric on every grading call
+(non-reproducible, uncacheable).
+
+**Design sketch.** An optional per-item materialization step before grading: for
+each (rubric, item) the materializer LLM produces the rubric once from the
+item's reference; the result is content-hashed and cached like a template, then
+reused verbatim by every grader call for that item.
+
+```yaml
+rubrics:
+  checkpoint:
+    materialize:
+      model: openrouter/openai/gpt-5.4
+      template: rubrics/checkpoint.build.txt   # per-item rubric from {input,target,grading_scheme}
+    grade_template: rubrics/checkpoint.grade.txt  # receives the materialized {rubric}
+```
+
+Without `materialize`, grading is unchanged.
+
+**Implementation notes.** A new materialization stage (`grade/_materialize.py`
+or a pre-pass in `grade/_run.py`), a per-item rubric artifact store
+(content-hashed, reusing the items/template hashing machinery — overlaps
+`item-covariates-export`), `grade/_judge.py` (`build_judge_input` accepts a
+materialized `{rubric}`), `design/_grid.py` (record the materialized-rubric hash
+in the condition), `budget/_estimator.py` (cost the extra per-item call).
+Sizable; needs its own design pass. ~250 lines + tests.
+
+**Open questions.** Whether materialization is its own pipeline stage (with
+resume/estimate) or folded into grade. Caching key: (rubric-template hash, item
+id, materializer model). Whether the materialized rubric is exported as
+provenance.
+
 ---
 
 ## Tier 3 — scale and breadth
@@ -396,6 +620,38 @@ third component next to cache/batch.
 **Implementation notes.** `budget/_report.py` (the join + component),
 `store/_solutions.py`/`_gradings.py` (identify cache-hit rows), docs caveat
 (reuse savings are an attribution, not a discount). ~80 lines.
+
+### Native-provider batch routing for OpenRouter-sampled models
+**Key:** `native-batch-routing`
+
+**Motivation.** Models are sampled from the OpenRouter roster, but OpenRouter
+has no batch API, so the dominant (grade) stage forgoes the ~50% batch discount
+the native providers *do* offer. Most expensive models have a native API in
+`BATCH_PROVIDERS`; routing those calls natively recovers the largest single cost
+lever while keeping the one-key OpenRouter convenience for everything else.
+
+**Design sketch.** When batch mode is on, for each sampled
+`openrouter/<provider>/<model>` whose `<provider>` is in `BATCH_PROVIDERS`, the
+native key is present, and the native slug verifiably resolves, *propose*
+routing the call to the native id. Because switching the serving endpoint can
+change outputs, this is **opt-in and recorded, never silent** (UX-PATTERNS): the
+sampled `openrouter/...` id stays the model's pinned scientific identity in
+`model_locks`; the native id is recorded as the execution id and shown in the
+provenance line; routing is all-or-nothing per model and decided before any cell
+runs (resume-safe). The `estimate` surfaces the lever first ("N models route
+native → save ~$X") even before consent.
+
+**Implementation notes.** `budget/_pricing.py` (`provider_of` inner-provider
+parse; an OpenRouter→native slug map + resolve-check), `budget/_estimator.py`
+(`_batch_discount` for routed ids + the savings lever), a routing-resolution
+step before `generate/_run.py`/`grade/_run.py`, `_endpoints.py`/manifest (record
+sampled vs. execution id + the switch), a `prefer_native_batch` budget knob.
+~150 lines + tests.
+
+**Open questions.** Source of the slug map (curated table vs. heuristic strip +
+resolve-check). Whether mixing endpoints across models in one study needs a
+louder warning (endpoint confound). Interaction with `cache_schedule` (batch
+already disables cache scheduling).
 
 ### Standalone study-card command (`itemeval card`)
 **Key:** `card-command`

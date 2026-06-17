@@ -48,13 +48,20 @@ hashes into condition ids.
 ### 0.4 — Measurement depth (themed)
 
 The reliability/agreement report (`report-command`), judge-as-replicated-facet
-(`judge-replication`), and human-vs-judge ratings (`human-ratings`). Exact
-contents firmed up when 0.3 lands.
+(`judge-replication`), and human-vs-judge ratings (`human-ratings`).
+
+Also being shaped for 0.4+ — the study-design depth real crossed designs need:
+expressive model sampling (`model-sample-composition`), per-model generation
+config (`per-model-config`), multi-dataset item ids (`composite-item-id`), item
+covariates in the export (`item-covariates-export`), two-stage rubric
+materialization (`rubric-materialization`), and capability legibility so agents
+discover all of it before they run (`capability-legibility`). Exact contents
+firmed up when 0.3 lands.
 
 ### Later (vision-level)
 
-Scale & breadth (`multimodal-items`, `midcell-resume`, `reuse-savings`) and ops
-(`pypi-approval-gate`). See [docs/BACKLOG.md](docs/BACKLOG.md); a feature is
+Scale & breadth (`multimodal-items`, `midcell-resume`, `reuse-savings`,
+`native-batch-routing`) and ops (`pypi-approval-gate`). See [docs/BACKLOG.md](docs/BACKLOG.md); a feature is
 promoted here with a goal + exit criteria when scheduled.
 
 ## History
