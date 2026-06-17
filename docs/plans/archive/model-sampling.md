@@ -80,11 +80,20 @@ produce `openrouter/<org>/<model>`-shaped keys, and that the seed alone has
 enough `openrouter/*` entries to test against (else the test refreshes a stubbed
 table — never the live network). If the active table has zero `openrouter/*`
 keys, raise `ConfigError` telling the user to `--refresh-pricing` or pass an
-explicit-list universe. The raw `openrouter/*` set is then narrowed by `where`
-(W1/W2): a `provider` allowlist + `max_output_usd_per_mtok` ceiling. itemeval
-keeps only prices from the roster (modality/architecture fields are dropped by
-`refresh_pricing`), so v1 cannot filter out non-chat models — `pricing-table`
-is best-effort, the explicit list is the fully-curated path (see Out of scope).
+explicit-list universe. The roster is then narrowed two ways: **(a) reliability**
+— restricted to runnable text models (`ModelPrice.text_model`, set on refresh
+from `architecture.input/output_modalities` + non-empty `supported_parameters`),
+dropping embedding/meta/router entries; and **(b) `where`** (W1/W2) — a
+`provider` allowlist + `max_output_usd_per_mtok` ceiling.
+
+> **Post-design amendment (2026-06-17).** The original design called
+> `pricing-table` "best-effort" and deferred modality filtering, believing
+> `refresh_pricing` dropped the metadata. Inspecting the live `/api/v1/models`
+> response showed the roster is already text-in/text-out (337/337); the only
+> junk is meta/router models with empty `supported_parameters`. `refresh_pricing`
+> now records a `text_model` flag and the universe filters to it, so
+> `pricing-table` is **reliable**, not best-effort. The "Modality-aware
+> filtering" item under Out of scope is therefore implemented, not deferred.
 
 ### Provider, for stratification
 
@@ -419,12 +428,11 @@ new network path.
 
 - **Richer `stratify_by`** (family, price tier) — no clean metadata; fragile.
   Tracked in the `model-sampling` BACKLOG **Follow-on**; do not build.
-- **Modality-aware filtering** (exclude non-chat/embedding/vision models) — the
-  *real* fix for roster junk, but it needs `refresh_pricing` to keep OpenRouter's
-  `architecture`/modality fields (currently dropped — only prices are stored),
-  i.e. a pricing-cache schema change. Out of scope; note the limitation in the
-  wiki ("`pricing-table` is best-effort; use an explicit list for a fully
-  curated universe"). Add to the BACKLOG follow-on.
+- **Modality-aware filtering** (exclude non-chat/embedding/router models) —
+  ~~deferred~~ **implemented 2026-06-17** (see the Context amendment above).
+  `refresh_pricing` now records `ModelPrice.text_model` from
+  `architecture.input/output_modalities` + non-empty `supported_parameters`, and
+  the `pricing-table` universe filters to it, so the roster is reliable.
 - **Re-draw-on-spec-change with a drift warning** — v1 fails loudly and tells
   the user to clear the lock; the grow-in-place re-sample story is deferred.
 - **`item-sampling`** — a separate key; not implemented here.

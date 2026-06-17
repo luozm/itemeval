@@ -133,10 +133,12 @@ budget:
   changing `n`/`seed`/`stratify_by`/`where` fails loudly — delete
   `model_locks.json` to re-draw (existing solutions for dropped models remain).
   The drawn set, universe size, and seed are recorded in the run manifest and
-  `STUDY_CARD.md` and printed as a `models: sampled N of M …` line. Caveat:
-  `pricing-table` is best-effort — the roster can include non-chat/unrunnable
-  models (itemeval tracks only prices, not modality), so prefer an explicit
-  list/file when you need a fully curated universe.
+  `STUDY_CARD.md` and printed as a `models: sampled N of M …` line. The
+  `pricing-table` universe is restricted to OpenRouter's **runnable text models**
+  — those that take text and emit text and expose generation parameters —
+  so embedding and meta/router entries are never sampled. This capability is
+  captured by `--refresh-pricing`, so run a refresh once before sampling from
+  `pricing-table` (the empty-universe error reminds you).
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
   template in one of two namespaces, never mixed or silently shadowed:
   `builtin:NAME` resolves to a template packaged inside itemeval (run

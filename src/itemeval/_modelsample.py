@@ -71,11 +71,15 @@ def _build_universe(
     if isinstance(universe, list):
         return "explicit", sorted(set(universe))
     if universe == PRICING_TABLE_UNIVERSE:
-        ids = [k for k in pricing.models if k.startswith("openrouter/")]
+        # The roster is the openrouter/* models OpenRouter lists as runnable
+        # text->text chat models (text_model set on refresh) — a reliable
+        # universe, not the raw catalog (which also carries meta/router entries).
+        ids = [k for k, p in pricing.models.items() if k.startswith("openrouter/") and p.text_model]
         if not ids:
             raise ConfigError(
-                "solvers.sample universe: pricing-table has no openrouter/* models — "
-                "run with --refresh-pricing, or use an explicit list/file universe"
+                "solvers.sample universe: pricing-table has no runnable text models — "
+                "run with --refresh-pricing to fetch the current OpenRouter roster "
+                "(with model metadata), or use an explicit list/file universe"
             )
         if sample.where is not None:
             ids = _apply_where(ids, sample, pricing)

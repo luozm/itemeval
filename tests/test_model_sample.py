@@ -13,13 +13,13 @@ def _pricing(out_prices: "dict[str, float]") -> PricingTable:
         updated_at="2026-06-16T00:00:00Z",
         source="seed",
         models={
-            mid: ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=p)
+            mid: ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=p, text_model=True)
             for mid, p in out_prices.items()
         },
     )
 
 
-# A roster with openrouter/* models across orgs, plus a native + mock id to exclude.
+# A roster with openrouter/* text models across orgs, plus a native + mock id to exclude.
 ROSTER_PRICES = {
     "openrouter/anthropic/claude-a": 10.0,
     "openrouter/anthropic/claude-b": 30.0,
@@ -30,7 +30,14 @@ ROSTER_PRICES = {
     "mockllm/*": 0.0,
 }
 ROSTER = _pricing(ROSTER_PRICES)
-ROSTER_IDS = sorted(k for k in ROSTER_PRICES if k.startswith("openrouter/"))
+# a meta/router entry with no generation params (text_model False) — must be
+# excluded from the sampling universe even though it is openrouter/*:
+ROSTER.models["openrouter/router/meta"] = ModelPrice(
+    input_usd_per_mtok=1.0, output_usd_per_mtok=1.0, text_model=False
+)
+ROSTER_IDS = sorted(
+    k for k, p in ROSTER.models.items() if k.startswith("openrouter/") and p.text_model
+)
 
 
 def _cfg(sample: "dict | None", models: "list[str] | None" = None) -> ExperimentConfig:
@@ -67,13 +74,26 @@ def test_no_sample_is_noop(tmp_path):
     assert cfg.solvers.models == ["m/a", "m/b"]
 
 
-def test_pricing_table_universe_is_openrouter_only(tmp_path):
+def test_pricing_table_universe_is_runnable_text_models_only(tmp_path):
     cfg = _cfg({"n": 5, "seed": 1, "universe": "pricing-table"})
     res = resolve_model_sample(cfg, ROSTER, tmp_path / "model_locks.json")
     assert res.source == "pricing-table"
-    assert res.universe_size == len(ROSTER_IDS)  # excludes native + mock
+    assert res.universe_size == len(ROSTER_IDS)  # excludes native, mock, and the router
     assert set(res.models) <= set(ROSTER_IDS)
+    assert "openrouter/router/meta" not in res.models  # non-text/router excluded
     assert cfg.solvers.models == res.models  # config mutated to the draw
+
+
+def test_pricing_table_without_text_metadata_raises(tmp_path):
+    # openrouter/* keys present but none flagged text_model (e.g. a stale cache)
+    stale = PricingTable(
+        updated_at="t",
+        source="seed",
+        models={"openrouter/x/y": ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=2.0)},
+    )
+    cfg = _cfg({"n": 1, "seed": 1, "universe": "pricing-table"})
+    with pytest.raises(ConfigError, match="runnable text models.*refresh-pricing"):
+        resolve_model_sample(cfg, stale, tmp_path / "model_locks.json")
 
 
 def test_draw_is_deterministic_and_order_independent(tmp_path):
@@ -127,7 +147,7 @@ def test_where_excluding_all_raises(tmp_path):
 def test_empty_pricing_table_universe_raises(tmp_path):
     cfg = _cfg({"n": 1, "seed": 1, "universe": "pricing-table"})
     bare = _pricing({"anthropic/claude": 5.0})  # no openrouter/* keys
-    with pytest.raises(ConfigError, match="no openrouter"):
+    with pytest.raises(ConfigError, match="no runnable text models"):
         resolve_model_sample(cfg, bare, tmp_path / "model_locks.json")
 
 

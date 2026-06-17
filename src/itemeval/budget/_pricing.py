@@ -26,6 +26,11 @@ class ModelPrice(BaseModel):
     # surcharge); 0 for providers with free automatic cache writes (OpenAI,
     # Gemini implicit, DeepSeek, ...). See cache_write_default().
     cache_write_usd_per_mtok: float | None = None
+    # Whether OpenRouter lists this as a runnable text->text chat model (text in
+    # and out, with generation parameters) — set on refresh, used to build a
+    # reliable `solvers.sample` pricing-table universe. None for entries without
+    # OpenRouter metadata (the packaged seed, pinned user tables).
+    text_model: bool | None = None
 
 
 class PricingTable(BaseModel):
@@ -93,11 +98,23 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             except (KeyError, TypeError, ValueError):
                 return None
 
+        # Runnable text model: takes text, emits text, and exposes generation
+        # parameters. The last clause drops OpenRouter's meta/router entries
+        # (empty supported_parameters), which aren't standard chat completions.
+        arch = entry.get("architecture") or {}
+        params = entry.get("supported_parameters") or []
+        text_model = (
+            "text" in (arch.get("input_modalities") or [])
+            and "text" in (arch.get("output_modalities") or [])
+            and bool(params)
+        )
+
         price = ModelPrice(
             input_usd_per_mtok=inp,
             output_usd_per_mtok=out,
             cache_read_usd_per_mtok=_opt("input_cache_read"),
             cache_write_usd_per_mtok=_opt("input_cache_write"),
+            text_model=text_model,
         )
         table.models[f"openrouter/{model_id}"] = price
         if model_id not in table.models:  # seed wins for native ids

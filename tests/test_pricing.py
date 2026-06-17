@@ -78,6 +78,14 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
             {
                 "id": "deepseek/deepseek-v3.2",
                 "pricing": {"prompt": "0.0000005", "completion": "0.0000010"},
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                "supported_parameters": ["max_tokens", "temperature"],
+            },
+            {
+                "id": "meta/router",  # no generation params -> not a runnable text model
+                "pricing": {"prompt": "0.0000005", "completion": "0.0000010"},
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                "supported_parameters": [],
             },
             {"id": "broken/entry", "pricing": {}},
         ]
@@ -91,6 +99,8 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
     assert table.source == "merged"
     price = table.models["openrouter/deepseek/deepseek-v3.2"]
     assert price.input_usd_per_mtok == pytest.approx(0.5)
+    assert price.text_model is True  # text in/out + generation params
+    assert table.models["openrouter/meta/router"].text_model is False  # empty params
     assert (tmp_path / "user.json").is_file()
     # The persisted user table is now picked up by load_pricing.
     assert load_pricing(None, tmp_path).source == "merged"

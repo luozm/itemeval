@@ -26,9 +26,11 @@ All notable changes to itemeval are documented here. Format follows
   `--json` (append-only on `Estimate`/`GenerateResult`/`GradeResult`/the status
   report), a `model_sample` block in the run manifest, and a Design line +
   front-matter in `STUDY_CARD.md`; `export --snapshot` copies `model_locks.json`.
-  `pricing-table` is best-effort (the roster can include non-chat models;
-  itemeval keeps only prices) — use an explicit list/file for a fully curated
-  universe.
+  The `pricing-table` universe is restricted to OpenRouter's **runnable text
+  models** — text in and out, with generation parameters — so it never samples
+  embedding or meta/router entries; `--refresh-pricing` now records this
+  per-model capability (`ModelPrice.text_model`), so a `pricing-table` sample
+  needs a refreshed table (the empty-universe error says so).
 
 Closes: model-sampling
 
