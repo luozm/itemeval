@@ -38,6 +38,8 @@ HuggingFace upload.
 **Includes.** `local-adapter` · `github-adapter` · `item-sampling` ·
 `scorer-plugins`
 
+**Already landed** (in `[Unreleased]`, ships with 0.3): `model-sampling`.
+
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the
 manifest and exactly reproducible; a user scorer loads by import path and
