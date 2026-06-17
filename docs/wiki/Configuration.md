@@ -113,11 +113,14 @@ budget:
     sample:
       n: 20
       seed: 7
-      stratify_by: provider          # optional — proportional across model-id orgs
+      stratify_by: provider          # optional; see the dimensions below
       universe: pricing-table        # | a file path | an inline list of ids
       where:                         # pricing-table only
         provider: [anthropic, openai, google]
         max_output_usd_per_mtok: 15
+        min_context_length: 131072
+        reasoning: true              # keep only reasoning models
+        multimodal: false            # keep only text-only models
   ```
 
   `n` models are selected with `seed` (deterministic given the seed and the
@@ -125,18 +128,31 @@ budget:
   roster from the pricing table (run `itemeval estimate … --refresh-pricing`
   first to sample today's roster); a **file** path of ids (one per line, `#`
   comments allowed), resolved relative to the config file; or an **inline list**.
-  A `pricing-table` universe can be narrowed with `where:` — a `provider`
-  allowlist plus a `max_output_usd_per_mtok` ceiling (`where` is rejected for
-  list/file universes, which are already curated). The draw is **pinned** in
-  `model_locks.json` beside the study: later runs reuse the same models, a roster
-  that has since changed only prints a warning (the pinned draw stands), and
-  changing `n`/`seed`/`stratify_by`/`where` fails loudly — delete
-  `model_locks.json` to re-draw (existing solutions for dropped models remain).
-  The drawn set, universe size, and seed are recorded in the run manifest and
-  `STUDY_CARD.md` and printed as a `models: sampled N of M …` line. The
-  `pricing-table` universe is restricted to OpenRouter's **runnable text models**
-  — those that take text and emit text and expose generation parameters —
-  so embedding and meta/router entries are never sampled. This capability is
+
+  **`stratify_by`** balances the draw proportionally across one dimension:
+  `provider` (the model-id org — works for any universe), or — for a
+  `pricing-table` universe only — `reasoning`, `multimodal`, `price_tier`, or
+  `context_tier`. Tier edges are fixed: **price** (output $/Mtok) `free` /
+  `low` ≤ $1 / `mid` ≤ $10 / `high`; **context** `short` ≤ 32k / `medium` ≤ 128k
+  / `long` ≤ 400k / `xlong`.
+
+  **`where`** (pricing-table only — list/file universes are already curated)
+  narrows the roster before the draw: a `provider` allowlist, a
+  `max_output_usd_per_mtok` ceiling, a `min_context_length` floor, and
+  `reasoning` / `multimodal` booleans.
+
+  The draw is **pinned** in `model_locks.json` beside the study: later runs reuse
+  the same models, a roster that has since changed only prints a warning (the
+  pinned draw stands), and changing `n`/`seed`/`stratify_by`/`where` fails loudly
+  — delete `model_locks.json` to re-draw (existing solutions for dropped models
+  remain). The drawn set, universe size, and seed are recorded in the run
+  manifest and `STUDY_CARD.md` and printed as a `models: sampled N of M …` line.
+
+  The `pricing-table` universe is restricted to OpenRouter's **runnable text
+  models** — those that take text and emit text and expose generation parameters
+  — so embedding and meta/router entries are never sampled. The roster metadata
+  that powers the universe filter, `where`, and the metadata `stratify_by`
+  dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`) is
   captured by `--refresh-pricing`, so run a refresh once before sampling from
   `pricing-table` (the empty-universe error reminds you).
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a

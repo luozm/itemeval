@@ -262,3 +262,86 @@ def test_model_sample_provenance_line(capsys):
 
     _print_model_sample(SimpleNamespace(model_sample=None))  # no sample -> silent
     assert capsys.readouterr().out == ""
+
+
+# --- richer stratify_by / where dimensions (reasoning, multimodal, tiers) ---
+
+
+def _model(out, *, reasoning=False, multimodal=False, ctx=128_000) -> ModelPrice:
+    return ModelPrice(
+        input_usd_per_mtok=1.0,
+        output_usd_per_mtok=out,
+        text_model=True,
+        reasoning=reasoning,
+        multimodal=multimodal,
+        context_length=ctx,
+    )
+
+
+# 8 models: 4 price tiers x2, 4 context tiers x2, reasoning 4/4, multimodal 4/4.
+META = PricingTable(
+    updated_at="t",
+    source="seed",
+    models={
+        "openrouter/p/free-1": _model(0.0, reasoning=True, multimodal=False, ctx=8_000),
+        "openrouter/p/free-2": _model(0.0, reasoning=False, multimodal=True, ctx=200_000),
+        "openrouter/p/low-1": _model(0.5, reasoning=True, multimodal=True, ctx=64_000),
+        "openrouter/p/low-2": _model(1.0, reasoning=False, multimodal=False, ctx=128_000),
+        "openrouter/p/mid-1": _model(5.0, reasoning=True, multimodal=False, ctx=300_000),
+        "openrouter/p/mid-2": _model(8.0, reasoning=False, multimodal=True, ctx=500_000),
+        "openrouter/p/high-1": _model(20.0, reasoning=True, multimodal=True, ctx=1_000_000),
+        "openrouter/p/high-2": _model(50.0, reasoning=False, multimodal=False, ctx=16_000),
+    },
+)
+
+
+def _draw_meta(stratify_by=None, where=None, n=4, tmp=None):
+    spec = {"n": n, "seed": 1, "universe": "pricing-table"}
+    if stratify_by:
+        spec["stratify_by"] = stratify_by
+    if where:
+        spec["where"] = where
+    _draw_meta.i = getattr(_draw_meta, "i", 0) + 1  # unique lock per call (no spec-change clash)
+    return resolve_model_sample(_cfg(spec), META, tmp / f"lock{_draw_meta.i}.json")
+
+
+def test_stratify_by_reasoning_and_multimodal(tmp_path):
+    res = _draw_meta("reasoning", n=2, tmp=tmp_path)
+    assert {(META.models[m].reasoning) for m in res.models} == {True, False}  # both strata
+    res = _draw_meta("multimodal", n=2, tmp=tmp_path)
+    assert {(META.models[m].multimodal) for m in res.models} == {True, False}
+
+
+def test_stratify_by_price_and_context_tier(tmp_path):
+    from itemeval._modelsample import _context_tier, _price_tier
+
+    res = _draw_meta("price_tier", n=4, tmp=tmp_path)
+    assert {_price_tier(META.models[m].output_usd_per_mtok) for m in res.models} == {
+        "free",
+        "low",
+        "mid",
+        "high",
+    }
+    res = _draw_meta("context_tier", n=4, tmp=tmp_path)
+    assert {_context_tier(META.models[m].context_length) for m in res.models} == {
+        "short",
+        "medium",
+        "long",
+        "xlong",
+    }
+
+
+def test_where_reasoning_multimodal_and_min_context(tmp_path):
+    res = _draw_meta(where={"reasoning": True}, n=4, tmp=tmp_path)
+    assert all(META.models[m].reasoning for m in res.models)  # only reasoning models
+    res = _draw_meta(where={"multimodal": False}, n=2, tmp=tmp_path)
+    assert all(not META.models[m].multimodal for m in res.models)
+    res = _draw_meta(where={"min_context_length": 128_000}, n=1, tmp=tmp_path)
+    assert all(META.models[m].context_length >= 128_000 for m in res.models)
+
+
+def test_metadata_stratify_requires_pricing_table_universe():
+    # provider stratify is fine for an inline list; metadata strata are not.
+    _cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "provider"})
+    with pytest.raises(Exception, match="requires universe: pricing-table"):
+        _cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "reasoning"})

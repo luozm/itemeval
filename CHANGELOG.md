@@ -10,14 +10,17 @@ All notable changes to itemeval are documented here. Format follows
 - **Candidate-model sampling** (`solvers.sample`): draw the model facet from a
   universe instead of listing it, with the draw recorded so the study card can
   attest how models were chosen. `solvers.sample` (mutually exclusive with
-  `solvers.models`) takes `n`, `seed`, an optional `stratify_by: provider`, and
-  a `universe` — one of `pricing-table` (the `openrouter/*` roster itemeval's
+  `solvers.models`) takes `n`, `seed`, an optional `stratify_by`, and a
+  `universe` — one of `pricing-table` (the `openrouter/*` roster itemeval's
   pricing table already tracks; refresh it with `--refresh-pricing` to sample
-  today's roster), a file of model ids (one per line), or an inline list. A
-  roster universe can be narrowed with `where:` — a `provider` allowlist and a
-  `max_output_usd_per_mtok` ceiling (rejected for list/file universes, which are
-  already curated). The draw is deterministic given `(seed, sorted universe)`,
-  optionally provider-stratified (Hamilton apportionment), and pinned in a new
+  today's roster), a file of model ids (one per line), or an inline list.
+  `stratify_by` balances the draw across `provider`, or — for a `pricing-table`
+  universe — `reasoning` / `multimodal` / `price_tier` / `context_tier`. A roster
+  universe can be narrowed with `where:` — a `provider` allowlist,
+  `max_output_usd_per_mtok` and `min_context_length` ceilings/floors, and
+  `reasoning` / `multimodal` booleans (rejected for list/file universes, which
+  are already curated). The draw is deterministic given `(seed, sorted
+  universe)`, optionally stratified (Hamilton apportionment), and pinned in a new
   `model_locks.json` (sibling of `dataset_locks.json`): later runs reuse the
   frozen draw, a drifting roster only **warns** (the draw stands), and a changed
   sample spec **fails loudly** (clear the lock to re-draw). Provenance surfaces
@@ -28,9 +31,11 @@ All notable changes to itemeval are documented here. Format follows
   front-matter in `STUDY_CARD.md`; `export --snapshot` copies `model_locks.json`.
   The `pricing-table` universe is restricted to OpenRouter's **runnable text
   models** — text in and out, with generation parameters — so it never samples
-  embedding or meta/router entries; `--refresh-pricing` now records this
-  per-model capability (`ModelPrice.text_model`), so a `pricing-table` sample
-  needs a refreshed table (the empty-universe error says so).
+  embedding or meta/router entries. `--refresh-pricing` now records the per-model
+  roster metadata these features read (`ModelPrice.text_model` / `reasoning` /
+  `multimodal` / `context_length`), so a `pricing-table` sample needs a refreshed
+  table (the empty-universe error says so). Tier edges are fixed: price (output
+  $/Mtok) `free` ≤`1` ≤`10` `high`; context `short` ≤32k ≤128k ≤400k `xlong`.
 
 Closes: model-sampling
 

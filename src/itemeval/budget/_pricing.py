@@ -26,11 +26,13 @@ class ModelPrice(BaseModel):
     # surcharge); 0 for providers with free automatic cache writes (OpenAI,
     # Gemini implicit, DeepSeek, ...). See cache_write_default().
     cache_write_usd_per_mtok: float | None = None
-    # Whether OpenRouter lists this as a runnable text->text chat model (text in
-    # and out, with generation parameters) — set on refresh, used to build a
-    # reliable `solvers.sample` pricing-table universe. None for entries without
+    # Roster metadata captured on refresh, used to build / filter / stratify a
+    # `solvers.sample` pricing-table universe. None for entries without
     # OpenRouter metadata (the packaged seed, pinned user tables).
-    text_model: bool | None = None
+    text_model: bool | None = None  # runnable text->text chat model (text in/out + params)
+    reasoning: bool | None = None  # exposes a reasoning parameter
+    multimodal: bool | None = None  # accepts more than text as input
+    context_length: int | None = None  # max context window (tokens)
 
 
 class PricingTable(BaseModel):
@@ -98,15 +100,14 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             except (KeyError, TypeError, ValueError):
                 return None
 
-        # Runnable text model: takes text, emits text, and exposes generation
-        # parameters. The last clause drops OpenRouter's meta/router entries
-        # (empty supported_parameters), which aren't standard chat completions.
+        # Roster metadata. Runnable text model: takes text, emits text, and
+        # exposes generation parameters — the last clause drops OpenRouter's
+        # meta/router entries (empty supported_parameters), not standard chat.
         arch = entry.get("architecture") or {}
         params = entry.get("supported_parameters") or []
+        in_mods = arch.get("input_modalities") or []
         text_model = (
-            "text" in (arch.get("input_modalities") or [])
-            and "text" in (arch.get("output_modalities") or [])
-            and bool(params)
+            "text" in in_mods and "text" in (arch.get("output_modalities") or []) and bool(params)
         )
 
         price = ModelPrice(
@@ -115,6 +116,9 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             cache_read_usd_per_mtok=_opt("input_cache_read"),
             cache_write_usd_per_mtok=_opt("input_cache_write"),
             text_model=text_model,
+            reasoning="reasoning" in params,
+            multimodal=len(in_mods) > 1,
+            context_length=entry.get("context_length"),
         )
         table.models[f"openrouter/{model_id}"] = price
         if model_id not in table.models:  # seed wins for native ids

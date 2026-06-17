@@ -68,19 +68,27 @@ class BenchmarkConfig(BaseModel):
 
 
 PRICING_TABLE_UNIVERSE = "pricing-table"  # reserved `universe` keyword (the roster)
+# stratify_by dimensions that read per-model roster metadata (vs `provider`,
+# which is derivable from any model id) — valid only for a pricing-table universe.
+METADATA_STRATA = ("reasoning", "multimodal", "price_tier", "context_tier")
+StratifyBy = Literal["provider", "reasoning", "multimodal", "price_tier", "context_tier"]
 
 
 class ModelUniverseFilter(BaseModel):
     """`solvers.sample.where`: narrow the pricing-table roster before drawing.
 
     Roster-only (rejected for inline-list / file universes, which are already
-    curated). Both fields optional; an empty filter is inert.
+    curated). All fields optional; an empty filter is inert. Filters are
+    continuous/boolean — tiers are a stratify concept, not a filter.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     provider: list[str] | None = None  # org allowlist (the model-id org segment)
     max_output_usd_per_mtok: float | None = Field(default=None, gt=0.0)
+    reasoning: bool | None = None  # keep only reasoning (True) / non-reasoning (False) models
+    multimodal: bool | None = None  # keep only multimodal (True) / text-only (False) models
+    min_context_length: int | None = Field(default=None, ge=1)  # keep models with >= this context
 
 
 class ModelSample(BaseModel):
@@ -96,7 +104,7 @@ class ModelSample(BaseModel):
 
     n: int = Field(ge=1)
     seed: int
-    stratify_by: Literal["provider"] | None = None
+    stratify_by: StratifyBy | None = None
     universe: str | list[str]  # "pricing-table" | a file path | an inline list
     where: ModelUniverseFilter | None = None
 
@@ -111,10 +119,16 @@ class ModelSample(BaseModel):
                 raise ValueError(
                     f"solvers.sample.n ({self.n}) exceeds the {len(self.universe)}-id universe list"
                 )
-        if self.where is not None and self.universe != PRICING_TABLE_UNIVERSE:
+        roster = self.universe == PRICING_TABLE_UNIVERSE
+        if self.where is not None and not roster:
             raise ValueError(
                 "solvers.sample.where applies only to universe: pricing-table "
                 "(inline lists and files are already curated)"
+            )
+        if self.stratify_by in METADATA_STRATA and not roster:
+            raise ValueError(
+                f"solvers.sample.stratify_by: {self.stratify_by} reads roster metadata, so it "
+                "requires universe: pricing-table; use stratify_by: provider for list/file universes"
             )
         return self
 

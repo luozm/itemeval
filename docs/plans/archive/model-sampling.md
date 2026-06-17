@@ -426,8 +426,13 @@ new network path.
 
 ## Out of scope (explicitly, to prevent creep)
 
-- **Richer `stratify_by`** (family, price tier) — no clean metadata; fragile.
-  Tracked in the `model-sampling` BACKLOG **Follow-on**; do not build.
+- **Richer `stratify_by`** — **mostly implemented 2026-06-17** (maintainer
+  request, same branch): `reasoning`, `multimodal`, `price_tier`, `context_tier`
+  now ship alongside `provider`, fed by the roster metadata captured on refresh,
+  with fixed tier edges and matching `where` filters (`reasoning`, `multimodal`,
+  `min_context_length`). **`family` stays out** — there is no clean field
+  (`instruct_type` is ~86% null; `tokenizer` is ⅓ "Other"/"Router"); `provider`
+  and `tokenizer` are the only proxies and a name-parser would be fragile.
 - **Modality-aware filtering** (exclude non-chat/embedding/router models) —
   ~~deferred~~ **implemented 2026-06-17** (see the Context amendment above).
   `refresh_pricing` now records `ModelPrice.text_model` from

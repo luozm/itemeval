@@ -49,16 +49,71 @@ def stratum(model: str) -> str:
     return parts[0]
 
 
+def _price_tier(out_usd: "float | None") -> str:
+    """Tier by output (completion) $/Mtok. Fixed edges (documented in the wiki)."""
+    if out_usd is None:
+        return "unknown"
+    if out_usd <= 0:
+        return "free"
+    if out_usd <= 1:
+        return "low"
+    if out_usd <= 10:
+        return "mid"
+    return "high"
+
+
+def _context_tier(ctx: "int | None") -> str:
+    """Tier by context window (tokens). Fixed edges (documented in the wiki)."""
+    if not ctx:
+        return "unknown"
+    if ctx <= 32_000:
+        return "short"
+    if ctx <= 128_000:
+        return "medium"
+    if ctx <= 400_000:
+        return "long"
+    return "xlong"
+
+
+def _stratum_value(model: str, dim: str, pricing: PricingTable) -> str:
+    """The stratum a model falls in for `stratify_by` dimension `dim`.
+
+    `provider` is id-derived (works for any universe); the rest read roster
+    metadata (config validation confines them to a pricing-table universe).
+    """
+    if dim == "provider":
+        return stratum(model)
+    p = pricing.models.get(model)
+    if dim == "reasoning":
+        return "reasoning" if (p and p.reasoning) else "non-reasoning"
+    if dim == "multimodal":
+        return "multimodal" if (p and p.multimodal) else "text-only"
+    if dim == "price_tier":
+        return _price_tier(p.output_usd_per_mtok if p else None)
+    if dim == "context_tier":
+        return _context_tier(p.context_length if p else None)
+    return stratum(model)  # defensive: unknown dim never reaches here (validated)
+
+
 def _apply_where(ids: list[str], sample: ModelSample, pricing: PricingTable) -> list[str]:
     where = sample.where
     out = []
     for k in ids:
+        p = pricing.models.get(k)
         if where.provider is not None and stratum(k) not in where.provider:
             continue
-        if where.max_output_usd_per_mtok is not None:
-            price = pricing.models.get(k)
-            if price is None or price.output_usd_per_mtok > where.max_output_usd_per_mtok:
-                continue
+        if where.max_output_usd_per_mtok is not None and (
+            p is None or p.output_usd_per_mtok > where.max_output_usd_per_mtok
+        ):
+            continue
+        if where.reasoning is not None and (p is None or bool(p.reasoning) != where.reasoning):
+            continue
+        if where.multimodal is not None and (p is None or bool(p.multimodal) != where.multimodal):
+            continue
+        if where.min_context_length is not None and (
+            p is None or (p.context_length or 0) < where.min_context_length
+        ):
+            continue
         out.append(k)
     return out
 
@@ -122,19 +177,20 @@ def _largest_remainder(total: int, sizes: "list[int]") -> "list[int]":
     return base
 
 
-def _draw(universe: "list[str]", sample: ModelSample) -> "list[str]":
+def _draw(universe: "list[str]", sample: ModelSample, pricing: PricingTable) -> "list[str]":
     """Deterministic seeded draw of `n` ids from the sorted universe.
 
     `random.Random(seed).sample` is stable across runs and CPython versions; the
     lock pins the result regardless, so any drift can only matter before the
-    first pin.
+    first pin. When stratified, allocate `n` across strata by largest remainder
+    and draw within each.
     """
     rng = random.Random(sample.seed)
     ids = sorted(universe)
-    if sample.stratify_by == "provider":
+    if sample.stratify_by is not None:
         groups: "dict[str, list[str]]" = {}
         for mid in ids:
-            groups.setdefault(stratum(mid), []).append(mid)
+            groups.setdefault(_stratum_value(mid, sample.stratify_by, pricing), []).append(mid)
         keys = sorted(groups)
         counts = _largest_remainder(sample.n, [len(groups[k]) for k in keys])
         drawn: "list[str]" = []
@@ -219,7 +275,7 @@ def resolve_model_sample(
             universe_drift=lock.get("universe_hash") != universe_hash,
         )
 
-    models = _draw(universe, sample)
+    models = _draw(universe, sample, pricing)
     config.solvers.models = models
     _write_model_lock(locks_path, spec, universe_hash, universe, models)
     return ModelSampleResult(
