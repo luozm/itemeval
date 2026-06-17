@@ -54,6 +54,18 @@ lists the local templates found and suggests `builtin:` when a built-in of that
 name exists. (Outputs are separate: they anchor to the working directory, not
 the config dir — see [Configuration](Configuration.md).)
 
+## `duplicate item id 'x' in datasets ...`
+
+Item ids must be unique across **all** configured datasets — they are the join
+key into every store and the export table. Two datasets that share a natural key
+(a per-split row index, a per-release problem number) collide, and omitting
+`mapping.id` falls back to a per-dataset row index that collides too. Make the
+ids unique with a **composite `mapping.id`**: a list of columns, or a template
+with a `{dataset}` token (the dataset basename), joined with `:` —
+`mapping.id: ["{dataset}", problem_idx]` yields `set_2026:6`. A single plain
+column is unchanged, so existing studies are unaffected. See
+[Configuration](Configuration.md#composite-item-ids).
+
 ## Exit code 3 in CI / scripts
 
 The cost gate needs confirmation and stdin isn't a TTY. Pass `--yes`

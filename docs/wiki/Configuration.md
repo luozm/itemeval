@@ -31,7 +31,7 @@ benchmark:
       limit: null              # optional: first N rows only
   mapping:                     # dataset columns -> Item fields
     input: problem             # required
-    id: problem_idx            # optional; default: row index
+    id: problem_idx            # optional; default: row index. column | [segments] | "{template}" (see Composite item ids)
     target: sample_solution    # optional; default ""
     grading_scheme: grading_scheme   # optional; non-strings stored as canonical JSON
     metadata: [points]         # optional columns copied into Item.metadata
@@ -184,6 +184,28 @@ budget:
   setting it in a section with no `openrouter/*` model warns (inert, never
   blocks). Why it matters and how to confirm the pin held:
   [Cost Savings](Cost-Savings.md#openrouter-or-direct).
+
+## Composite item ids
+
+Item ids must be **unique across all configured datasets** — they are the join
+key into the solutions/gradings stores and the export table. When you pool
+datasets that share a natural key (a per-split row index, a per-release problem
+number repeated each year), `mapping.id` can compose a unique id instead of a
+single column. Three forms:
+
+| `mapping.id` | Result for `org/set_2026`, `problem_idx = 6` | Use when |
+|---|---|---|
+| `problem_idx` | `6` | a single globally-unique column (default) |
+| `[colA, colB]` | `<colA>:<colB>` | a multi-column natural key |
+| `["{dataset}", problem_idx]` | `set_2026:6` | namespacing a repeated key per dataset |
+| `"{dataset}:{problem_idx}"` | `set_2026:6` | the same, written as one template string |
+
+A segment containing `{` is a **template**: `{dataset}` becomes the dataset
+**basename** (the part after `/`), and any other `{name}` becomes that record
+column. Plain segments are column names. Segments join with `:`. A single plain
+column is unchanged — existing studies' ids never move. An unknown
+`{placeholder}`, a missing column, or a malformed segment (an unbalanced brace)
+fails the load with a message naming the valid options.
 
 ## Python API
 

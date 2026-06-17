@@ -7,6 +7,23 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Composite / templated item ids** (`mapping.id`): pool datasets that share a
+  natural key (a per-split row index, a per-release problem number repeated each
+  year) into one crossed study without tripping the global item-id uniqueness
+  guard. `mapping.id` now accepts a **list of segments** joined with `:`
+  (multi-column natural keys) or a **template** segment — any segment containing
+  `{` is rendered over the record's columns plus a synthetic `{dataset}` token
+  (the dataset basename), so `id: ["{dataset}", problem_idx]` on `org/set_2026`
+  yields `set_2026:6` (the template-string spelling `"{dataset}:{problem_idx}"`
+  is equivalent). A single plain column is **byte-for-byte unchanged** — the id
+  is the cross-store join key, so existing studies' ids never move. An unknown
+  `{placeholder}` or a missing column fails loudly listing the valid names, a
+  malformed segment (unbalanced brace) is rejected, and the duplicate-id guard
+  now names the composite knob as the fix. `mapping.id` is a design declaration
+  (always explicit; never enters condition ids).
+
+Closes: composite-item-id
+
 - **Candidate-model sampling** (`solvers.sample`): draw the model facet from a
   universe instead of listing it, with the draw recorded so the study card can
   attest how models were chosen. `solvers.sample` (mutually exclusive with

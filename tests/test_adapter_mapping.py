@@ -63,6 +63,51 @@ def test_record_to_item_missing_metadata_column_is_none():
     assert item.metadata == {"absent": None}
 
 
+def test_record_to_item_id_list_joins_columns():
+    item = _record_to_item(
+        {"q": "Q?", "a": "x", "b": "y"}, 0, MappingSpec(input="q", id=["a", "b"]), "org/ds"
+    )
+    assert item.id == "x:y"
+
+
+def test_record_to_item_id_dataset_token():
+    # BACKLOG example: org/set_2026 + problem_idx 6 -> "set_2026:6".
+    item = _record_to_item(
+        {"q": "Q?", "problem_idx": 6},
+        0,
+        MappingSpec(input="q", id=["{dataset}", "problem_idx"]),
+        "org/set_2026",
+    )
+    assert item.id == "set_2026:6"
+
+
+def test_record_to_item_id_template_string_same_result():
+    item = _record_to_item(
+        {"q": "Q?", "problem_idx": 6},
+        0,
+        MappingSpec(input="q", id="{dataset}:{problem_idx}"),
+        "org/set_2026",
+    )
+    assert item.id == "set_2026:6"
+
+
+def test_record_to_item_id_unknown_placeholder():
+    with pytest.raises(AdapterError, match="unknown mapping.id placeholder"):
+        _record_to_item({"q": "Q?"}, 0, MappingSpec(input="q", id="{nope}"), "org/ds")
+
+
+def test_record_to_item_id_stray_brace():
+    with pytest.raises(AdapterError, match="malformed mapping.id"):
+        _record_to_item(
+            {"q": "Q?", "dataset": "d"}, 0, MappingSpec(input="q", id="{dataset"), "org/ds"
+        )
+
+
+def test_record_to_item_id_missing_list_column():
+    with pytest.raises(AdapterError, match="mapping.id column 'absent'"):
+        _record_to_item({"q": "Q?"}, 0, MappingSpec(input="q", id=["absent"]), "org/ds")
+
+
 def test_get_adapter_unknown():
     with pytest.raises(AdapterError, match="unknown adapter"):
         get_adapter("github")
@@ -121,5 +166,16 @@ def test_load_items_duplicate_ids_across_datasets(tmp_path, offline_adapter):
     data = yaml.safe_load(CONFIG)
     data["benchmark"]["datasets"] = [{"id": "fake/ds"}, {"id": "fake/ds2"}]
     cfg = ExperimentConfig.model_validate(data)
-    with pytest.raises(AdapterError, match="duplicate item id"):
+    with pytest.raises(AdapterError, match="duplicate item id") as exc:
         load_items(cfg, tmp_path / "locks.json")
+    assert "composite mapping.id" in str(exc.value)  # guard points at the fix
+
+
+def test_load_items_composite_id_resolves_duplicate(tmp_path, offline_adapter):
+    data = yaml.safe_load(CONFIG)
+    data["benchmark"]["datasets"] = [{"id": "fake/ds"}, {"id": "fake/ds2"}]
+    data["benchmark"]["mapping"]["id"] = ["{dataset}", "problem_idx"]
+    cfg = ExperimentConfig.model_validate(data)
+    loaded = load_items(cfg, tmp_path / "locks.json")
+    ids = [it.id for ds in loaded for it in ds.items]
+    assert ids == ["ds:1", "ds:2", "ds:3", "ds2:1", "ds2:2", "ds2:3"]
