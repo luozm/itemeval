@@ -212,3 +212,33 @@ def test_prepare_surfaces_sample_end_to_end(tmp_path, offline_adapter):
     prep2 = prepare_study(load_config(write_study_files(tmp_path, sample_yaml)))
     assert not prep2.model_sample.pinned_now
     assert prep2.config.solvers.models == drawn
+
+
+def test_model_sample_provenance_line(capsys):
+    from types import SimpleNamespace
+
+    from itemeval._modelsample import ModelSampleResult
+    from itemeval.cli import _print_model_sample
+
+    ms = ModelSampleResult(
+        source="pricing-table",
+        universe_size=412,
+        universe_hash="abc123abc123",
+        n=20,
+        seed=7,
+        stratify_by="provider",
+        models=[f"openrouter/o/m{i}" for i in range(20)],
+        pinned_now=True,
+    )
+    _print_model_sample(SimpleNamespace(model_sample=ms))
+    out = capsys.readouterr().out
+    assert "sampled 20 of 412" in out and "seed 7" in out and "stratified by provider" in out
+    assert "from the OpenRouter roster" in out and "pinned in model_locks.json" in out
+
+    reused = ms.model_copy(update={"pinned_now": False, "universe_drift": True})
+    _print_model_sample(SimpleNamespace(model_sample=reused))
+    out = capsys.readouterr().out
+    assert "reused from model_locks.json" in out and "universe changed" in out
+
+    _print_model_sample(SimpleNamespace(model_sample=None))  # no sample -> silent
+    assert capsys.readouterr().out == ""
