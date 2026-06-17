@@ -38,7 +38,8 @@ HuggingFace upload.
 **Includes.** `local-adapter` · `github-adapter` · `item-sampling` ·
 `scorer-plugins`
 
-**Already landed** (in `[Unreleased]`, ships with 0.3): `model-sampling`.
+**Already landed** (in `[Unreleased]`, ships with 0.3): `model-sampling` ·
+`composite-item-id`.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the
@@ -52,11 +53,11 @@ The reliability/agreement report (`report-command`), judge-as-replicated-facet
 
 Also being shaped for 0.4+ — the study-design depth real crossed designs need:
 expressive model sampling (`model-sample-composition`), per-model generation
-config (`per-model-config`), multi-dataset item ids (`composite-item-id`), item
-covariates in the export (`item-covariates-export`), two-stage rubric
-materialization (`rubric-materialization`), and capability legibility so agents
-discover all of it before they run (`capability-legibility`). Exact contents
-firmed up when 0.3 lands.
+config (`per-model-config`), item covariates in the export
+(`item-covariates-export`), two-stage rubric materialization
+(`rubric-materialization`), and capability legibility so agents discover all of
+it before they run (`capability-legibility`). Exact contents firmed up when 0.3
+lands.
 
 ### Later (vision-level)
 
