@@ -72,8 +72,10 @@ A feature leaves BACKLOG when it ships.
 **Same-change rule.** Any user-visible change, in the *same commit*:
 1. add a `[Unreleased]` entry to `CHANGELOG.md`;
 2. if it ships a backlog feature — **remove** that section from `docs/BACKLOG.md`
-   (the design record stays in `docs/plans/archive/<slug>.md`) and add
-   `Closes: <slug>` to the changelog entry;
+   (the design record stays in `docs/plans/archive/<slug>.md`), add
+   `Closes: <slug>` to the changelog entry, and if `ROADMAP.md` named the key as
+   a future candidate, move it to the `**Already landed**` line (a shipped key is
+   no longer a backlog candidate — the docs-consistency check fails otherwise);
 3. update the wiki if user-facing, and the UX-PATTERNS ledger/hint rows if the
    surface changed.
 
@@ -89,4 +91,7 @@ graduates to a feature (BACKLOG key + plan).
 only in `pyproject.toml`; `README.md` carries one `**Status: vX.Y.Z.**` line
 tracking the latest *released* CHANGELOG heading; CHANGELOG headings are
 `## [X.Y.Z] - YYYY-MM-DD`. A non-runnable example YAML block starts with a
-`# sketch` comment so config-validation tooling skips it.
+`# sketch` comment so config-validation tooling skips it. `ROADMAP.md` stays
+human-curated prose, with one parsed convention: its `**Already landed**` line
+is the sole sanctioned place a shipped (CHANGELOG `Closes:`) key may still be
+named — the consistency check rejects a shipped key anywhere else in ROADMAP.

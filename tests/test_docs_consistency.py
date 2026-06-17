@@ -1,6 +1,6 @@
 """Docs stay consistent with reality.
 
-Three guards, all pure-local and offline (no network, no API) so they run in
+Four guards, all pure-local and offline (no network, no API) so they run in
 `make docs-check` / CI:
 
 1. Version SSOT — the README status line tracks the latest *released* CHANGELOG
@@ -12,6 +12,11 @@ Three guards, all pure-local and offline (no network, no API) so they run in
    must never appear in a CHANGELOG `Closes:` (a feature that *shipped*). A key
    in both means a shipped feature was left in the backlog — the exact drift the
    same-change rule forbids.
+4. ROADMAP doesn't strand a shipped key — a CHANGELOG `Closes:` key (a feature
+   that *shipped*) must not still be named as a future candidate in `ROADMAP.md`;
+   the `**Already landed**` bridge line is the one sanctioned place an
+   in-`[Unreleased]` key may be named. The ROADMAP-side mirror of guard 3 — only
+   `key`-token membership is parsed, never ROADMAP's human-curated prose.
 """
 
 from __future__ import annotations
@@ -126,9 +131,44 @@ def test_found_backlog_keys():
     assert _backlog_keys(), "no `**Key:**` markers found in docs/BACKLOG.md — check the extractor"
 
 
+def test_found_shipped_keys():
+    # Guard 4 below is vacuous if this set is empty (e.g. `Closes:` marker drift).
+    assert _changelog_closed_keys(), "no `Closes:` keys found in CHANGELOG.md — check the extractor"
+
+
 def test_backlog_and_shipped_keys_disjoint():
     leaked = _backlog_keys() & _changelog_closed_keys()
     assert not leaked, (
         f"keys are both in docs/BACKLOG.md and a CHANGELOG `Closes:`: {sorted(leaked)} — "
         "a shipped feature must leave the backlog (same-change rule, CLAUDE.md)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# ROADMAP doesn't strand a shipped key as a future candidate
+# --------------------------------------------------------------------------- #
+# A shipped feature has left BACKLOG (guard 3). ROADMAP cites BACKLOG keys to
+# *schedule* them; once a key ships it must move from a planning section to the
+# sanctioned "Already landed" bridge — the transient line naming keys that sit in
+# [Unreleased] until the release cuts. A shipped key lingering in any other
+# ROADMAP block is the drift this guard catches. ROADMAP stays human-curated:
+# only `key`-token membership is parsed (against the shipped set), never prose.
+_ROADMAP_LANDED_MARKER = "already landed"
+
+
+def _roadmap_blocks() -> list[str]:
+    return re.split(r"\n\s*\n", (ROOT / "ROADMAP.md").read_text())
+
+
+def test_roadmap_does_not_strand_shipped_keys():
+    shipped = _changelog_closed_keys()
+    stranded: set[str] = set()
+    for block in _roadmap_blocks():
+        if _ROADMAP_LANDED_MARKER in block.lower():
+            continue  # the sanctioned bridge may name a key still in [Unreleased]
+        stranded |= {k for k in re.findall(r"`([a-z0-9-]+)`", block) if k in shipped}
+    assert not stranded, (
+        f"shipped keys named in a forward-looking ROADMAP.md section: {sorted(stranded)} — a "
+        "shipped feature has left BACKLOG, so it must move to the `**Already landed**` line (or "
+        "out of ROADMAP); it is no longer a future candidate (same-change rule, CLAUDE.md)"
     )

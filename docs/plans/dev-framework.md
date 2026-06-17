@@ -48,8 +48,10 @@ needed.
 **Machine-checked vs human-curated.** Only docs with a tiny stable format are
 parsed: `pyproject.toml` (version), README `**Status: vX.Y.Z.**`, CHANGELOG
 `## [X.Y.Z] - DATE` + `Closes:`, BACKLOG `**Key:**`, doc YAML fences (`# sketch`
-to skip). ROADMAP and prose docs are never parsed — kept honest by the release
-checklist, not a regex.
+to skip). ROADMAP's *prose* stays human-curated, with one parsed convention: its
+`**Already landed**` line is the sole place a shipped (`Closes:`) key may be
+named, so a shipped key stranded in a planning section goes red (W2). Everything
+else in ROADMAP is kept honest by the release checklist, not a regex.
 
 **Locked decisions:** Makefile (not just); scheduled-PR for dependency updates
 (not Renovate); `docs/BACKLOG.md` name; `**Key:** \`slug\`` markers; hermetic
@@ -103,6 +105,11 @@ Buildable items SHIPPED 2026-06-15; two items deferred to external triggers.
   bug_report}.md`, `CODEOWNERS`.
 - **Key-disjointness check** (SHIPPED `ea1d759`) — `test_docs_consistency.py`
   asserts no `docs/BACKLOG.md` `**Key:**` appears in a CHANGELOG `Closes:`.
+- **ROADMAP shipped-key check** (SHIPPED 2026-06-17) — `test_docs_consistency.py`
+  asserts no CHANGELOG `Closes:` key still sits as a future candidate in
+  `ROADMAP.md` (the `**Already landed**` bridge line excepted). The ROADMAP-side
+  mirror of the key-disjointness check; added after `composite-item-id` shipped
+  but lingered in ROADMAP's 0.4 candidate list (a hand-caught drift).
 - **Scheduled dependency-update PR** (SHIPPED `4190a91`) — `.github/
   dependabot.yml`: weekly inspect-ai PR + grouped rest + monthly actions, per
   the now-archived `docs/plans/archive/upgrade-automation.md` (Dependabot over
