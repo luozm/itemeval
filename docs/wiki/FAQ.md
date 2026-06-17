@@ -30,6 +30,20 @@ graders:
   judge_a: {model: openai/gpt-5-mini}
 ```
 
+## Can each item have its own rubric?
+
+Yes — that's the `grading_scheme` item field. The `rubric` facet is a single
+*shared* template (the grading instructions); the per-item rubric *content* — a
+different point breakdown per problem — rides on each item and renders into the
+template at `{grading_scheme}`, alongside the per-item reference solution
+(`{target}`). Map it from your dataset with `mapping.grading_scheme` (a
+list-valued column is stored as canonical JSON). This is the MathArena
+per-problem-scheme pattern — see
+[Tutorial 2](Tutorial-LLM-Judge.md#per-item-rubrics-shared-template-vs-per-item-scheme).
+There is no per-item *template* selection (one harness, per-item content), by
+design: the per-problem texts are study data that live in your dataset, not the
+package.
+
 ## `local template 'x' not found in .../prompts/solver`
 
 A **bare** template name (`x`) resolves to a local file under `prompts_dir`/

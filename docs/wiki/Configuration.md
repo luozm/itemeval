@@ -45,6 +45,7 @@ solvers:
   on_empty: skip               # empty (no-error) solutions: skip | rerun | grade (default skip)
   cache_prompt: auto           # provider prompt caching for generation: auto|on|off (auto = on when replications > 1)
   split_prompt: false          # render prompt as system(template head)+user(item) for provider cache breakpoints; changes condition ids
+  provider_routing: null       # optional OpenRouter routing object, sent verbatim with every openrouter/* request (pins the upstream); inert+warns if no openrouter/* model
 
 facets:
   prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]
@@ -65,6 +66,7 @@ graders:                       # resolves facets.grader names
     max_tokens: 2048           # default 2048
     reasoning_effort: null
     split_rubric: false        # rubric head as system msg + solution as user msg (provider cache breakpoint); changes condition ids
+    provider_routing: null     # optional; same OpenRouter routing object as solvers.provider_routing, for this judge's calls
 
 crossing: full                 # only "full" in v0.1
 
@@ -123,6 +125,14 @@ budget:
 - **`batch: auto`** enables batch-API mode only under `policy: full-batch`
   (an integer sets the batch size). Batch-capable providers: openai,
   anthropic, google, grok, together.
+- **`provider_routing`** (on `solvers:` and per grader): a verbatim OpenRouter
+  provider-routing object (e.g. `{order: [anthropic], allow_fallbacks: false}`)
+  attached to every `openrouter/*` request, pinning which upstream answers — so
+  a cached run can't silently land on a host that ignores cache markers
+  (Bedrock/Vertex). Passed through unchanged and never part of a condition id;
+  setting it in a section with no `openrouter/*` model warns (inert, never
+  blocks). Why it matters and how to confirm the pin held:
+  [Cost Savings](Cost-Savings.md#openrouter-or-direct).
 
 ## Python API
 

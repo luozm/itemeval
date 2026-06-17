@@ -66,6 +66,14 @@ tags every scheduled request with a stable cache key per study and condition
 and asks for 24-hour retention (free) — so your pilot in the morning still
 discounts the full run in the afternoon. Nothing to configure.
 
+This keyed caching applies to **direct** `openai/*` models only: the key is
+`itemeval/<study>/<condition_id>` (stable across runs and phases, so it holds
+routing affinity), and OpenAI's `24h` retention carries no surcharge. Names
+pass through verbatim. `openrouter/openai/*` is excluded — OpenRouter doesn't
+document forwarding these fields — so there it falls back to ordinary
+same-prefix scheduling; either way the effect stays visible in the
+`cache_read=…` numbers and the `cache-zero-reads` hint.
+
 **b) Prompt packaging (`solvers.split_prompt` / `graders.<name>.split_rubric`
 — off by default, recommended for repeat-heavy studies).**
 Your prompt has a reusable part (instructions, rubric, problem) and a changing

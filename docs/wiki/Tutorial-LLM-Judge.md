@@ -62,6 +62,30 @@ What changed versus [Tutorial 1](Tutorial-Verifiable-Benchmark.md):
   into the template. If your dataset has no such column, omit it — write the
   scoring criteria into your rubric file instead (Step 5).
 
+### Per-item rubrics: shared template vs per-item scheme
+
+Two things both feel like "the rubric"; keeping them apart is the key idea:
+
+- **The rubric template** (`facets.rubric`) is the *shared grading harness* —
+  one instruction layout used for every item in the condition: how to present
+  the problem, scheme, and reference, and how to ask for a score. It's a facet,
+  so swapping it starts a fresh grade condition.
+- **The per-item scheme** (`Item.grading_scheme`, from `mapping.grading_scheme`)
+  is the *problem-specific* content the template renders at `{grading_scheme}` —
+  a different point breakdown for each item. The reference solution (`{target}`)
+  varies per item the same way.
+
+So per-item rubrics need no special mechanism: one template, per-item content.
+This is exactly the
+[MathArena "Proof or Bluff?"](https://huggingface.co/datasets/MathArena/usamo_2025)
+pattern — one grading instruction plus a hand-written per-problem scheme (each
+USAMO problem scored out of 7 with its own milestones). Map that column to
+`grading_scheme` and every problem is graded against its own rubric. A
+list-valued scheme column (MathArena's is a list of `{points, description}`
+items) is stored as canonical JSON, so structured rubrics render cleanly. The
+per-problem texts stay in your dataset, where study data belongs — not in the
+config.
+
 ## Step 2 — Estimate, generate, grade
 
 ```bash
