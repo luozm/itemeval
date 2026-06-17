@@ -410,8 +410,11 @@ solvers:
 - **`allocation: equal | proportional`** on `ModelSample`.
 - **`include:`** pinned ids counted against `n`; the seeded draw fills the rest.
 
-**Implementation notes.** `budget/_pricing.py` (fetch + persist `created`; bump
-a pricing-table `schema_version`), `_config.py` (`released_after` on
+**Implementation notes.** `budget/_pricing.py` (fetch + persist `created` as an
+additive optional `ModelPrice` field — no pricing-table `schema_version` exists
+or is needed on a regenerable cache; a recency draw against a table that
+predates `created` fails loudly pointing at `--refresh-pricing`, the same
+pattern `text_model` uses), `_config.py` (`released_after` on
 `ModelUniverseFilter`, `recency` in `StratifyBy`, `allocation`/`include` on
 `ModelSample`), `_modelsample.py` (recency stratum + filter, equal-allocation
 path, include-then-fill in `_draw`), provenance line + manifest. Stage in the
@@ -421,6 +424,37 @@ plan: recency first, then allocation/include. ~150 lines + tests.
 (largest-remainder over the equal quota). Whether `include:` bypasses `where`
 (yes — purposive picks are intentional). A hint when a proportional draw
 silently zeros a stratum, even after `equal` exists.
+
+### Auto flagship / latest-per-vendor selection
+**Key:** `flagship-selection`
+
+**Motivation.** Evaluating "the current state-of-the-art landscape" almost always
+means *one flagship per vendor* (latest Anthropic × latest OpenAI × latest
+Google …). Users want a **rule** for this so they don't hand-maintain a list as
+new models ship — the natural ask alongside `model-sample-composition`'s recency
+work.
+
+**Why it's deferred (decided 2026-06-17).** There is **no reliable "flagship"
+signal in the OpenRouter roster.** The obvious proxy — newest by `created` —
+silently picks cheap variants released *after* the flagship (`gpt-5.1-nano` after
+`gpt-5.1`; `:mini`, `:preview`, `:beta`, dated snapshots), the opposite of SOTA;
+price-max is also only a loose proxy (breaks on reasoning models); and
+name-parsing (`opus`>`sonnet`>`haiku`) is the fragile heuristic
+`model-sampling` already rejected for `stratify_by: family`. A wrong pick
+*silently invalidates* a capability study, so the honest path today is the
+**`include:` recipe** (`model-sample-composition` ships it + a wiki recipe):
+pin the flagships you mean, explicitly and reproducibly.
+
+**Design sketch (when a signal exists).** A draw-time universe filter
+`where: {latest_per_provider: true}` computed from `created` (never stored on
+`ModelPrice` — it's a *relative* property), or a richer "top per vendor" once a
+trustworthy flagship/tier signal is available. The `created` substrate from
+`model-sample-composition` makes the `created`-based form ~15 lines.
+
+**Open questions.** What counts as a trustworthy flagship signal (a curated
+per-vendor flagship table? an OpenRouter usage/ranking field if one stabilizes?).
+Whether to ship the honestly-caveated `latest_per_provider` (newest-by-date)
+filter as a convenience despite the variant footgun, or wait for a real signal.
 
 ### Per-model generation config (heterogeneous rosters; structurally-missing cells)
 **Key:** `per-model-config`
