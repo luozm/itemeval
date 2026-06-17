@@ -104,6 +104,39 @@ budget:
   counted as complete: `grade` prints the count + stop-reason breakdown and
   `status` shows an `empty` column. The usual cause is too small a `max_tokens`
   for a reasoning model — give the cap room for reasoning **plus** the answer.
+- **`solvers.sample`** (mutually exclusive with `solvers.models`): draw the
+  model facet from a universe instead of listing it — useful when candidates
+  come from a large roster.
+
+  ```yaml
+  solvers:
+    sample:
+      n: 20
+      seed: 7
+      stratify_by: provider          # optional — proportional across model-id orgs
+      universe: pricing-table        # | a file path | an inline list of ids
+      where:                         # pricing-table only
+        provider: [anthropic, openai, google]
+        max_output_usd_per_mtok: 15
+  ```
+
+  `n` models are selected with `seed` (deterministic given the seed and the
+  sorted universe). `universe` is one of: `pricing-table` — the `openrouter/*`
+  roster from the pricing table (run `itemeval estimate … --refresh-pricing`
+  first to sample today's roster); a **file** path of ids (one per line, `#`
+  comments allowed), resolved relative to the config file; or an **inline list**.
+  A `pricing-table` universe can be narrowed with `where:` — a `provider`
+  allowlist plus a `max_output_usd_per_mtok` ceiling (`where` is rejected for
+  list/file universes, which are already curated). The draw is **pinned** in
+  `model_locks.json` beside the study: later runs reuse the same models, a roster
+  that has since changed only prints a warning (the pinned draw stands), and
+  changing `n`/`seed`/`stratify_by`/`where` fails loudly — delete
+  `model_locks.json` to re-draw (existing solutions for dropped models remain).
+  The drawn set, universe size, and seed are recorded in the run manifest and
+  `STUDY_CARD.md` and printed as a `models: sampled N of M …` line. Caveat:
+  `pricing-table` is best-effort — the roster can include non-chat/unrunnable
+  models (itemeval tracks only prices, not modality), so prefer an explicit
+  list/file when you need a fully curated universe.
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
   template in one of two namespaces, never mixed or silently shadowed:
   `builtin:NAME` resolves to a template packaged inside itemeval (run

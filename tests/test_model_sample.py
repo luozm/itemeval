@@ -171,3 +171,44 @@ def test_file_universe_missing_raises(tmp_path):
     cfg = _cfg({"n": 1, "seed": 1, "universe": str(tmp_path / "nope.txt")})
     with pytest.raises(ConfigError, match="not found"):
         resolve_model_sample(cfg, ROSTER, tmp_path / "model_locks.json")
+
+
+def test_prepare_surfaces_sample_end_to_end(tmp_path, offline_adapter):
+    """prepare -> mutated solvers.models -> pinned lock -> manifest + estimate provenance."""
+    from conftest import TEST_CONFIG_YAML, write_study_files
+
+    from itemeval._config import load_config
+    from itemeval._manifest import build_manifest
+    from itemeval._prepare import prepare_study
+    from itemeval.budget._estimator import estimate_study
+
+    sample_yaml = TEST_CONFIG_YAML.replace(
+        "  models: [mockllm/solver-a, mockllm/solver-b]",
+        "  sample:\n    n: 2\n    seed: 7\n"
+        "    universe: [mockllm/solver-a, mockllm/solver-b, mockllm/solver-c]",
+    )
+    cfg = load_config(write_study_files(tmp_path, sample_yaml))
+    prep = prepare_study(cfg)
+
+    drawn = prep.config.solvers.models
+    assert prep.model_sample is not None and prep.model_sample.source == "explicit"
+    assert len(drawn) == 2 and set(drawn) <= {
+        "mockllm/solver-a",
+        "mockllm/solver-b",
+        "mockllm/solver-c",
+    }
+    assert prep.paths.model_locks.is_file()  # pinned on first prepare
+    assert {c.model for c in prep.grid.generate} == set(drawn)  # grid uses the draw
+
+    manifest = build_manifest(prep, "generate", "r1", [], None)
+    assert manifest.models == drawn
+    assert manifest.model_sample["source"] == "explicit" and manifest.model_sample["n"] == 2
+    assert "sample" in manifest.sampling_requested  # requested spec echoed
+
+    est = estimate_study(prep)
+    assert est.model_sample is not None and est.model_sample.n == 2
+
+    # a fresh prepare reuses the frozen draw (no re-pin)
+    prep2 = prepare_study(load_config(write_study_files(tmp_path, sample_yaml)))
+    assert not prep2.model_sample.pinned_now
+    assert prep2.config.solvers.models == drawn

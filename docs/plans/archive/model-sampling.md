@@ -1,7 +1,8 @@
 # Implementation plan — model-sampling (sample candidate LLMs from a roster, with provenance)
 
-**Status: IN PROGRESS (started 2026-06-16).** Written 2026-06-16 against the
-current `main` (0.3.0.dev). The feature is **engine-free** — it touches config,
+**Status: IMPLEMENTED 2026-06-16.** Written 2026-06-16 against the
+current `main` (0.3.0.dev); shipped the same day. This file is the design
+record, past tense. The feature is **engine-free** — it touches config,
 prepare, pricing, the manifest, and the study card; it adds **no** `inspect_ai`
 import, so the inspect boundary (DEVELOPMENT.md) is satisfied trivially and is
 not re-discussed below. This file is the working brief for a fresh session:
@@ -360,9 +361,11 @@ same-change paperwork.
 
 **Tests.**
 - `tests/test_manifest.py`: `model_sample` recorded; `models` = drawn set.
-- `tests/test_public_api_snapshot.py`: **expected to go red** — new append-only
-  fields on `Estimate`/`GenerateResult`/`GradeResult`/status + `PreparedStudy`.
-  Update the golden set deliberately, same commit.
+- `tests/test_public_api_snapshot.py`: **stayed green** — it snapshots only
+  `itemeval.__all__` and the CLI subcommands, neither of which changed (no new
+  top-level export, no new command). `ModelSampleResult` rides on the result
+  objects but is *not* a top-level export, mirroring `DatasetProvenance`. (The
+  plan originally predicted a red here; the snapshot's scope is narrower.)
 - `tests/test_snapshot.py`: `model_locks.json` copied into a snapshot.
 - A `tests/test_docs_consistency.py` run stays green (the BACKLOG `sample:`
   example is a `facets:`/`solvers:` fragment, not a top-level `study:` block, so

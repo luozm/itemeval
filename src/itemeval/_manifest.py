@@ -69,6 +69,8 @@ class Manifest(BaseModel):
     models: list[str]
     graders: dict[str, dict]
     sampling_requested: dict
+    # Resolved solvers.sample provenance (universe/hash/seed/draw); None if unused.
+    model_sample: dict | None = None
     sampling_effective: dict[str, Any] | None = None  # backfilled post-run, per condition
     # backfilled post-run, per condition: {provider, base_url, served_model} — the
     # endpoint/account/version that actually answered (which dashboard billed it).
@@ -166,6 +168,7 @@ def build_manifest(
         models=list(cfg.solvers.models),
         graders=used_graders,
         sampling_requested=sampling,
+        model_sample=prep.model_sample.model_dump() if prep.model_sample else None,
         seed=cfg.solvers.seed,
         policy=prep.plan.policy,
         policy_source=prep.policy_source,

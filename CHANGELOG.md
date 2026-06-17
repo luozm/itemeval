@@ -6,6 +6,32 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **Candidate-model sampling** (`solvers.sample`): draw the model facet from a
+  universe instead of listing it, with the draw recorded so the study card can
+  attest how models were chosen. `solvers.sample` (mutually exclusive with
+  `solvers.models`) takes `n`, `seed`, an optional `stratify_by: provider`, and
+  a `universe` — one of `pricing-table` (the `openrouter/*` roster itemeval's
+  pricing table already tracks; refresh it with `--refresh-pricing` to sample
+  today's roster), a file of model ids (one per line), or an inline list. A
+  roster universe can be narrowed with `where:` — a `provider` allowlist and a
+  `max_output_usd_per_mtok` ceiling (rejected for list/file universes, which are
+  already curated). The draw is deterministic given `(seed, sorted universe)`,
+  optionally provider-stratified (Hamilton apportionment), and pinned in a new
+  `model_locks.json` (sibling of `dataset_locks.json`): later runs reuse the
+  frozen draw, a drifting roster only **warns** (the draw stands), and a changed
+  sample spec **fails loudly** (clear the lock to re-draw). Provenance surfaces
+  in every rendering (UX-PATTERNS Law 1/6): a `models: sampled N of M …` line on
+  estimate/generate/grade/status, a `model_sample` object on each command's
+  `--json` (append-only on `Estimate`/`GenerateResult`/`GradeResult`/the status
+  report), a `model_sample` block in the run manifest, and a Design line +
+  front-matter in `STUDY_CARD.md`; `export --snapshot` copies `model_locks.json`.
+  `pricing-table` is best-effort (the roster can include non-chat models;
+  itemeval keeps only prices) — use an explicit list/file for a fully curated
+  universe.
+
+Closes: model-sampling
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider

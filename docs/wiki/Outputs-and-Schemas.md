@@ -12,6 +12,7 @@ studies/<study>/
   log_index.parquet        # index of raw inspect .eval logs
   ledger.parquet           # cost ledger (run x stage x condition x model)
   dataset_locks.json       # dataset revisions pinned at first run
+  model_locks.json         # model sample draw pinned (only with solvers.sample)
   manifests/<run_id>.json  # one reproducibility manifest per run
   logs/generate/<condition_id>/*.eval   # raw inspect logs (full transcripts)
   logs/grade/<condition_id>/*.eval
@@ -31,6 +32,17 @@ cache, and (only when this run wrote the lock) a
 `revision pinned in dataset_locks.json` clause; the same facts ride JSON as
 `datasets[]` (`{id, split, revision, revision_source, cache, cache_dir,
 download_bytes, pinned_now}`).
+
+`model_locks.json` appears only when `solvers.sample` draws the models (see
+[Configuration](Configuration#field-notes)). It pins the drawn set — the sample
+spec, the full universe and its content hash, and the resulting model ids — so
+later runs reuse the same models (a roster that drifts only warns; a changed
+sample spec fails loudly). A command prints
+`models: sampled N of M … — pinned in model_locks.json` on the first draw and a
+reuse line afterward; the same facts ride JSON as `model_sample`
+(`{source, universe_size, universe_hash, n, seed, stratify_by, models,
+pinned_now, universe_drift}`) on estimate/generate/grade/status, and are
+recorded in each run manifest and `STUDY_CARD.md`.
 
 ## `solutions.parquet` (key: condition_id, item_id, epoch)
 
@@ -126,6 +138,7 @@ export/snapshots/<name>/
   gradings_long.csv
   ledger.csv
   dataset_locks.json       # pins as of snapshot time
+  model_locks.json         # the model sample pin (when solvers.sample was used)
   manifests/               # every manifest covering included rows
   snapshot.json            # name, created_at, itemeval_version, config_sha256,
                            # run_ids, row/condition counts, spend totals

@@ -77,6 +77,16 @@ def build_study_card(
         "rows": int(len(long_df)),
         "spend_usd": round(float(spend_usd), 4),
     }
+    if prep.model_sample is not None:
+        ms = prep.model_sample
+        front["model_sample"] = {
+            "source": ms.source,
+            "n": ms.n,
+            "seed": ms.seed,
+            "universe_size": ms.universe_size,
+            "universe_hash": ms.universe_hash,
+            "stratify_by": ms.stratify_by,
+        }
     front_text = yaml.safe_dump(front, sort_keys=False, allow_unicode=True).strip()
 
     # 1. Design — the facet grid with content hashes and template sources.
@@ -101,8 +111,22 @@ def build_study_card(
         )
         for t in templates
     ]
+    sample_note = ""
+    if prep.model_sample is not None:
+        ms = prep.model_sample
+        strat = f", stratified by {ms.stratify_by}" if ms.stratify_by else ""
+        src = {
+            "pricing-table": "the OpenRouter roster",
+            "explicit": "an inline list",
+            "file": "a model-id file",
+        }.get(ms.source, ms.source)
+        sample_note = (
+            f"Models: sampled {ms.n} of {ms.universe_size} from {src} "
+            f"(seed {ms.seed}{strat}); pinned in model_locks.json.\n\n"
+        )
     design = (
-        f"Crossing: `{config.crossing}` — models × prompts × model-configs × graders × "
+        sample_note
+        + f"Crossing: `{config.crossing}` — models × prompts × model-configs × graders × "
         f"rubrics × replications ({config.facets.replications}).\n\n"
         + _table(["generate condition", "model", "prompt (hash)", "model_config"], gen_rows)
         + "\n\n"
