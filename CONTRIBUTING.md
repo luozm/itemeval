@@ -21,7 +21,8 @@ make fmt                # auto-format + safe lint fixes
 | **Brainstorm a feature** | `/brainstorm` | rough idea → pressure-test (in scope? simplest?) → a [BACKLOG](docs/BACKLOG.md) section with a `**Key:**` |
 | **Long-term goals** | `/roadmap` | discuss direction; schedule BACKLOG keys into a release in [ROADMAP](ROADMAP.md) (references keys, never restates them) |
 | **Feature** | `/feature <key>` | key in [BACKLOG](docs/BACKLOG.md) → plan `docs/plans/<key>.md` → commit docs to `main` → branch `feat/<key>` → build → same-change rule (CHANGELOG `Closes: <key>` + drop the BACKLOG section) → `make check` → push |
-| **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → `make check` → commit (`fix:`) → push |
+| **Quick fix** | `/fix <desc>` | `git checkout -b fix/x` → failing test → fix → CHANGELOG `Fixed` → `make check` → commit (`fix:`) → push |
+| **Track a deferred bug** | — | a bug you're not fixing now → a section in [KNOWN-ISSUES](docs/KNOWN-ISSUES.md) (symptom · where · fix sketch); no key |
 | **Release** | `/release` | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
 | **Pre-push gate** | — *(auto)* | the `pre-push` hook runs `make check` on every push — nothing to type |
 | **Pre-commit audit** | `/same-change` | same-change rule as a ✓/✗ checklist (CHANGELOG · BACKLOG-disjoint · wiki · SSOT); **machine parts auto** |
@@ -69,6 +70,7 @@ activate the venv or call `pip`. Python floor is 3.11; develop on 3.12 (no
 | [docs/UX-PATTERNS.md](docs/UX-PATTERNS.md) | the **binding** UX contract every feature must pass |
 | [ROADMAP.md](ROADMAP.md) | direction + what's committed for the next release |
 | [docs/BACKLOG.md](docs/BACKLOG.md) | candidate features not yet built (one `**Key:**` each) |
+| [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) | deferred bugs — the bug mirror of BACKLOG (no key) |
 | [CHANGELOG.md](CHANGELOG.md) | what shipped |
 | `docs/plans/<key>.md` | a feature's in-flight implementation brief |
 
@@ -115,10 +117,21 @@ CHANGELOG `Closes: <key>`.
 
 ## Fix a bug
 
-`git checkout -b fix/<short-desc>` → write a failing test first, then fix →
-add a `[Unreleased]` CHANGELOG entry (no key needed; bugs aren't backlog
-features) → `make check` → PR. A regression in the latest release ships as a
-patch release promptly, not batched (see DEVELOPMENT.md "When to release").
+Bugs get **no key, no BACKLOG entry, no plan** — keys are for features.
+
+`git checkout -b fix/<short-desc>` → write a failing test first, then fix → add
+a `[Unreleased]` → `Fixed` entry to [CHANGELOG.md](CHANGELOG.md) (no key) →
+`make check` → PR. If the fix changes a user-facing surface (output text, a
+`--json` field, an exit code, a hint or knob) the same-change rule still applies
+— update the wiki / UX-PATTERNS rows in the same commit. A regression in the
+latest release ships as a patch release promptly, not batched (see
+DEVELOPMENT.md "When to release").
+
+**Not fixing it now?** Record it in
+[docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — the bug mirror of BACKLOG
+(symptom · where · fix sketch), no key. It **leaves** that file in the same
+change that adds its CHANGELOG `Fixed` entry. If the "fix" turns out to need real
+design, it graduates to a feature (BACKLOG key + plan) instead.
 
 ## Commits & PRs
 

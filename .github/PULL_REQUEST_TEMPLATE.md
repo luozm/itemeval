@@ -16,6 +16,7 @@ full lifecycle. Delete rows that don't apply; don't tick a box that isn't true.
 - [ ] **Same-change rule** — for any user-visible change, in this PR:
   - [ ] `CHANGELOG.md` `[Unreleased]` updated (with `Closes: <key>` if it ships a backlog feature)
   - [ ] the shipped feature's section is **removed** from `docs/BACKLOG.md`
+  - [ ] if it fixes a bug tracked in `docs/KNOWN-ISSUES.md`, that entry is **removed**
   - [ ] wiki (`docs/wiki/`) updated if the change is user-facing
 - [ ] **UX contract** — if a user-facing surface changed, the
       [UX-PATTERNS.md](../docs/UX-PATTERNS.md) development checklist passes (no
