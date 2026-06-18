@@ -177,3 +177,58 @@ def test_render_values_omits_rubric_for_plain(study):
     tmpl: Template = prep.rubric_templates["standard"]
     out = build_judge_input(item, "cand", tmpl, None)
     assert "cand" in out
+
+
+def test_estimate_includes_materialize_term(mat_study):
+    from itemeval.budget._estimator import estimate_study
+
+    _, prep = mat_study
+    est = estimate_study(prep)
+    # A materialize ConditionEstimate per materializing rubric (model = materializer),
+    # one call per effective item — folded into the grade stage's calls/usd.
+    mat_conds = [c for c in est.grade.conditions if c.slug.startswith("materialize_")]
+    assert len(mat_conds) == 1
+    assert mat_conds[0].model == "mockllm/materializer"
+    assert mat_conds[0].calls == len(prep.items_effective)
+    judge_calls = sum(
+        c.calls for c in est.grade.conditions if not c.slug.startswith("materialize_")
+    )
+    assert est.grade.calls == judge_calls + mat_conds[0].calls
+
+
+def test_unpriced_materializer_flagged(tmp_path, offline_adapter):
+    # An unpriced materializer surfaces in grade.unpriced_models (estimate-only,
+    # no model call). Mock ids are priced in the seed, so use a real-looking id.
+    from itemeval.budget._estimator import estimate_study
+
+    yaml = MAT_CONFIG_YAML.replace(
+        "model: mockllm/materializer", "model: openrouter/fake/unpriced-xyz"
+    )
+    _write_mat_study(tmp_path)
+    (tmp_path / "config.yaml").write_text(yaml)
+    prep = prepare_study(load_config(tmp_path / "config.yaml"))
+    est = estimate_study(prep)
+    assert "openrouter/fake/unpriced-xyz" in est.grade.unpriced_models
+
+
+def test_estimate_materialize_remaining_drops_after_freeze(mat_study, monkeypatch):
+    # Price the materializer so the remaining figure is non-zero, then watch it
+    # fall to 0 once the artifact store is populated (resume-aware).
+    from itemeval.budget import _estimator
+
+    monkeypatch.setattr(
+        _estimator, "_priced_usd", lambda prep, model, i, o, exec_model=None: 0.01 * (i + o)
+    )
+    _, prep = mat_study
+    from itemeval.budget._estimator import estimate_study
+
+    before = estimate_study(prep)
+    mat_before = next(c for c in before.grade.conditions if c.slug == "materialize_matrubric")
+    assert mat_before.calls == len(prep.items_effective)
+
+    run_generate(prep)
+    run_grade(prep)  # freezes the rubrics
+
+    after = estimate_study(prep)
+    # Full-grid materialize calls unchanged; remaining materialize spend gone.
+    assert after.grade.remaining_usd <= before.grade.remaining_usd
