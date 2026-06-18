@@ -161,6 +161,14 @@ Closes: expected-cost
 Closes: native-batch-routing
 
 ### Fixed
+- **An errored or empty generation no longer crashes the whole `generate`
+  stage.** A sample that errored (or completed with no choices) carries a
+  `ModelOutput` whose `choices` list is empty; reading `stop_reason` off it
+  raised `IndexError`, so a single bad solver aborted log→row conversion for the
+  entire run (a multi-model screen could never finish if any one model erred).
+  The `stop_reason` extraction now guards for empty `choices` like its siblings
+  already do — an errored row becomes `{error: <msg>, solution: None,
+  stop_reason: None, …}`, exactly what `status`/`export` expect.
 - **A schema-stale pricing cache no longer dead-ends a `pricing-table` sample.**
   A cached `~/.cache/itemeval/pricing.json` written before the roster-metadata
   fields (`text_model`/`reasoning`/`multimodal`/`context_length`) existed reads

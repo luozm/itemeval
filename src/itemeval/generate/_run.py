@@ -391,7 +391,9 @@ def rows_from_generate_log(
                 "reasoning_effort_effective": eff.reasoning_effort,
                 "reasoning_tokens_requested": p.reasoning_tokens,
                 "solution": solution,
-                "stop_reason": sample.output.stop_reason if sample.output else None,
+                "stop_reason": (
+                    sample.output.stop_reason if (sample.output and sample.output.choices) else None
+                ),
                 "error": error,
                 **usage_columns(usage),
                 "usd": usd_for_usage(
