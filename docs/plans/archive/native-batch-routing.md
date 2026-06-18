@@ -1,16 +1,13 @@
 # Implementation plan — native-batch-routing (route OpenRouter-sampled models to their native API to capture the batch discount; settle the batch-vs-cache "which is cheaper" question)
 
-**Status: IN PROGRESS (started 2026-06-17; refreshed 2026-06-17 against the
-shipped `expected-cost` estimator, commit `1c74fd5`).** Written against
-inspect_ai 0.3.x (pinned in `uv.lock`) and the pricing/estimator code at the
-commits below — re-verify the `[verify]` facts before coding. **`expected-cost`
-landed first** (PR #7): `estimate_study` now runs a parallel *expected*
-(calibrated) pass alongside the ceiling pass, so every discount helper has
-**twice the call sites** it had when this plan was first drafted (W1 must thread
-the execution id through both passes) and W2's dual projection now compares the
-*expected* (realistic) figures rather than ceilings. This file is the working
-brief for a fresh session: it carries all context that session needs. Read
-first, in order:
+**Status: IMPLEMENTED 2026-06-18.** Shipped on `feat/native-batch-routing`
+(`Closes: native-batch-routing`). This file is the design record; see the
+**As-built amendments** section at the end for where implementation diverged
+from the brief. Written against inspect_ai 0.3.x and the pricing/estimator code
+after `expected-cost` (PR #7): `estimate_study` runs a parallel *expected*
+(calibrated) pass alongside the ceiling pass, so every discount helper has twice
+the call sites (W1 threads the execution id through both) and W2's dual
+projection compares the *expected* figures. Read first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. The load-bearing rules for
@@ -519,3 +516,47 @@ tables updated in the same commit.
   endpoints in one study). The existing endpoint-drift warning covers
   served-model drift; a dedicated confound warning is a possible follow-up,
   noted in the BACKLOG open questions, not built here.
+
+---
+
+## As-built amendments (decisions that won during implementation)
+
+1. **No priceability resolve-check; price off the sampled id.** The brief gated
+   routing on the *native* id being priceable, as an engine-free
+   resolve-check. On contact this fails: the pricing table keys models under
+   **OpenRouter's spelling** (`anthropic/claude-haiku-4.5`, dots), while the
+   native id needs dashes (`anthropic/claude-haiku-4-5`) — and grok is keyed
+   `x-ai/*` not `grok/*` — so the native id is *not* reliably priceable and the
+   gate would reject most valid routes. Resolution: **price every call off the
+   sampled id** (same model, same rates; OpenRouter's ~5% markup is immaterial
+   to a projection) and let only the **batch-discount eligibility** and the
+   **served endpoint** follow the native id (`_priced_usd`/`usd_for_usage` gained
+   an `exec_model` param: price on `model`, discount on `exec_model`). The
+   pre-flight resolve-check is dropped; the runtime try/except + the documented
+   live smoke are the resolvability guard.
+
+2. **`resolve_native_routes` split into `eligible_native_routes` (batch/knob-
+   independent) + `active_native_routes` (gated).** The estimator needs the
+   eligible set even when the knob is off (for the `native-batch-available` hint
+   and the W2 comparison), so eligibility and the batch+knob gate are separate
+   functions. `PreparedStudy.native_routes` holds the *active* routes; the
+   estimator derives the eligible set itself.
+
+3. **Per-provider name normalization (Anthropic-only dots→dashes).** A blanket
+   dots→dashes rule would corrupt `openai/gpt-5.1`; only Anthropic needs it
+   (`_native_name`). x-ai→grok is the one provider-segment rename. Native key
+   env vars and provider slugs were verified against the installed inspect
+   source (2026-06-17); grok accepts `XAI_API_KEY` or `GROK_API_KEY`.
+
+4. **W2 implemented additively, not via a lifted helper.** Rather than refactor
+   the cache-eligibility/split logic into a shared helper (risk to the live
+   numbers), the dual projection accumulates per-model `batch`/`cache` expected
+   figures **inside the existing loops**, reusing the already-computed
+   `rem_in`/`rem_out_exp` and the `_cache_split`/`_discounted_usd` helpers. The
+   live ceiling/expected figures are untouched, so the golden regression
+   (existing estimator/expected/cache/delta suites) holds with no value changes.
+
+5. **W2 scope = batch plans only.** `eligible_routes` is computed only under a
+   batch plan, so `Estimate.routes` (and the comparison block) appear only when
+   routing is relevant (you're batching, deciding whether routing beats staying
+   on OpenRouter-cache). Off-batch, neither shows.

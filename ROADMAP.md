@@ -42,7 +42,10 @@ HuggingFace upload.
 `model-sampling` · `composite-item-id`; and `model-sample-composition` (recency,
 equal allocation, pinned include) building directly on `model-sampling`; plus
 `expected-cost` — a calibrated expected-cost projection alongside the estimate
-ceiling (the gate still uses the ceiling).
+ceiling (the gate still uses the ceiling); and `native-batch-routing` — route
+OpenRouter-sampled models to their native API under batch to capture the ~50%
+discount, with a per-model native-batch-vs-OpenRouter-cache comparison at
+estimate time (pulled forward from "Later").
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the
@@ -63,8 +66,8 @@ lands.
 
 ### Later (vision-level)
 
-Scale & breadth (`multimodal-items`, `midcell-resume`, `reuse-savings`,
-`native-batch-routing`) and ops (`pypi-approval-gate`). See [docs/BACKLOG.md](docs/BACKLOG.md); a feature is
+Scale & breadth (`multimodal-items`, `midcell-resume`, `reuse-savings`)
+and ops (`pypi-approval-gate`). See [docs/BACKLOG.md](docs/BACKLOG.md); a feature is
 promoted here with a goal + exit criteria when scheduled.
 
 ## History

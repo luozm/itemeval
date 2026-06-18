@@ -110,6 +110,36 @@ Closes: model-sample-composition
 
 Closes: expected-cost
 
+- **Native-provider batch routing** (`budget.prefer_native_batch`, default off):
+  under a batch plan, route OpenRouter-sampled models to their native provider
+  API so the dominant stage actually receives the ~50% batch discount —
+  OpenRouter has no batch API, so an `openrouter/anthropic/*` judge otherwise
+  forgoes it. Opt-in and **never silent** (UX-PATTERNS Law 1): switching the
+  serving endpoint can change outputs, so it stays an explicit optimization knob
+  (like `provider_routing`). A model routes only under a batch plan with the knob
+  on, an inner provider whose native API batches
+  (`anthropic`/`openai`/`google`/`x-ai`→`grok`/`together`), and a native API key
+  in the environment; the decision is made once at prepare time (resume-safe),
+  all-or-nothing per model. The sampled `openrouter/*` id stays the model's
+  **scientific identity** everywhere it is one — condition ids, `model_locks`,
+  the `model` column — while the native id is recorded as the **execution id**:
+  costs are read under the sampled id (the roster id the pricing table carries),
+  only the batch-discount eligibility and the served endpoint follow the native
+  id. Provenance (Law 1/6): a `native batch routing: N model(s) → native API …`
+  line on estimate/generate/grade, `routed_models` on `GenerateResult`/
+  `GradeResult`, `execution_model`/`routed` on each manifest
+  `endpoints_effective` entry, and the ledger `provider` column = the billing
+  (native) provider. New coded hint `native-batch-available` fires when a batch
+  run leaves the lever unused. Also an **estimate-time dual projection**: for
+  each routable model `estimate` shows native-batch vs OpenRouter-cache
+  **expected** cost (remaining scope) with the cheaper verdict — `routes` on
+  `Estimate` (each a `NativeRoute` with `batch_usd`/`cache_usd`/`cheaper`) and a
+  comparison block in the text rendering — so the batch-vs-cache choice is
+  visible per run. New append-only fields; no new dependency. The money gate is
+  unchanged (it already compares the discounted projection).
+
+Closes: native-batch-routing
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider

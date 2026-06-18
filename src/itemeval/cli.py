@@ -198,6 +198,35 @@ def _print_model_sample(prep) -> None:
         print(f"models: {ms.n} sampled models reused from model_locks.json (seed {ms.seed}){drift}")
 
 
+def _print_native_routes(prep) -> None:
+    """One provenance line when native batch routing is active (Law 1): a side
+    effect — the serving endpoint changes — so it is announced unconditionally."""
+    from itemeval.budget._pricing import provider_of
+
+    routes = prep.native_routes
+    if not routes:
+        return
+    providers = ", ".join(sorted({provider_of(n) for n in routes.values()}))
+    print(
+        f"native batch routing: {len(routes)} model(s) → native API ({providers}) — "
+        "sampled ids stay the scientific identity; native id recorded as execution_model"
+    )
+
+
+def _print_route_comparison(est) -> None:
+    """W2: per eligible model, native-batch vs OpenRouter-cache (expected cost,
+    remaining scope) so the cheaper lever is visible. Estimate surface only."""
+    if not est.routes:
+        return
+    print(f"native routing comparison ({len(est.routes)} model(s) eligible; expected, remaining):")
+    for r in est.routes:
+        cache = "n/a" if r.cache_usd is None else _fmt_usd(r.cache_usd)
+        print(
+            f"  {r.sampled}  native batch {_fmt_usd(r.batch_usd)}  ·  "
+            f"openrouter cache {cache}  → {r.cheaper} cheaper"
+        )
+
+
 def _print_cost_report(rep) -> None:
     print(
         f"savings vs list price: {_fmt_usd(rep.total_savings_usd)} "
@@ -231,8 +260,10 @@ def _cmd_estimate(args) -> int:
     print(f"study: {est.study}  (policy: {est.policy})")
     _print_datasets(prep)
     _print_model_sample(prep)
+    _print_native_routes(prep)
     _print_pricing(est.pricing)
     _print_estimate(est, args.stage)
+    _print_route_comparison(est)
     emit_hints(est.hints)
     return 0
 
@@ -336,6 +367,7 @@ def _run_stage(args, stage, runner) -> int:
     if not args.json:
         _print_datasets(prep)
         _print_model_sample(prep)
+        _print_native_routes(prep)
         _print_pricing(est.pricing)
         if stage == "generate" and args.wave:
             print(

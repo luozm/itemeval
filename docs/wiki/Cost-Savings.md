@@ -116,7 +116,9 @@ hint).
 about half price. **Trade-off:** results take minutes to hours, with no live
 progress — use it for large runs you'll collect later, never for iterating.
 **Limit:** works with OpenAI/Anthropic/Google/Grok/Together directly; **not
-through OpenRouter**.
+through OpenRouter** — but if you sampled your models as `openrouter/…`,
+`prefer_native_batch` can route them to their native API to get the discount
+anyway (next section).
 
 ### 5. Guardrails — savings by prevention (on by default)
 
@@ -129,6 +131,53 @@ reasoning model with a fat budget producing short answers) over-states the
 estimate — never under — so a real bill far below the projection usually
 just means your cap is roomy.
 
+### Native batch routing
+
+Batch mode (above) needs a provider with a batch API, which **OpenRouter doesn't
+have** — so a model sampled as `openrouter/anthropic/…` normally can't batch at
+all, and on a judge-heavy study that is the single biggest discount left on the
+table. Turn on `budget.prefer_native_batch` and, under a batch run, itemeval
+routes each such model to its **native** API (`anthropic/…`, `openai/…`,
+`x-ai`→`grok/…`, …) when you have that provider's key set — so the calls
+actually receive the ~50% batch discount.
+
+It is **opt-in on purpose.** Switching the serving endpoint can change a model's
+outputs and mixes two endpoints in one study, so itemeval never does it silently
+(the same reasoning as `provider_routing`). The model you sampled stays the model
+of record: the `openrouter/…` id is what is pinned in `model_locks.json`, what
+appears in the `model` column, and what condition ids hash — the native id is
+recorded only as the *execution* id (`execution_model` in the run manifest), and
+every run that routes prints `native batch routing: N model(s) → native API …`.
+Routing is all-or-nothing per model and decided before the run starts, so
+resuming is safe.
+
+```yaml
+budget:
+  policy: full-batch
+  prefer_native_batch: true
+```
+
+A model routes only when **all** of these hold: you are on a batch run, the knob
+is on, the model is `openrouter/<provider>/…` for a provider whose native API
+batches (Anthropic, OpenAI, Google, xAI→grok, Together), and that provider's API
+key is in your environment. Anything else stays on OpenRouter untouched.
+
+**Batch or cache — which is cheaper?** Both cut the same bill and you can only
+pick one per run (batch reorders calls, which turns prompt caching off).
+`estimate` shows the comparison per model:
+
+```
+native routing comparison (1 model(s) eligible; expected, remaining):
+  openrouter/anthropic/claude-opus-4.8  native batch $4.20  ·  openrouter cache $7.90  → batch cheaper
+```
+
+Batch almost always wins, because it is ~50% off **everything, including output
+tokens**, while caching only discounts the *repeated* part of the input and
+never the output. Caching pulls ahead only in the narrow case of a huge shared
+prefix with tiny output that you also cannot wait on (batch takes minutes to
+hours). If you leave the knob off on a batch run where routing would help,
+itemeval nudges you with the `native-batch-available` hint.
+
 ## Your own API key vs OpenRouter — which to call?
 
 Both work in the same config; pick per model:
@@ -136,7 +185,8 @@ Both work in the same config; pick per model:
 **Use the provider's own API (e.g. `openai/…`, `anthropic/…`) when…**
 - you want the discounts above to work reliably (through OpenRouter, requests
   sometimes land on backends that ignore them);
-- you want batch mode (OpenRouter has none);
+- you want batch mode (OpenRouter has none — or set `prefer_native_batch` to
+  route `openrouter/…` models to their native API automatically);
 - you want one clean bill per provider with no marketplace fee.
 
 **Use OpenRouter (`openrouter/…`) when…**
@@ -179,4 +229,5 @@ caching and all batch APIs need a direct key.
 | Prompt packaging (`split_prompt` / `split_rubric`) | off | your study repeats long text — turn on for ~half price (note: starts fresh conditions, so decide before big runs) |
 | Generation prompt caching (`solvers.cache_prompt`) | `auto` (on when replications > 1) | rarely |
 | Batch (`budget.policy`) | off (`dev`) | large unattended runs → `full-batch` |
+| Native batch routing (`budget.prefer_native_batch`) | off | batching `openrouter/…` models → `true` to route them to their native batch API |
 | Budget gate / hard cap | $5 ask / no cap | set `max_usd` before every big run |

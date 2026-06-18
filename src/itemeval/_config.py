@@ -319,6 +319,15 @@ class BudgetConfig(BaseModel):
     # "auto" gates whenever a condition has same-prefix groups of ≥2 calls and
     # batch mode is off; "off" disables scheduling entirely.
     cache_schedule: Literal["auto", "off"] = "auto"
+    # Under a batch plan, route OpenRouter-sampled models to their native
+    # provider API so they actually receive the provider batch discount
+    # (OpenRouter has no batch API). Opt-in optimization knob: switching the
+    # serving endpoint can change outputs and confounds an endpoint comparison,
+    # so it is never silent (like provider_routing). The sampled openrouter/* id
+    # stays the model's scientific identity; the native id is recorded as the
+    # execution id. Inert (warns) off-batch or with no routable model. See
+    # docs/wiki/Cost-Savings.md#native-batch-routing.
+    prefer_native_batch: bool = False
 
     @field_validator("cache_schedule", mode="before")
     @classmethod
