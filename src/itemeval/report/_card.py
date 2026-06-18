@@ -88,6 +88,7 @@ def build_study_card(
             "stratify_by": ms.stratify_by,
             "allocation": ms.allocation,
             "include": list(ms.include),
+            "exclude": list(ms.exclude),
         }
     front_text = yaml.safe_dump(front, sort_keys=False, allow_unicode=True).strip()
 
@@ -122,6 +123,7 @@ def build_study_card(
             if ms.allocation == "equal":
                 strat += " (equal)"
         incl = f", {len(ms.include)} via include" if ms.include else ""
+        excl = f", {len(ms.exclude)} excluded" if ms.exclude else ""
         src = {
             "pricing-table": "the OpenRouter roster",
             "explicit": "an inline list",
@@ -129,7 +131,7 @@ def build_study_card(
         }.get(ms.source, ms.source)
         sample_note = (
             f"Models: sampled {ms.n} of {ms.universe_size} from {src} "
-            f"(seed {ms.seed}{strat}{incl}); pinned in model_locks.json.\n\n"
+            f"(seed {ms.seed}{strat}{incl}{excl}); pinned in model_locks.json.\n\n"
         )
     design = (
         sample_note

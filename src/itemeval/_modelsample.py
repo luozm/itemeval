@@ -36,6 +36,7 @@ class ModelSampleResult(BaseModel):
     stratify_by: str | None
     allocation: str = "proportional"  # per-stratum apportionment (proportional | equal)
     include: list[str] = Field(default_factory=list)  # pinned ids counted against n
+    exclude: list[str] = Field(default_factory=list)  # ids removed from the universe before drawing
     models: list[str]  # the drawn ids, sorted
     pinned_now: bool = False  # this run wrote model_locks.json
     universe_drift: bool = False  # universe changed since the pin (frozen draw stands)
@@ -143,15 +144,24 @@ def _build_universe(
     """(source, sorted unique universe ids) for the configured universe."""
     universe = sample.universe
     if isinstance(universe, list):
-        return "explicit", sorted(set(universe))
-    if universe == PRICING_TABLE_UNIVERSE:
+        source, ids = "explicit", list(universe)
+    elif universe == PRICING_TABLE_UNIVERSE:
         # The roster is the openrouter/* models OpenRouter lists as runnable
         # text->text chat models (text_model set on refresh) — a reliable
         # universe, not the raw catalog (which also carries meta/router entries).
-        ids = [k for k, p in pricing.models.items() if k.startswith("openrouter/") and p.text_model]
+        # Free ($0 output) models are dropped: they are rate-limited :free
+        # endpoints, not representative of the paid models a measurement frame
+        # samples. They stay in the pricing table (so lookup_price still prices
+        # one named directly in solvers.models); they are just not *drawable*.
+        # Free edge matches _price_tier (output_usd_per_mtok <= 0).
+        ids = [
+            k
+            for k, p in pricing.models.items()
+            if k.startswith("openrouter/") and p.text_model and p.output_usd_per_mtok > 0
+        ]
         if not ids:
             raise ConfigError(
-                "solvers.sample universe: pricing-table has no runnable text models — "
+                "solvers.sample universe: pricing-table has no runnable, non-free text models — "
                 "run with --refresh-pricing to fetch the current OpenRouter roster "
                 "(with model metadata), or use an explicit list/file universe"
             )
@@ -169,19 +179,32 @@ def _build_universe(
                     "loosen where (provider allowlist / max_output_usd_per_mtok / "
                     f"released_after){extra}"
                 )
-        return "pricing-table", sorted(set(ids))
-    # any other string -> a file of ids, one per line ('#' comments / blanks skipped)
-    path = (input_base / universe).resolve()
-    if not path.is_file():
-        raise ConfigError(f"solvers.sample universe file not found: {path}")
-    ids = [
-        s
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if (s := line.strip()) and not s.startswith("#")
-    ]
-    if not ids:
-        raise ConfigError(f"solvers.sample universe file has no model ids: {path}")
-    return "file", sorted(set(ids))
+        source = "pricing-table"
+    else:
+        # any other string -> a file of ids, one per line ('#' comments / blanks skipped)
+        path = (input_base / universe).resolve()
+        if not path.is_file():
+            raise ConfigError(f"solvers.sample universe file not found: {path}")
+        ids = [
+            s
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if (s := line.strip()) and not s.startswith("#")
+        ]
+        if not ids:
+            raise ConfigError(f"solvers.sample universe file has no model ids: {path}")
+        source = "file"
+    # exclude is universe-agnostic (unlike where): drop the blocklisted ids from
+    # any universe type before drawing. include re-adds nothing here (overlap is
+    # rejected at config load), so the blocklist is final.
+    if sample.exclude:
+        blocked = set(sample.exclude)
+        ids = [k for k in ids if k not in blocked]
+        if not ids:
+            raise ConfigError(
+                "solvers.sample.exclude removed every model from the universe — "
+                "loosen exclude or widen the universe"
+            )
+    return source, sorted(set(ids))
 
 
 def _largest_remainder(total: int, sizes: "list[int]") -> "list[int]":
@@ -353,6 +376,7 @@ def resolve_model_sample(
         "stratify_by": sample.stratify_by,
         "allocation": sample.allocation,
         "include": sorted(sample.include),
+        "exclude": sorted(sample.exclude),
         "where": sample.where.model_dump() if sample.where is not None else None,
     }
 
@@ -375,6 +399,7 @@ def resolve_model_sample(
             stratify_by=sample.stratify_by,
             allocation=sample.allocation,
             include=sorted(sample.include),
+            exclude=sorted(sample.exclude),
             models=models,
             pinned_now=False,
             universe_drift=lock.get("universe_hash") != universe_hash,
@@ -392,6 +417,7 @@ def resolve_model_sample(
         stratify_by=sample.stratify_by,
         allocation=sample.allocation,
         include=sorted(sample.include),
+        exclude=sorted(sample.exclude),
         models=models,
         pinned_now=True,
         universe_drift=False,

@@ -593,6 +593,31 @@ card + export parquet as a HF dataset.
 top of the existing renderer. Push-to-Hub is separate and opt-in (new dep
 surface: `huggingface_hub` is already transitively present via `datasets`).
 
+### Semantic dedup of roster routing variants
+**Key:** `roster-dedup`
+
+**Motivation.** OpenRouter lists the same base model under routing-variant
+suffixes (`:nitro`, `:thinking`, `:extended`, `:online`, and the `:free`
+duplicates). Two variants of one model in the drawable roster double-count that
+model in a `pricing-table` sample. Today only exact-id dedup happens
+(`sorted(set(...))` in `_build_universe`).
+
+**Why it's deferred.** `sample-exclude`'s non-free-roster change already drops
+the `:free` duplicates, which are the bulk; the survey behind
+[docs/plans/archive/sample-exclude.md](plans/archive/sample-exclude.md) found
+exactly **1** suffixed id left in the non-free ≥2023 roster, so exact-id dedup is sufficient
+for now. Building this earns almost nothing until a real duplicate problem
+appears.
+
+**Design sketch (when needed).** A canonical-key collapse at the **roster layer**
+(`_build_universe`, never `refresh_pricing` — the saved table must keep every
+variant so `lookup_price` prices an explicitly-named `:nitro`/`:free`): strip a
+known suffix set to a base id, keep one representative per base. **Open
+questions.** Which suffixes are routing vs. genuinely distinct models; which
+variant wins (base? cheapest? most-metadata?) given variants can carry different
+price/context; whether to expose the suffix set as a knob (default: no — keep it
+a fixed internal list per "don't over-engineer").
+
 ---
 
 ## Ops / release

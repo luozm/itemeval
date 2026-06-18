@@ -92,7 +92,7 @@ def test_pricing_table_without_text_metadata_raises(tmp_path):
         models={"openrouter/x/y": ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=2.0)},
     )
     cfg = _cfg({"n": 1, "seed": 1, "universe": "pricing-table"})
-    with pytest.raises(ConfigError, match="runnable text models.*refresh-pricing"):
+    with pytest.raises(ConfigError, match="runnable, non-free text models.*refresh-pricing"):
         resolve_model_sample(cfg, stale, tmp_path / "model_locks.json")
 
 
@@ -147,7 +147,7 @@ def test_where_excluding_all_raises(tmp_path):
 def test_empty_pricing_table_universe_raises(tmp_path):
     cfg = _cfg({"n": 1, "seed": 1, "universe": "pricing-table"})
     bare = _pricing({"anthropic/claude": 5.0})  # no openrouter/* keys
-    with pytest.raises(ConfigError, match="no runnable text models"):
+    with pytest.raises(ConfigError, match="no runnable, non-free text models"):
         resolve_model_sample(cfg, bare, tmp_path / "model_locks.json")
 
 
@@ -315,9 +315,10 @@ def test_stratify_by_reasoning_and_multimodal(tmp_path):
 def test_stratify_by_price_and_context_tier(tmp_path):
     from itemeval._modelsample import _context_tier, _price_tier
 
-    res = _draw_meta("price_tier", n=4, tmp=tmp_path)
+    # free models are not drawable from a pricing-table universe (W2), so a
+    # pricing-table draw never yields a "free" stratum — only low/mid/high.
+    res = _draw_meta("price_tier", n=3, tmp=tmp_path)
     assert {_price_tier(META.models[m].output_usd_per_mtok) for m in res.models} == {
-        "free",
         "low",
         "mid",
         "high",
@@ -332,7 +333,8 @@ def test_stratify_by_price_and_context_tier(tmp_path):
 
 
 def test_where_reasoning_multimodal_and_min_context(tmp_path):
-    res = _draw_meta(where={"reasoning": True}, n=4, tmp=tmp_path)
+    # 3 non-free reasoning models (low-1, mid-1, high-1); free-1 is excluded by W2.
+    res = _draw_meta(where={"reasoning": True}, n=3, tmp=tmp_path)
     assert all(META.models[m].reasoning for m in res.models)  # only reasoning models
     res = _draw_meta(where={"multimodal": False}, n=2, tmp=tmp_path)
     assert all(not META.models[m].multimodal for m in res.models)
@@ -555,3 +557,156 @@ def test_provenance_line_equal_and_include(capsys):
     _print_model_sample(SimpleNamespace(model_sample=ms))
     out = capsys.readouterr().out
     assert "stratified by provider (equal)" in out and "1 via include" in out
+
+
+# --- W2: non-free roster by default ---
+
+
+def test_pricing_table_excludes_free_models(tmp_path):
+    # META has 8 models, 2 of them free ($0 output) — the roster drops those.
+    res = resolve_model_sample(
+        _cfg({"n": 6, "seed": 1, "universe": "pricing-table"}), META, tmp_path / "f.json"
+    )
+    assert res.universe_size == 6  # 8 minus the 2 free models
+    assert "openrouter/p/free-1" not in res.models
+    assert "openrouter/p/free-2" not in res.models
+    assert all(META.models[m].output_usd_per_mtok > 0 for m in res.models)
+
+
+def test_free_models_stay_in_table_for_lookup():
+    # W2 filters the drawable *roster*, not the pricing *data*: a free model
+    # named directly in solvers.models still resolves a price (the escape hatch).
+    from itemeval.budget._pricing import lookup_price
+
+    assert "openrouter/p/free-1" in META.models
+    assert lookup_price(META, "openrouter/p/free-1").output_usd_per_mtok == 0.0
+
+
+def test_free_model_usable_in_inline_list(tmp_path):
+    # W2 narrows only the pricing-table roster; an explicit list may carry a free id.
+    res = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": ["openrouter/p/free-1", "openrouter/p/low-1"]}),
+        META,
+        tmp_path / "l.json",
+    )
+    assert "openrouter/p/free-1" in res.models  # not filtered (list is not roster-gated)
+
+
+def test_no_runnable_nonfree_text_models_raises(tmp_path):
+    only_free = _pricing({"openrouter/x/a": 0.0, "openrouter/x/b": 0.0})  # text_model but $0
+    cfg = _cfg({"n": 1, "seed": 1, "universe": "pricing-table"})
+    with pytest.raises(ConfigError, match="no runnable, non-free text models"):
+        resolve_model_sample(cfg, only_free, tmp_path / "f.json")
+
+
+# --- W1: top-level exclude (id blocklist) ---
+
+
+def test_exclude_removes_ids_from_pricing_table(tmp_path):
+    excluded = ["openrouter/anthropic/claude-a", "some/non-roster-id"]
+    res = resolve_model_sample(
+        _cfg({"n": 3, "seed": 1, "universe": "pricing-table", "exclude": excluded}),
+        ROSTER,
+        tmp_path / "e.json",
+    )
+    assert "openrouter/anthropic/claude-a" not in res.models
+    assert res.universe_size == len(ROSTER_IDS) - 1  # one roster id removed; non-roster is a no-op
+    assert res.exclude == sorted(excluded)
+
+
+def test_exclude_works_on_inline_list_and_file(tmp_path):
+    # inline list — where would be rejected here, but exclude is not roster-gated
+    res = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": ["m/a", "m/b", "m/c"], "exclude": ["m/b"]}),
+        ROSTER,
+        tmp_path / "il.json",
+    )
+    assert res.universe_size == 2 and "m/b" not in res.models
+    # file universe
+    ids_file = tmp_path / "models.txt"
+    ids_file.write_text("m/a\nm/b\nm/c\n")
+    res = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": str(ids_file), "exclude": ["m/c"]}),
+        ROSTER,
+        tmp_path / "fl.json",
+    )
+    assert res.universe_size == 2 and "m/c" not in res.models
+
+
+def test_include_exclude_overlap_raises():
+    with pytest.raises(Exception, match="both included and excluded"):
+        _cfg(
+            {
+                "n": 2,
+                "seed": 1,
+                "universe": "pricing-table",
+                "include": ["x/a"],
+                "exclude": ["x/a"],
+            }
+        )
+
+
+def test_exclude_duplicates_and_empty_raise():
+    with pytest.raises(Exception, match="exclude entries must be unique"):
+        _cfg({"n": 1, "seed": 1, "universe": "pricing-table", "exclude": ["a", "a"]})
+    with pytest.raises(Exception, match="exclude entries must be non-empty"):
+        _cfg({"n": 1, "seed": 1, "universe": "pricing-table", "exclude": [" "]})
+
+
+def test_exclude_enters_lock_spec_and_triggers_redraw_guard(tmp_path):
+    lock = tmp_path / "model_locks.json"
+    base = {
+        "n": 2,
+        "seed": 1,
+        "universe": "pricing-table",
+        "exclude": ["openrouter/anthropic/claude-a"],
+    }
+    res = resolve_model_sample(_cfg(base), ROSTER, lock)
+    assert res.exclude == ["openrouter/anthropic/claude-a"]
+    assert "openrouter/anthropic/claude-a" not in res.models
+    # editing exclude changes the pinned spec -> fails loud
+    with pytest.raises(ConfigError, match="spec changed"):
+        resolve_model_sample(_cfg({**base, "exclude": ["openrouter/openai/gpt-a"]}), ROSTER, lock)
+
+
+def test_exclude_removing_everything_raises(tmp_path):
+    with pytest.raises(ConfigError, match="exclude removed every model"):
+        resolve_model_sample(
+            _cfg({"n": 1, "seed": 1, "universe": ["m/a"], "exclude": ["m/a"]}),
+            ROSTER,
+            tmp_path / "z.json",
+        )
+
+
+def test_combined_frame_exclude_recency_nonfree(tmp_path):
+    # ADR-0003-style frame: year-stratified, released_after, price ceiling, judge
+    # id excluded, over a roster that also has a free and an over-ceiling model.
+    pt = PricingTable(
+        updated_at="t",
+        source="seed",
+        models={
+            "openrouter/j/judge": _dated(10.0, Y2025),  # judge id -> exclude
+            "openrouter/a/m1": _dated(5.0, Y2024),
+            "openrouter/a/m2": _dated(5.0, Y2025),
+            "openrouter/b/m3": _dated(5.0, Y2023),
+            "openrouter/c/free": _dated(0.0, Y2025),  # free -> dropped by W2
+            "openrouter/d/pricey": _dated(50.0, Y2025),  # over the ceiling
+        },
+    )
+    res = resolve_model_sample(
+        _cfg(
+            {
+                "n": 3,
+                "seed": 1,
+                "stratify_by": "recency",
+                "universe": "pricing-table",
+                "where": {"released_after": "2023-01-01", "max_output_usd_per_mtok": 15},
+                "exclude": ["openrouter/j/judge"],
+            }
+        ),
+        pt,
+        tmp_path / "c.json",
+    )
+    assert res.universe_size == 3  # judge, free, pricey all gone
+    assert set(res.models) == {"openrouter/a/m1", "openrouter/a/m2", "openrouter/b/m3"}
+    assert {_stratum_value(m, "recency", pt) for m in res.models} == {"2023", "2024", "2025"}

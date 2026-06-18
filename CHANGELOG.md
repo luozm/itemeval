@@ -48,7 +48,10 @@ Closes: composite-item-id
   front-matter in `STUDY_CARD.md`; `export --snapshot` copies `model_locks.json`.
   The `pricing-table` universe is restricted to OpenRouter's **runnable text
   models** — text in and out, with generation parameters — so it never samples
-  embedding or meta/router entries. `--refresh-pricing` now records the per-model
+  embedding or meta/router entries, and **excludes free (`$0` output) models**
+  (rate-limited `:free` endpoints, not representative of the paid models a frame
+  samples; name one directly in `solvers.models` if you want it — it still
+  prices). `--refresh-pricing` now records the per-model
   roster metadata these features read (`ModelPrice.text_model` / `reasoning` /
   `multimodal` / `context_length`), so a `pricing-table` sample needs a refreshed
   table (the empty-universe error says so). Tier edges are fixed: price (output
@@ -83,6 +86,23 @@ Closes: model-sampling
   version). Builds on `model-sampling`.
 
 Closes: model-sample-composition
+
+- **Exclude model ids from a sample draw** (`solvers.sample.exclude`): a
+  top-level `exclude: [ids]` list drops exact model-ids from the universe before
+  the draw — the inverse of `include`, and like `include` it works for **every**
+  universe type (`pricing-table`, file, inline list), not only the roster `where`
+  narrows (an id blocklist is not roster metadata). The case it unblocks is
+  rater–object independence: remove the judge model-ids so a judge can't be drawn
+  as a solver. Absent ids are a no-op; an id cannot be both included and excluded
+  (rejected at load, with duplicate/empty-string entries); `exclude` enters the
+  `model_locks.json` spec (a changed value fails loudly — clear the lock to
+  re-draw) and the provenance surfaces wherever `include` does (a `K excluded`
+  clause on the `models: …` line, an `exclude` array on each command's `--json`,
+  the run manifest, and `STUDY_CARD.md`). A **design declaration**. Pairs with
+  the now non-free `pricing-table` roster (see model-sampling above), which
+  together replace an earlier `where.free` idea. Builds on `model-sampling`.
+
+Closes: sample-exclude
 
 - **Expected (calibrated) cost projection alongside the ceiling**: `estimate`
   (and the `generate`/`grade` pre-gate line) now reports a second, **expected**
