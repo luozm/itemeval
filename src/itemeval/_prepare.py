@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
-from itemeval._config import ExperimentConfig
-from itemeval._errors import ConfigError
+from itemeval._config import PRICING_TABLE_UNIVERSE, ExperimentConfig
+from itemeval._errors import BudgetError, ConfigError
 from itemeval._item import Item
 from itemeval._modelsample import ModelSampleResult, resolve_model_sample
 from itemeval._templates import Template, rubric_registry, solver_registry
@@ -13,6 +13,7 @@ from itemeval.adapters._base import LoadedDataset, load_items
 from itemeval.budget._policies import EffectivePlan, apply_items_limit, effective_plan
 from itemeval.budget._pricing import (
     PricingTable,
+    is_schema_stale,
     load_pricing,
     maybe_refresh_pricing,
     refresh_pricing,
@@ -57,6 +58,13 @@ class PreparedStudy:
 POLICY_CHOICES = ("dev", "full-interactive", "full-batch")
 
 
+def _samples_pricing_table(config: ExperimentConfig) -> bool:
+    """Whether this run draws its model facet from the `pricing-table` universe —
+    the one consumer of roster metadata that hard-errors without it."""
+    sample = config.solvers.sample
+    return sample is not None and sample.universe == PRICING_TABLE_UNIVERSE
+
+
 def prepare_study(
     config: ExperimentConfig,
     *,
@@ -99,6 +107,16 @@ def prepare_study(
     else:
         loaded = load_pricing(None, config._input_base)
         pricing = maybe_refresh_pricing(loaded, config.budget.pricing_max_age_days)
+        # A pricing-table sample universe needs roster metadata (text_model, ...).
+        # A cache written before those fields existed reads as fresh by age, so the
+        # age-based refresh above can't detect it; refresh once on that schema
+        # staleness so the universe isn't spuriously empty. Offline: fall through to
+        # the actionable ConfigError in _build_universe.
+        if _samples_pricing_table(config) and is_schema_stale(pricing):
+            try:
+                pricing = refresh_pricing()
+            except BudgetError:
+                pass
         # maybe_refresh returns the same object on a no-op; a new one means it refreshed.
         pricing_refreshed = pricing is not loaded
 

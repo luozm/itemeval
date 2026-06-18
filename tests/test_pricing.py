@@ -11,6 +11,7 @@ from itemeval.budget._pricing import (
     PricingTable,
     cost_usd,
     describe_pricing,
+    is_schema_stale,
     load_pricing,
     lookup_price,
     maybe_refresh_pricing,
@@ -155,6 +156,28 @@ def test_maybe_refresh_stale_offline_keeps_table(monkeypatch):
     stale = _table("2000-01-01T00:00:00Z")
     # Best-effort: a failed refresh falls back to the stale table, never raises.
     assert maybe_refresh_pricing(stale, 7) is stale
+
+
+def test_is_schema_stale():
+    # No entry carries roster metadata -> stale, regardless of a recent stamp.
+    stale = PricingTable(
+        updated_at=utc_now_iso(),
+        source="merged",
+        models={"openrouter/x/y": ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=2.0)},
+    )
+    assert is_schema_stale(stale)
+    assert is_schema_stale(_table(utc_now_iso()))  # empty table has no metadata either
+    # One entry carrying text_model is enough (a merged table flags its roster).
+    fresh = PricingTable(
+        updated_at=utc_now_iso(),
+        source="merged",
+        models={
+            "openrouter/x/y": ModelPrice(
+                input_usd_per_mtok=1.0, output_usd_per_mtok=2.0, text_model=True
+            )
+        },
+    )
+    assert not is_schema_stale(fresh)
 
 
 def test_describe_pricing():

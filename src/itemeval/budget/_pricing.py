@@ -158,6 +158,18 @@ def _table_age_days(table: PricingTable) -> "float | None":
     return (datetime.now(timezone.utc) - stamped).total_seconds() / 86400.0
 
 
+def is_schema_stale(table: PricingTable) -> bool:
+    """True when no entry carries roster metadata (`text_model`).
+
+    Such a table predates the roster-metadata fields, so a `pricing-table` sample
+    universe would find zero runnable models. This is *schema* staleness, which
+    the `updated_at` age check can't see — a recently-written but schema-old cache
+    reads as fresh — so callers that need the metadata test it separately. A
+    freshly-merged table always carries metadata on its `openrouter/*` entries.
+    """
+    return not any(p.text_model is not None for p in table.models.values())
+
+
 def maybe_refresh_pricing(
     table: PricingTable, max_age_days: "float | None", *, timeout: float = 30.0
 ) -> PricingTable:
