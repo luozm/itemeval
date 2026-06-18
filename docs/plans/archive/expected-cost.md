@@ -1,11 +1,10 @@
 # Implementation plan — expected-cost (calibrated cost projection alongside the ceiling)
 
-**Status: IN PROGRESS (started 2026-06-17).** Written 2026-06-17 against
-inspect_ai 0.3.x (pinned in `uv.lock`) — this feature is **pure pandas over
-existing stores; it touches no inspect_ai code and adds no dependency**, so the
-engine pin is not load-bearing here. This file is the working brief for a fresh
-implementation session: it carries all the context that session needs. Read
-these first, in order:
+**Status: IMPLEMENTED 2026-06-17.** Written 2026-06-17 against inspect_ai 0.3.x
+(pinned in `uv.lock`) — this feature was **pure pandas over existing stores; it
+touched no inspect_ai code and added no dependency**, so the engine pin was not
+load-bearing here. This file was the working brief; it is kept as the design
+record. The context it relied on, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style,
    "don't over-engineer").
