@@ -283,3 +283,78 @@ def test_run_generate_executes_on_native_id(tmp_path, offline_adapter, monkeypat
     manifest = json.loads((prep.paths.study_dir / result.manifest_path).read_text())
     ep = manifest["endpoints_effective"][prep.grid.generate[0].id]
     assert ep["routed"] is True and ep["execution_model"] == "anthropic/claude-opus-4-8"
+
+
+# --- the openrouter-unpinned-cache hint is route-aware ------------------------
+
+GRADE_ROUTED_YAML = """\
+study: tstudy
+output_dir: studies
+prompts_dir: prompts
+rubrics_dir: rubrics
+benchmark:
+  adapter: hf
+  datasets: [{id: fake/ds}]
+  mapping: {id: problem_idx, input: problem, target: sample_solution}
+solvers:
+  models: [mockllm/solver]
+  max_tokens: 256
+facets:
+  prompt: [minimal]
+  grader: [judge]
+  rubric: [standard]
+  replications: 1
+graders:
+  judge: {model: openrouter/anthropic/claude-opus-4.8, max_tokens: 256}
+budget:
+  policy: full-batch
+  confirm_above_usd: 100000
+  pricing_path: pricing.json
+  prefer_native_batch: PREFER
+"""
+
+
+def _routed_grade(tmp_path, offline_adapter, prefer):
+    """generate (mock solver) then grade an openrouter/anthropic judge; returns
+    the GradeResult. The judge routes to native iff prefer + a key are present."""
+    from inspect_ai.model import get_model
+
+    from conftest import write_study_files
+    from itemeval._config import load_config
+    from itemeval._mockmodels import mock_generate_callable, mock_judge_callable
+    from itemeval._prepare import prepare_study
+    from itemeval.generate._run import run_generate
+    from itemeval.grade._run import run_grade
+
+    (tmp_path / "pricing.json").write_text(PRICING_JSON)
+    yaml_text = GRADE_ROUTED_YAML.replace("PREFER", "true" if prefer else "false")
+    prep = prepare_study(load_config(write_study_files(tmp_path, yaml_text)))
+
+    def factory(model_id, stage, model_args):
+        cb = mock_judge_callable(model_id) if stage == "grade" else mock_generate_callable(model_id)
+        return get_model("mockllm/exec", custom_outputs=cb)
+
+    run_generate(prep, model_factory=factory)
+    return run_grade(prep, model_factory=factory)
+
+
+def test_grade_routed_judge_skips_openrouter_cache_hint(tmp_path, offline_adapter, monkeypatch):
+    """A judge routed to its native batch API never touches OpenRouter, so the
+    openrouter-unpinned-cache caveat must not fire (regression: it fired on the
+    sampled openrouter/anthropic id regardless of the active native route)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    routed = _routed_grade(tmp_path, offline_adapter, prefer=True)
+    # Sanity: the judge really did route (else the assertion below proves nothing).
+    assert [(r.sampled, r.execution) for r in routed.routed_models] == [
+        ("openrouter/anthropic/claude-opus-4.8", "anthropic/claude-opus-4-8")
+    ]
+    assert "openrouter-unpinned-cache" not in [h.code for h in routed.hints]
+
+
+def test_grade_unrouted_judge_keeps_openrouter_cache_hint(tmp_path, offline_adapter):
+    """Contrast: with no native key (routing off), the same openrouter/anthropic
+    judge runs via OpenRouter, so the cache caveat still fires — the fix is
+    route-specific, not a blanket suppression."""
+    unrouted = _routed_grade(tmp_path, offline_adapter, prefer=False)
+    assert unrouted.routed_models == []
+    assert "openrouter-unpinned-cache" in [h.code for h in unrouted.hints]

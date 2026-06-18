@@ -390,9 +390,12 @@ def run_grade(
             local_rows = local_cache_rows(rows)
             judge_models.append(cond.grader_model)
             # Judge tasks always request cache_prompt="auto" (markers on), so
-            # an unpinned openrouter/anthropic judge is a cached-but-routable run.
+            # an unpinned openrouter/anthropic judge is a cached-but-routable run
+            # — unless it was routed to its native API, where the call never
+            # touches OpenRouter and the OpenRouter-cache caveat does not apply.
             if (
                 grader_routing is None
+                and cond.grader_model not in prep.native_routes
                 and provider_of(cond.grader_model) == "openrouter"
                 and cache_provider_of(cond.grader_model) == "anthropic"
             ):

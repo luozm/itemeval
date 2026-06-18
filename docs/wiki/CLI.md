@@ -147,7 +147,7 @@ Hint codes are stable and append-only:
 | `pilot-available` | the cost gate engaged with no completed rows yet for the selected conditions — a cheap `--policy dev` pilot can come first |
 | `anthropic-openrouter-no-split` | an Anthropic-style model runs monolithic prompts through OpenRouter (no `split_prompt`/`split_rubric`), which earns no cache discount (estimate-time) |
 | `split-head-below-min` | `split_prompt`/`split_rubric` is on but the shared head estimates below the provider's minimum cacheable prefix, so the cache silently won't engage (estimate-time) |
-| `openrouter-unpinned-cache` | a cached `openrouter/anthropic/*` run has no `provider_routing` pin, so routing may land on an upstream that ignores cache markers |
+| `openrouter-unpinned-cache` | a cached `openrouter/anthropic/*` run has no `provider_routing` pin, so routing may land on an upstream that ignores cache markers (not raised when `prefer_native_batch` routes the run to the native batch API) |
 
 ## Typical session
 

@@ -140,6 +140,15 @@ Closes: expected-cost
 
 Closes: native-batch-routing
 
+### Fixed
+- **`openrouter-unpinned-cache` hint no longer misfires under native batch
+  routing.** When `prefer_native_batch` routes an `openrouter/anthropic/*` model
+  to its native batch API, the call never goes through OpenRouter, so the
+  "ran cached via OpenRouter without `provider_routing`" caveat does not apply —
+  but the hint fired anyway (keyed on the sampled `openrouter/*` id regardless of
+  the active route), in both `generate` and `grade`. The hint now excludes routed
+  models. Surfaced by the native-batch-routing live smoke.
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider

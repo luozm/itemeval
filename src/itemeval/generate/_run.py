@@ -646,6 +646,9 @@ def run_generate(
                         m
                         for m in run_models
                         if bool(cache_prompt)
+                        # Routed -> ran on the native API, not OpenRouter; the
+                        # OpenRouter-cache caveat does not apply.
+                        and m not in prep.native_routes
                         and prep.config.solvers.provider_routing is None
                         and provider_of(m) == "openrouter"
                         and cache_provider_of(m) == "anthropic"
