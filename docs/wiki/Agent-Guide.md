@@ -67,8 +67,15 @@ itemeval status   CONFIG [--json]               # completion matrix (no API call
    `confirm_above_usd`,** without an explicit user instruction quoting the new
    number. Exit 4 is the user's hard cap working as designed.
 2. **Always run `estimate` (ideally `--refresh-pricing --json`) before the
-   first `generate`/`grade` of a session** and compare `total_usd` against the
-   budget you were given.
+   first `generate`/`grade` of a session** and compare it against the budget
+   you were given. `estimate` reports two figures: a **ceiling** (`usd` /
+   `remaining_usd` — output assumed at `max_tokens`; this is the only figure
+   the gate enforces) and an informational **expected** figure (`expected_usd` /
+   `expected_remaining_usd`, calibrated from prior observed rows). Gate your
+   budget decision on the **ceiling**; treat `expected_usd` only as a planning
+   aid. At cold start the two are equal and the `estimate-is-ceiling` hint
+   suggests a cheap `--policy dev` pilot to calibrate the expected figure
+   (`calibration` in `--json` records how borrowed each model's mean is).
 3. **Start every new config at `policy: dev`** (a few items). Scale to
    `full-interactive`/`full-batch` only after the dev run's export looks right.
 4. **Re-run, don't repair.** On interruption or partial failure, re-invoke the
@@ -128,6 +135,27 @@ Key config rules that bite agents (full reference:
 - Reasoning models need `max_tokens` headroom for hidden reasoning **plus**
   the visible answer; if `grade`/`status` report `empty` solutions, raise
   `max_tokens` or lower `reasoning_effort` and set `solvers.on_empty: rerun`.
+- **Sampling the model facet** instead of listing it: `solvers.sample`
+  (mutually exclusive with `solvers.models`) draws `n` models from a `universe`
+  (`pricing-table` / a file of ids / an inline list) under a `seed`, optionally
+  shaped by `stratify_by` / `allocation` / `include` (pin must-haves) / `where`.
+  The draw is **pinned** in `model_locks.json` beside the study: re-runs reuse
+  it, a drifting roster only **warns** (the pin stands), but changing the sample
+  spec **fails loudly** — delete `model_locks.json` to re-draw (a user-level
+  decision, like a budget bump; existing solutions for dropped models stay). A
+  `pricing-table` universe needs a fresh table (`estimate --refresh-pricing`)
+  first. The sampled `openrouter/*` id is the model's identity everywhere
+  (condition ids, the `model` column, the lock). See
+  [Configuration](Configuration.md#field-notes).
+- **Batching `openrouter/*` models**: under a batch plan (`policy: full-batch`),
+  `budget.prefer_native_batch: true` routes sampled `openrouter/*` models to
+  their native provider batch API (needs that provider's key set) so the
+  dominant stage actually earns the ~50% batch discount — OpenRouter has no
+  batch API. It is opt-in (switching endpoints can change outputs) and never
+  silent; the sampled id stays the model of record. If a batch run leaves it off
+  where it would help, the `native-batch-available` hint flags it, and
+  `estimate` shows a per-model native-batch-vs-OpenRouter-cache comparison. See
+  [Cost Savings](Cost-Savings.md#native-batch-routing).
 
 ## Reading results programmatically
 

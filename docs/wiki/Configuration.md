@@ -79,6 +79,7 @@ budget:
   dev_replications: null       # dev policy: cap replications (default: keep)
   pricing_path: null           # explicit pricing JSON (else user cache, else packaged seed)
   cache_schedule: auto         # warm-then-fan-out scheduling of same-prefix calls: auto | off
+  prefer_native_batch: false   # under a batch plan, route openrouter/* sampled models to their native batch API for the ~50% discount (opt-in; can change outputs) — see Cost Savings
 ```
 
 ## Field notes
