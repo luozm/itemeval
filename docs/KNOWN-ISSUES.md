@@ -17,24 +17,6 @@ tracked in the owning BACKLOG feature/plan, not here, so they're fixed once.
 
 ---
 
-## Pricing-table freshness check misses schema-staleness
-**Found:** 2026-06-17
-
-**Symptom.** A cached `~/.cache/itemeval/pricing.json` written before the
-`text_model`/`reasoning`/`multimodal`/`context_length` fields existed reads as
-*fresh* (recent `updated_at`), so it sails past `pricing_max_age_days`; then
-`universe: pricing-table` finds zero runnable text models and dead-ends in a
-hard `ConfigError`. The staleness is *schema* staleness, which the age check
-can't see.
-
-**Where.** `src/itemeval/budget/_pricing.py` (`maybe_refresh_pricing`,
-`_table_age_days`) · `src/itemeval/_modelsample.py` (`_build_universe`).
-
-**Fix sketch.** Treat "no entry carries `text_model`" as stale regardless of
-`updated_at` and auto-refresh once before erroring. (Schema-versioning the
-table is the durable form, but that belongs to the `pricing-roster-metadata`
-feature.) The current error text is good; the gap is auto-recovery.
-
 ## `items.parquet` keeps stale rows when a study's datasets change
 **Found:** 2026-06-17
 

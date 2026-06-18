@@ -234,6 +234,63 @@ def test_prepare_surfaces_sample_end_to_end(tmp_path, offline_adapter):
     assert prep2.config.solvers.models == drawn
 
 
+def test_prepare_auto_refreshes_schema_stale_cache_for_pricing_table(
+    tmp_path, monkeypatch, offline_adapter
+):
+    """A schema-stale cache (no text_model fields, but recent updated_at) reads as
+    fresh by age, so a pricing-table universe used to dead-end in a ConfigError.
+    prepare now detects the missing roster metadata and refreshes once."""
+    import io
+    import json
+    import urllib.request
+
+    from conftest import TEST_CONFIG_YAML, write_study_files
+
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+    from itemeval._util import utc_now_iso
+
+    # A cache written before the roster-metadata fields existed: recent stamp, but
+    # no entry carries text_model — exactly the case the age check cannot see.
+    pricing_path = tmp_path / "user_pricing.json"
+    pricing_path.write_text(
+        json.dumps(
+            {
+                "updated_at": utc_now_iso(),
+                "source": "merged",
+                "models": {
+                    "openrouter/old/model": {"input_usd_per_mtok": 1.0, "output_usd_per_mtok": 2.0}
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("ITEMEVAL_PRICING_PATH", str(pricing_path))
+    payload = {
+        "data": [
+            {
+                "id": "anthropic/claude-x",
+                "pricing": {"prompt": "0.000003", "completion": "0.000015"},
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                "supported_parameters": ["temperature", "reasoning"],
+                "context_length": 200_000,
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda url, timeout: io.BytesIO(json.dumps(payload).encode())
+    )
+    sample_yaml = TEST_CONFIG_YAML.replace(
+        "  models: [mockllm/solver-a, mockllm/solver-b]\n",
+        "  sample:\n    n: 1\n    seed: 1\n    universe: pricing-table\n",
+    )
+    cfg = load_config(write_study_files(tmp_path, sample_yaml))
+    prep = prepare_study(cfg)
+
+    assert prep.pricing_refreshed  # the schema-stale recovery refresh announces itself
+    assert prep.model_sample is not None and prep.model_sample.source == "pricing-table"
+    assert prep.config.solvers.models == ["openrouter/anthropic/claude-x"]
+
+
 def test_model_sample_provenance_line(capsys):
     from types import SimpleNamespace
 

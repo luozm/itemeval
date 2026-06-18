@@ -161,6 +161,17 @@ Closes: expected-cost
 Closes: native-batch-routing
 
 ### Fixed
+- **A schema-stale pricing cache no longer dead-ends a `pricing-table` sample.**
+  A cached `~/.cache/itemeval/pricing.json` written before the roster-metadata
+  fields (`text_model`/`reasoning`/`multimodal`/`context_length`) existed reads
+  as *fresh* by its `updated_at` stamp, so `budget.pricing_max_age_days` could
+  not see it was stale — and a `solvers.sample` with `universe: pricing-table`
+  then found zero runnable models and aborted with a `ConfigError`. `prepare`
+  now detects the missing roster metadata and refreshes the table once (the
+  existing `pricing: … — just refreshed from OpenRouter` provenance line
+  announces it); offline, it still falls through to the same actionable error.
+  Only the default (unpinned) pricing path auto-recovers — a `budget.pricing_path`
+  pin is honored as-is.
 - **`openrouter-unpinned-cache` hint no longer misfires under native batch
   routing.** When `prefer_native_batch` routes an `openrouter/anthropic/*` model
   to its native batch API, the call never goes through OpenRouter, so the

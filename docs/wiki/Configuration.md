@@ -212,8 +212,11 @@ budget:
   that powers the universe filter, `where`, and the metadata `stratify_by`
   dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`, and the
   `created` release date behind `released_after` / `recency`) is captured by
-  `--refresh-pricing`, so run a refresh once before sampling from `pricing-table`
-  (the empty-universe and recency errors remind you).
+  `--refresh-pricing`. When the cached table predates this metadata, `prepare`
+  refreshes once automatically before a `pricing-table` draw (announced on the
+  pricing provenance line); offline — or for the `recency` dimension, whose
+  release dates aren't auto-recovered — the empty-universe and recency errors
+  point you at a manual `--refresh-pricing`.
 - **Templates: built-in vs local.** A `prompt`/`rubric` entry references a
   template in one of two namespaces, never mixed or silently shadowed:
   `builtin:NAME` resolves to a template packaged inside itemeval (run
