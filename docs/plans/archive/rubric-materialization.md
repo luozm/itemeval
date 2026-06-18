@@ -1,9 +1,9 @@
 # Implementation plan — rubric-materialization (two-stage generate-then-grade rubrics)
 
-**Status: IN PROGRESS (started 2026-06-18).** Written 2026-06-18 against
-inspect_ai 0.3.x (pinned in `uv.lock`) — re-verify the pinned facts below if
-that moved. This file is the working brief for a fresh implementation session:
-it carries all context that session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-18.** Written 2026-06-18 against inspect_ai 0.3.x
+(pinned in `uv.lock`). This file was the working brief for the implementation
+and remains as the design record (shipped folded into `grade` per the W5
+same-change rule; `Closes: rubric-materialization`). Read order, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract (knob buckets, hint

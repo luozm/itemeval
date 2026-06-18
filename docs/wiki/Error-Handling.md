@@ -67,6 +67,19 @@ The usual cause is too small a `max_tokens` for a reasoning model — size the c
 for hidden reasoning **plus** the visible answer. See
 [Configuration](Configuration.md) for details.
 
+### Empty materialized rubrics
+
+For a [two-stage (materialized) rubric](Configuration.md#two-stage-materialized-rubrics),
+the materializer can complete with no error but produce **no rubric text**. The
+item is still graded — against a *blank* `{rubric}` — never silently dropped, and
+the run reports it: `GradeResult.materialize_empty` counts them, and the
+`empty-materialized-rubrics` hint names the count and the materializer model. The
+empty rubric is still frozen in `materialized_rubrics.parquet` (so it is not
+re-materialized on resume); to re-derive, raise the materializer's `max_tokens`
+or edit the build template (a new build-template hash re-materializes), or delete
+the store. The usual cause is too small a `max_tokens` for a multi-section
+marking scheme — the default is 2048.
+
 ## Eval-level (whole-condition) failures
 
 If an entire `inspect_ai.eval(...)` raises — a misconfigured task, an

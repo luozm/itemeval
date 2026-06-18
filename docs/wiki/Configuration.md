@@ -247,6 +247,56 @@ budget:
   blocks). Why it matters and how to confirm the pin held:
   [Cost Savings](Cost-Savings.md#openrouter-or-direct).
 
+## Two-stage (materialized) rubrics
+
+By default a rubric is a single static template rendered once per grading call.
+Some published protocols (ProofBench, RefGrader) are **two-stage**: a per-item
+rubric is *generated from the reference solution and frozen*, then every
+candidate is graded against that frozen rubric. Declare one with a top-level
+`rubrics:` mapping (parallel to `graders:`):
+
+```yaml
+# sketch
+rubrics:
+  checkpoint:
+    materialize:
+      model: openrouter/openai/gpt-5.4   # the materializer (often a strong model)
+      template: checkpoint.build         # build prompt over {input,target,grading_scheme,id}
+      max_tokens: 2048                   # a marking scheme is long (default 2048)
+    grade_template: checkpoint.grade     # judge prompt; receives {rubric} + {solution}
+facets:
+  grader: [judge]
+  rubric: [checkpoint, builtin:standard] # materialized + plain levels crossed as usual
+```
+
+A `facets.rubric` name found in `rubrics:` materializes; any other name stays a
+plain template reference (bare or `builtin:`), **byte-identical to today**. How
+it runs:
+
+- **Stage 1 (materialize), folded into `grade`.** Before judging, the
+  materializer renders the **build template** over the item's reference only —
+  `{input}`, `{target}` (the reference solution), `{grading_scheme}`, `{id}`;
+  it **must not** reference `{solution}` (none exists yet). The result is frozen
+  in `materialized_rubrics.parquet`, content-addressed by the build template +
+  materializer model, and **reused across every grader, solution, replication,
+  and resumed run** (reuse is $0). Run once per item — cheap relative to grading.
+- **Stage 2 (grade).** The **grade template** must contain `{rubric}` (filled
+  with the frozen text) and `{solution}`. With `split_rubric`, the rubric sits in
+  the cached shared head (it's solution-independent).
+- **Cost & consent.** The materializer calls are in the `estimate` and ride the
+  **single existing money gate** — there is no separate command or prompt. The
+  `grade` summary prints `materialized: N rubrics (model) · $X · M reused`.
+- **Identity.** The grade **condition id** includes the materializer model and
+  build-template hash, so changing either re-derives the rubric (like editing a
+  rubric). The per-item rubric text is recorded in the store (and copied into
+  `export --snapshot`) as the reproducibility record. Materialization is a
+  **design declaration** — always explicit, never auto-enabled.
+
+The build/grade prompts are yours to author (study content); itemeval ships no
+built-in materialize template. If a materialization returns no text, the
+`empty-materialized-rubrics` hint fires and that item is graded against a blank
+rubric (see [Error Handling](Error-Handling.md#empty-materialized-rubrics)).
+
 ## Composite item ids
 
 Item ids must be **unique across all configured datasets** — they are the join

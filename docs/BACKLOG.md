@@ -476,46 +476,6 @@ denominator is declared (a `mapping`-level `max_points: <col>` vs. an export
 option). Modeling (variance components, IRT) stays in the user's stats stack —
 this only widens the table.
 
-### Two-stage rubric materialization (generate-then-grade)
-**Key:** `rubric-materialization`
-
-**Motivation.** A rubric is a single static template rendered with
-`{input, solution, target, grading_scheme, id}` in one judge call. Several
-published grading protocols are two-stage: *generate a per-item rubric from the
-reference solution, freeze it, then grade every solution with that frozen
-rubric*. Today these collapse into a one-pass construct-then-grade prompt, which
-deviates from the protocol and re-derives the rubric on every grading call
-(non-reproducible, uncacheable).
-
-**Design sketch.** An optional per-item materialization step before grading: for
-each (rubric, item) the materializer LLM produces the rubric once from the
-item's reference; the result is content-hashed and cached like a template, then
-reused verbatim by every grader call for that item.
-
-```yaml
-rubrics:
-  checkpoint:
-    materialize:
-      model: openrouter/openai/gpt-5.4
-      template: rubrics/checkpoint.build.txt   # per-item rubric from {input,target,grading_scheme}
-    grade_template: rubrics/checkpoint.grade.txt  # receives the materialized {rubric}
-```
-
-Without `materialize`, grading is unchanged.
-
-**Implementation notes.** A new materialization stage (`grade/_materialize.py`
-or a pre-pass in `grade/_run.py`), a per-item rubric artifact store
-(content-hashed, reusing the items/template hashing machinery — overlaps
-`item-covariates-export`), `grade/_judge.py` (`build_judge_input` accepts a
-materialized `{rubric}`), `design/_grid.py` (record the materialized-rubric hash
-in the condition), `budget/_estimator.py` (cost the extra per-item call).
-Sizable; needs its own design pass. ~250 lines + tests.
-
-**Open questions.** Whether materialization is its own pipeline stage (with
-resume/estimate) or folded into grade. Caching key: (rubric-template hash, item
-id, materializer model). Whether the materialized rubric is exported as
-provenance.
-
 ---
 
 ## Tier 3 — scale and breadth

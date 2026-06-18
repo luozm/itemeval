@@ -196,6 +196,27 @@ def test_estimate_includes_materialize_term(mat_study):
     assert est.grade.calls == judge_calls + mat_conds[0].calls
 
 
+def test_empty_materialized_rubrics_hint():
+    from itemeval._hints import detect_empty_materialized_rubrics
+
+    assert detect_empty_materialized_rubrics(0, "openrouter/x/y") is None
+    h = detect_empty_materialized_rubrics(3, "openrouter/x/y")
+    assert h.code == "empty-materialized-rubrics"
+    assert "3" in h.message and "openrouter/x/y" in h.message
+    assert h.learn_more == "Error-Handling#empty-materialized-rubrics"
+
+
+def test_snapshot_copies_materialized_store(mat_study):
+    from itemeval.store._export import export_study
+
+    cfg, prep = mat_study
+    run_generate(prep)
+    run_grade(prep)
+    export_study(cfg, snapshot="snap1")
+    snap = prep.paths.export_dir / "snapshots" / "snap1" / "materialized_rubrics.parquet"
+    assert snap.is_file()
+
+
 def test_unpriced_materializer_flagged(tmp_path, offline_adapter):
     # An unpriced materializer surfaces in grade.unpriced_models (estimate-only,
     # no model call). Mock ids are priced in the seed, so use a real-looking id.

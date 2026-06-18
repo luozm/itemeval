@@ -10,6 +10,7 @@ from itemeval._errors import StoreError
 from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
+    detect_empty_materialized_rubrics,
     detect_empty_solutions,
     detect_openrouter_unpinned_cache,
     detect_unpriced_models,
@@ -597,6 +598,7 @@ def run_grade(
             ),
             detect_openrouter_unpinned_cache(sorted(set(unpinned_cached))),
             detect_empty_solutions(empty_total, empty_skipped, on_empty, empty_stop_reasons),
+            detect_empty_materialized_rubrics(int(mat_stats["empty"]), mat_stats["model"]),
             detect_unpriced_models(
                 sorted({m for m in judge_models if lookup_price(prep.pricing, m) is None})
             ),

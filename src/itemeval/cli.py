@@ -438,6 +438,14 @@ def _run_stage(args, stage, runner) -> int:
         if stage == "generate":
             print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
         else:
+            if result.materialized_rubrics or result.materialized_reused:
+                # Law 8: one self-contained line with numbers — what the
+                # materialization pre-pass did (fresh vs reused, spend, model).
+                print(
+                    f"materialized: {result.materialized_rubrics} rubrics "
+                    f"({result.materialize_model}) · {_fmt_usd(result.materialize_usd)} · "
+                    f"{result.materialized_reused} reused"
+                )
             print(
                 f"rows written: {result.rows_written}  parse_failures={result.parse_failures}  "
                 f"spend: {_fmt_usd(result.total_usd)}"

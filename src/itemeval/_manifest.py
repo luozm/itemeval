@@ -164,7 +164,11 @@ def build_manifest(
             for ds in prep.datasets
         ],
         solver_templates=[_template_manifest(t, base) for t in prep.solver_templates.values()],
-        rubric_templates=[_template_manifest(t, base) for t in prep.rubric_templates.values()],
+        # grade templates + any materialize (build) templates — full rubric provenance.
+        rubric_templates=[
+            _template_manifest(t, base)
+            for t in (*prep.rubric_templates.values(), *prep.build_templates.values())
+        ],
         models=list(cfg.solvers.models),
         graders=used_graders,
         sampling_requested=sampling,

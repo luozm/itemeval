@@ -187,6 +187,21 @@ def detect_empty_solutions(
     )
 
 
+def detect_empty_materialized_rubrics(empty: int, model: "str | None") -> "Hint | None":
+    """A materializing rubric produced no text for some items — they were graded
+    against a blank {rubric} (the materializer ran but returned nothing)."""
+    if empty <= 0:
+        return None
+    return Hint(
+        code="empty-materialized-rubrics",
+        message=(
+            f"{empty} materialized rubric(s) came back empty — the materializer "
+            f"({model}) produced no text, so those items were graded against a blank rubric"
+        ),
+        learn_more="Error-Handling#empty-materialized-rubrics",
+    )
+
+
 def detect_pilot_available(*, store_is_empty: bool, dev_items: int) -> "Hint | None":
     """The money gate engaged with no completed rows behind it — a cheap pilot exists.
 
