@@ -1,11 +1,10 @@
 # Implementation plan — sample-exclude (id blocklist + non-free roster by default)
 
-**Status: NOT STARTED.** Written 2026-06-18 against the current
-`docs/feature-coverage-wiki` branch (0.3.0.dev) — re-verify the pinned
-file:line facts below if they moved. This file is the working brief for a fresh
-implementation session: it carries all the context that session needs. The
-feature **extends the unreleased `model-sampling`** (in `[Unreleased]`, ships
-with 0.3; design records in
+**Status: IMPLEMENTED 2026-06-18.** Written 2026-06-18 and shipped the same day
+(branch `feat/sample-exclude`, 0.3.0.dev); this file is now the design record,
+past tense. It described the two workstreams as built: `solvers.sample.exclude`
+and the non-free `pricing-table` roster. The feature **extends the unreleased
+`model-sampling`** (in `[Unreleased]`, ships with 0.3; design records in
 [docs/plans/archive/model-sampling.md](archive/model-sampling.md) and
 [docs/plans/archive/model-sample-composition.md](archive/model-sample-composition.md)).
 It is **engine-free** — config, the draw module, the manifest, the study card;

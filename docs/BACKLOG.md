@@ -604,8 +604,8 @@ model in a `pricing-table` sample. Today only exact-id dedup happens
 
 **Why it's deferred.** `sample-exclude`'s non-free-roster change already drops
 the `:free` duplicates, which are the bulk; the survey behind
-[docs/plans/sample-exclude.md](plans/sample-exclude.md) found exactly **1**
-suffixed id left in the non-free ≥2023 roster, so exact-id dedup is sufficient
+[docs/plans/archive/sample-exclude.md](plans/archive/sample-exclude.md) found
+exactly **1** suffixed id left in the non-free ≥2023 roster, so exact-id dedup is sufficient
 for now. Building this earns almost nothing until a real duplicate problem
 appears.
 
