@@ -618,6 +618,58 @@ variant wins (base? cheapest? most-metadata?) given variants can carry different
 price/context; whether to expose the suffix set as a knob (default: no — keep it
 a fixed internal list per "don't over-engineer").
 
+### Concurrent condition execution + pre-flight run plan/ETA
+**Key:** `parallel-conditions`
+
+**Motivation.** `generate` (and `grade`) run one `inspect_ai.eval()` per
+condition in a serial loop ([generate/_run.py:482-552](../src/itemeval/generate/_run.py#L482),
+[grade/_run.py](../src/itemeval/grade/_run.py)) — model #2 doesn't start until
+model #1 finishes, so wall-clock = sum of per-model times even though distinct
+models hit independent provider connections. inspect already parallelizes
+*samples* within a condition; the serial limit is purely cross-condition. For a
+multi-model dev sweep this is the dominant cost in *time*. Compounding it: there
+is **no time estimate anywhere** (only cost), and itemeval's per-condition
+report lines print only *after* the whole run returns — so an operator (human or
+agent) has no pre-flight sense of duration and no durable progress signal.
+
+**Design sketch.** Two coupled deliverables under one key:
+
+1. *Concurrent execution.* inspect's `eval()` runs a *list* of tasks with
+   `max_tasks` parallelism, and a `Task` may carry its own model —
+   `resolve_tasks` resolves each task's model as `task.model or model` (verified
+   in installed `inspect_ai/_eval/loader.py`, 0.3.239). So the per-condition
+   `model_args` + native-routing exec id can ride on `Task.model`, and all
+   conditions run in **one** `eval()` call. Map returned logs back to conditions
+   by `log.eval.metadata["itemeval"]["condition_id"]` (set today in
+   `build_generate_task`) — never by index. Concurrency is an **optimization**
+   knob (UX Law 5) → an invisible default, not a config option; cap `max_tasks`
+   modestly to bound same-provider rate-limit pressure (inspect retries 429s).
+2. *Pre-flight run plan + coarse ETA.* One durable, relay-survivable line before
+   the run: `generate: N conditions × E epochs × I items = C calls; ~T min at
+   concurrency K`. Seed median latency from this study's ledger `latency_s`
+   (already stored) when present, else a labeled default; mark the ETA rough.
+   This is the fact an agent needs to decide whether to background the run — a
+   progress bar can't be relayed (UX Law 8), a quotable line can.
+
+**Implementation notes.** `generate/_run.py` + `grade/_run.py` share the loop
+shape, so factor the build-all-tasks / one-eval / map-logs-by-condition step
+into a small shared helper. Log layout changes from per-condition subdirs
+(`logs/<stage>/<cond_id>/`, [store/_layout.py:46](../src/itemeval/store/_layout.py#L46))
+to one `logs/<stage>/` dir — readback is parquet-keyed by `condition_id`, so
+this is low-risk, but confirm nothing globs the per-condition subdir. Error
+isolation moves from the per-condition `try/except` to per-log status mapping
+(`fail_on_error=False` keeps sample errors isolated). The coarse-ETA line lands
+next to the existing projected-cost block in `_run_stage` ([cli.py:368-393](../src/itemeval/cli.py#L368)).
+
+**Open questions / tradeoffs.** (a) Parallel single-eval defers all
+`upsert_solutions` writes to the *end* (today they're per-condition inside the
+loop), so a live `itemeval status` from another shell loses mid-run row
+visibility — inspect's own `.eval` logs still update live; decide whether that's
+acceptable or whether to stream rows via an inspect hook. (b) Default `max_tasks`
+value (distinct-model count vs a fixed small cap). (c) Whether the coarse ETA
+deserves its own key if it grows into a calibrated latency prior (the
+`reuse-savings`-style calibration path) — out of scope here.
+
 ---
 
 ## Ops / release
