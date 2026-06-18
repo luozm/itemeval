@@ -112,7 +112,7 @@ JSONL adapters are on the roadmap ("Later"); the adapter protocol in
 
 ## Where are the raw transcripts?
 
-`studies/<study>/logs/<stage>/<condition_id>/*.eval` — full inspect logs.
+`studies/<study>/logs/<stage>/*.eval` — full inspect logs (one per condition).
 `inspect view --log-dir studies/<study>/logs` gives you the inspect UI over
 them; every store row carries its `log_file` and `sample_uuid`.
 

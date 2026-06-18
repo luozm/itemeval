@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from inspect_ai.log import EvalLog, EvalSample
     from inspect_ai.model import ModelUsage
 
+    from itemeval._item import Item
     from itemeval._prepare import PreparedStudy
 
 # (model_id, stage, model_args) -> str | Model; model_args carries per-condition
@@ -142,6 +143,75 @@ def resolve_display(display: "str | None") -> str:
     inspect itself degrades the chosen mode off-TTY/Jupyter/background-thread.
     """
     return display or os.environ.get("INSPECT_DISPLAY") or "rich"
+
+
+def max_tasks_for(exec_models: "list[str]") -> int:
+    """Cross-condition concurrency cap: the number of distinct execution models.
+
+    Concurrency is an optimization (UX Law 5: an invisible default, never a
+    config knob). Capping at distinct-model count is inspect's own heuristic —
+    it lets every model run while one model fails (the user's "model #2 waits
+    for model #1" complaint) without firing every same-model condition at one
+    provider at once. A single distinct model → 1 (today's serial behavior, no
+    regression); inspect itself serializes a single-model task list anyway."""
+    return max(1, len(set(exec_models)))
+
+
+def run_condition_evals(
+    tasks: list,
+    *,
+    stage: str,
+    run_id: str,
+    study: str,
+    display: "str | None",
+    log_dir: str,
+    max_tasks: int,
+) -> "tuple[dict[str, EvalLog], str | None]":
+    """Run every condition's task in ONE inspect eval, up to max_tasks at once.
+
+    Each task carries its own ``.model`` (inspect's resolve_tasks honors
+    ``task.model or model``), so heterogeneous (model, params) conditions run
+    concurrently; a single fallback top-level model keeps inspect from
+    cross-producing the task list. Returns ``({condition_id: log}, fatal)``:
+    logs map back to conditions by the task's ``itemeval.condition_id`` metadata
+    (never by index — concurrent completion order is not stable). inspect
+    isolates per-task errors into failed logs (sibling models keep running);
+    only a whole-call exception sets ``fatal`` (msg), so the caller can mark
+    every condition errored. ``fail_on_error=False`` + ``retry_on_error=1`` keep
+    the per-sample semantics identical to the old per-condition loop."""
+    if not tasks:
+        return {}, None
+    try:
+        logs = inspect_ai.eval(
+            tasks,
+            model=tasks[0].model,
+            max_tasks=max_tasks,
+            display=resolve_display(display),
+            log_dir=log_dir,
+            log_format="eval",
+            fail_on_error=False,
+            retry_on_error=1,
+            tags=["itemeval", stage],
+            metadata={"itemeval_run_id": run_id, "itemeval_study": study},
+        )
+    except Exception as e:  # whole-eval failure (rare): caller errors every cond
+        return {}, f"{type(e).__name__}: {e}"
+    out: "dict[str, EvalLog]" = {}
+    for log in logs:
+        cid = ((log.eval.metadata or {}).get("itemeval") or {}).get("condition_id")
+        if cid is not None:
+            out[cid] = log
+    return out, None
+
+
+def eval_error_message(log: "EvalLog | None", fatal: "str | None") -> str:
+    """Why a planned condition produced no usable rows (status mapping)."""
+    if fatal is not None:
+        return fatal
+    if log is None:
+        return "no log returned for condition"
+    detail = f" — {log.error.message}" if log.error else ""
+    return f"eval status: {log.status}{detail}"
 
 
 def matches_filter(cond_id: str, slug: str, filters: "list[str] | None") -> bool:
@@ -459,7 +529,7 @@ def run_generate(
     )
     manifest_path = write_manifest(manifest, prep.paths)
 
-    reports: list[ConditionRunReport] = []
+    reports_by_cond: dict[str, ConditionRunReport] = {}
     rows_written = 0
     total_usd = 0.0
     run_models: list[str] = []  # models of conditions that actually ran
@@ -479,13 +549,17 @@ def run_generate(
         else (False if cp == "off" else None)
     )
 
+    # Phase 1: plan every condition off one solutions snapshot (planning has no
+    # side effects, so a single read is correct — and avoids re-reading between
+    # the per-condition upserts that now happen after the shared eval). Build a
+    # task (with its own model) for each condition that has work; report skips.
+    planned: list[tuple[GenCondition, list[Item], str, Any]] = []
     for cond in selected:
-        existing = _solutions.read_solutions(prep.paths)
         if force:
             to_run = list(item_ids)
         else:
             missing = _solutions.epochs_to_run(
-                existing,
+                store,
                 cond.id,
                 item_ids,
                 epoch_block,
@@ -493,20 +567,19 @@ def run_generate(
             )
             to_run = [iid for iid in item_ids if missing[iid]]
         if not to_run:
-            reports.append(
-                ConditionRunReport(
-                    condition_id=cond.id,
-                    slug=cond.slug,
-                    status="skipped",
-                    items_run=0,
-                    rows_written=0,
-                    errors=0,
-                    usd=None,
-                    log_file=None,
-                )
+            reports_by_cond[cond.id] = ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="skipped",
+                items_run=0,
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
             )
             continue
-        items = [it for it in prep.items_effective if it.id in set(to_run)]
+        to_run_set = set(to_run)
+        items = [it for it in prep.items_effective if it.id in to_run_set]
         task = build_generate_task(
             items,
             cond,
@@ -521,49 +594,64 @@ def run_generate(
             epoch_offset=epoch_offset,
         )
         # Native batch routing: run the call on the native id when active; the
-        # sampled cond.model stays the recorded scientific identity.
+        # sampled cond.model stays the recorded scientific identity. The model
+        # rides on the Task so all conditions run in one parallel eval. Model
+        # construction can fail (bad id / missing key) — isolate it per
+        # condition, matching the old per-condition error report.
         exec_model = prep.native_routes.get(cond.model, cond.model)
         try:
-            # Serial eval per condition: inspect's eval is one-at-a-time per process.
-            logs = inspect_ai.eval(
-                task,
-                model=factory(
+            task.model = factory(
+                exec_model,
+                "generate",
+                model_args_for(
                     exec_model,
-                    "generate",
-                    model_args_for(
-                        exec_model,
-                        provider_routing=prep.config.solvers.provider_routing,
-                        cache_scheduling=cache_schedule,
-                        study=prep.config.study,
-                        condition_id=cond.id,
-                    ),
-                ),
-                display=resolve_display(display),
-                log_dir=str(prep.paths.logs_dir("generate", cond.id)),
-                log_format="eval",
-                fail_on_error=False,
-                retry_on_error=1,
-                tags=["itemeval", "generate"],
-                metadata={
-                    "itemeval_run_id": run_id,
-                    "itemeval_study": prep.config.study,
-                    "itemeval_condition_id": cond.id,
-                },
-            )
-            log = logs[0]
-        except Exception as e:  # eval-level failure: report and continue
-            reports.append(
-                ConditionRunReport(
+                    provider_routing=prep.config.solvers.provider_routing,
+                    cache_scheduling=cache_schedule,
+                    study=prep.config.study,
                     condition_id=cond.id,
-                    slug=cond.slug,
-                    status="error",
-                    items_run=len(items),
-                    rows_written=0,
-                    errors=0,
-                    usd=None,
-                    log_file=None,
-                    message=f"{type(e).__name__}: {e}",
-                )
+                ),
+            )
+        except Exception as e:
+            reports_by_cond[cond.id] = ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="error",
+                items_run=len(items),
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
+                message=f"{type(e).__name__}: {e}",
+            )
+            continue
+        planned.append((cond, items, exec_model, task))
+
+    # Phase 2: one eval over all planned tasks — conditions run concurrently
+    # (bounded by distinct-model count), instead of one model at a time.
+    log_by_cond, fatal = run_condition_evals(
+        [task for _, _, _, task in planned],
+        stage="generate",
+        run_id=run_id,
+        study=prep.config.study,
+        display=display,
+        log_dir=str(prep.paths.logs_stage_dir("generate")),
+        max_tasks=max_tasks_for([exec_model for _, _, exec_model, _ in planned]),
+    )
+
+    # Phase 3: harvest each planned condition from its log (mapped by metadata).
+    for cond, items, exec_model, _task in planned:
+        log = log_by_cond.get(cond.id)
+        if fatal is not None or log is None or log.status != "success":
+            reports_by_cond[cond.id] = ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="error",
+                items_run=len(items),
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
+                message=eval_error_message(log, fatal),
             )
             continue
 
@@ -608,20 +696,21 @@ def run_generate(
                     "reasoning_effort_effective",
                 )
             }
-        reports.append(
-            ConditionRunReport(
-                condition_id=cond.id,
-                slug=cond.slug,
-                status="run",
-                items_run=len(items),
-                rows_written=n,
-                errors=sum(1 for r in rows if r["error"] is not None),
-                usd=cond_usd,
-                log_file=rel_to_study(prep.paths, log.location),
-                local_cache_rows=local_cache_rows(rows),
-                **cache_columns(rows),
-            )
+        reports_by_cond[cond.id] = ConditionRunReport(
+            condition_id=cond.id,
+            slug=cond.slug,
+            status="run",
+            items_run=len(items),
+            rows_written=n,
+            errors=sum(1 for r in rows if r["error"] is not None),
+            usd=cond_usd,
+            log_file=rel_to_study(prep.paths, log.location),
+            local_cache_rows=local_cache_rows(rows),
+            **cache_columns(rows),
         )
+
+    # Reassemble in selected order (skips + runs/errors) for a stable summary.
+    reports: list[ConditionRunReport] = [reports_by_cond[c.id] for c in selected]
 
     if sampling_effective or endpoints_effective:
         finalize_manifest(

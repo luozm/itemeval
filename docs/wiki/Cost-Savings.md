@@ -233,3 +233,17 @@ caching and all batch APIs need a direct key.
 | Batch (`budget.policy`) | off (`dev`) | large unattended runs → `full-batch` |
 | Native batch routing (`budget.prefer_native_batch`) | off | batching `openrouter/…` models → `true` to route them to their native batch API |
 | Budget gate / hard cap | $5 ask / no cap | set `max_usd` before every big run |
+
+### See what's actually on for a run
+
+`estimate`, `generate`, and `grade` print a `cost levers:` line before doing any
+work, stating whether each lever is engaged — with a one-clause reason for any
+that is off. It is the fastest way to confirm, e.g., that a `--policy dev` run is
+deliberately running *without* batch and native routing:
+
+```
+cost levers: batch off (dev policy) · native-routing off (needs batch plan) · prompt-cache provider-default (auto, reps=1) · response-cache on ($0 replays on re-run)
+```
+
+The levers themselves are unchanged by this line — it only reports their state,
+so nothing on a run is silently on or off.

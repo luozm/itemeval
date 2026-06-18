@@ -1,9 +1,46 @@
 # Implementation plan — parallel-conditions (concurrent condition execution + pre-flight run plan/ETA)
 
-**Status: NOT STARTED.** Written 2026-06-18 against `inspect_ai 0.3.239`
-(pinned in `uv.lock`) — re-verify the pinned inspect facts below if that moved.
-This file is the working brief for a fresh implementation session: it carries
-all context that session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-18.** Written + shipped 2026-06-18 against
+`inspect_ai 0.3.239` (pinned in `uv.lock`). This file is now the design record.
+
+**As-built notes (where the implementation settled):**
+- W1 shipped for both stages via a shared `run_condition_evals` helper +
+  `max_tasks_for` (distinct-execution-model count) in `generate/_run.py`, reused
+  by `grade/_run.py`. Grade keeps verifiable conditions in-process (Phase 1) and
+  batches only judge conditions. Logs moved to one `logs/<stage>/` dir
+  (`StudyPaths.logs_stage_dir`). Per-sample retry/error semantics unchanged;
+  model-construction failures are isolated per condition (a `try/except` around
+  the factory call in Phase 1), and a whole-eval exception errors every planned
+  condition (`eval_error_message`).
+- W2 shipped as `concurrency` / `eta_seconds` / `eta_latency_basis` on
+  `StageEstimate` (computed in `estimate_study`'s `stage_total`), rendered by
+  `cli._eta_line` on estimate/generate/grade. Latency prior =
+  `median_latency_s` over the stage store; default `DEFAULT_CALL_LATENCY_S=8.0`.
+- Issue #3 (cost-lever line) shipped as `cli._cost_levers_line` — a CHANGELOG
+  `Added` entry, no key (legibility of existing behavior).
+- **Accepted tradeoff:** parallel single-eval defers `upsert_solutions` /
+  `upsert_gradings` to the end of the run, so a mid-run `itemeval status` from
+  another shell no longer sees rows accumulate per condition (inspect's own
+  `.eval` logs still update live). Left as-is; revisit only if long-run live
+  `status` becomes important (would need an inspect hook to stream rows).
+- **Cache mechanisms verified unaffected** (an explicit follow-up concern). The
+  warm-then-fan-out scheduler (`gated_generate`) keeps an `events` dict per task
+  build (one per condition), so two conditions reusing the same group key (both
+  keyed by item id) stay isolated under one eval — the gate is per-condition, not
+  per-eval (comment in `_cachegate.py` corrected; `tests/test_cache_parallel.py`
+  guards it). Local response cache, OpenAI `prompt_cache_key` (per
+  study+condition), provider `cache_prompt` markers, and `split_prompt`/
+  `split_rubric` are all per-task config keyed by content, so distinct conditions
+  never collide. The estimator models cache savings per condition (never
+  cross-condition), so projections are unchanged. **One honest nuance, not a
+  regression:** a serial run could *incidentally* let condition B read a provider
+  cache that condition A warmed when both shared an identical cacheable prefix on
+  the same model (differing only by sampling config); concurrent runs may race on
+  that one leader write. This was never a designed or estimated mechanism (the
+  per-condition gate never coordinated across conditions), so no projection is
+  violated — worst case is one extra cache write for such a condition pair.
+
+Original brief follows (read these first, in order):
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. Load-bearing here: Law 5

@@ -83,7 +83,7 @@ def test_study_paths(tmp_path):
     paths = StudyPaths(tmp_path / "study")
     paths.ensure()
     assert paths.manifests_dir.is_dir() and paths.export_dir.is_dir()
-    assert paths.logs_dir("generate", "c1") == tmp_path / "study/logs/generate/c1"
+    assert paths.logs_stage_dir("generate") == tmp_path / "study/logs/generate"
 
 
 def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s"):

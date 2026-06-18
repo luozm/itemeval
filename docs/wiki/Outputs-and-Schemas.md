@@ -14,8 +14,8 @@ studies/<study>/
   dataset_locks.json       # dataset revisions pinned at first run
   model_locks.json         # model sample draw pinned (only with solvers.sample)
   manifests/<run_id>.json  # one reproducibility manifest per run
-  logs/generate/<condition_id>/*.eval   # raw inspect logs (full transcripts)
-  logs/grade/<condition_id>/*.eval
+  logs/generate/*.eval     # raw inspect logs (full transcripts; one per condition)
+  logs/grade/*.eval
   export/gradings_long.parquet  # the analysis-ready long table
   export/gradings_long.csv      # byte-equivalent CSV mirror
   export/ledger.csv

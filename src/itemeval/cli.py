@@ -35,6 +35,70 @@ def _fmt_usd(value: "float | None") -> str:
     return f"${value:.2f}"
 
 
+def _fmt_duration(seconds: float) -> str:
+    """Coarse human duration: <1m as 'Ns', else 'Hh Mm' / 'Mm'."""
+    total = int(round(seconds))
+    if total < 60:
+        return f"{total}s"
+    minutes, _ = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+
+def _eta_line(st) -> "str | None":
+    """One coarse, relay-survivable wall-clock line for a stage estimate, or
+    None when there is nothing to run (UX Law 8: a fact, not a progress bar)."""
+    if st.eta_seconds is None:
+        return None
+    return (
+        f"  ~{_fmt_duration(st.eta_seconds)} at concurrency {st.concurrency} "
+        f"({st.remaining_calls} calls, {st.eta_latency_basis} latency — rough)"
+    )
+
+
+def _prompt_cache_clause(prep, stage: str) -> str:
+    if stage == "grade":
+        return "prompt-cache auto (judge default)"
+    cp = prep.config.solvers.cache_prompt
+    if cp == "on":
+        return "prompt-cache on"
+    if cp == "off":
+        return "prompt-cache off"
+    # auto: explicit only when there's a shared prefix to reuse (replications>1)
+    if prep.plan.replications > 1:
+        return "prompt-cache on (auto, reps>1)"
+    return "prompt-cache provider-default (auto, reps=1)"
+
+
+def _cost_levers_line(prep, stage: str) -> str:
+    """State which cost-saving levers are engaged this run, with a one-clause
+    reason for each that is off. The dev policy turns most levers off; nothing
+    announced that before, so an operator could not tell what was active (Law 1:
+    no silent no-op; Law 8: written to be quoted)."""
+    parts: list[str] = []
+    if prep.plan.batch is not None:
+        parts.append("batch on (provider batch API)")
+    else:
+        parts.append(f"batch off ({'dev policy' if prep.plan.policy == 'dev' else 'config'})")
+
+    if prep.native_routes:
+        parts.append(f"native-routing on ({len(prep.native_routes)} model(s))")
+    elif prep.plan.batch is None:
+        parts.append("native-routing off (needs batch plan)")
+    elif not prep.config.budget.prefer_native_batch:
+        parts.append("native-routing off (prefer_native_batch off)")
+    elif prep.native_routes_unavailable:
+        parts.append("native-routing off (no native API key)")
+    else:
+        parts.append("native-routing off (no eligible model)")
+
+    parts.append(_prompt_cache_clause(prep, stage))
+    parts.append(
+        "response-cache on ($0 replays on re-run)" if prep.config.cache else "response-cache off"
+    )
+    return "cost levers: " + " · ".join(parts)
+
+
 def _load(args) -> "tuple":
     from itemeval._config import load_config
     from itemeval._prepare import prepare_study
@@ -123,6 +187,9 @@ def _print_estimate(est, stage: str) -> None:
         exp_clause = _expected_clause(st, name)
         if exp_clause:
             print(f"  expected ~{_fmt_usd(st.expected_usd)} ({exp_clause})")
+        eta = _eta_line(st)
+        if eta:
+            print(eta)
         rows = [
             [
                 c.slug,
@@ -263,6 +330,7 @@ def _cmd_estimate(args) -> int:
     _print_model_sample(prep)
     _print_native_routes(prep)
     _print_pricing(est.pricing)
+    print(_cost_levers_line(prep, "generate" if args.stage in ("all", "generate") else "grade"))
     _print_estimate(est, args.stage)
     _print_route_comparison(est)
     emit_hints(est.hints)
@@ -370,6 +438,7 @@ def _run_stage(args, stage, runner) -> int:
         _print_model_sample(prep)
         _print_native_routes(prep)
         _print_pricing(est.pricing)
+        print(_cost_levers_line(prep, stage))
         if stage == "generate" and args.wave:
             print(
                 f"wave {args.wave}: local response cache off — re-observations must be fresh draws"
@@ -385,6 +454,9 @@ def _run_stage(args, stage, runner) -> int:
         exp_clause = _expected_clause(st, stage)
         if exp_clause:
             print(f"  expected ~{_fmt_usd(st.expected_remaining_usd)} ({exp_clause})")
+        eta = _eta_line(st)
+        if eta:
+            print(eta)
         if st.rows_replaced:
             print(
                 f"this run replaces {st.rows_replaced} existing rows "
