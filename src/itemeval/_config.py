@@ -145,6 +145,11 @@ class ModelSample(BaseModel):
     # the rest. Bypasses `where` and universe membership (purposive). When also
     # stratified, pins count toward their stratum's balanced share (not on top).
     include: list[str] = Field(default_factory=list)
+    # Remove these exact model-ids from the universe before drawing (e.g. judge
+    # ids, for rater-object independence). Exact match; ids absent from the
+    # universe are a no-op. The inverse of `include`, which *adds* purposive
+    # pins; unlike `where`, it is not roster-only (works for any universe).
+    exclude: list[str] = Field(default_factory=list)
     universe: str | list[str]  # "pricing-table" | a file path | an inline list
     where: ModelUniverseFilter | None = None
 
@@ -181,6 +186,16 @@ class ModelSample(BaseModel):
             raise ValueError(
                 f"solvers.sample.include ({len(self.include)} ids) exceeds n ({self.n}) — "
                 "pinned models are counted against n"
+            )
+        if any(not e.strip() for e in self.exclude):
+            raise ValueError("solvers.sample.exclude entries must be non-empty")
+        if len(set(self.exclude)) != len(self.exclude):
+            raise ValueError("solvers.sample.exclude entries must be unique")
+        overlap = set(self.include) & set(self.exclude)
+        if overlap:
+            raise ValueError(
+                "solvers.sample: ids cannot be both included and excluded "
+                f"(include ∩ exclude = {sorted(overlap)})"
             )
         return self
 

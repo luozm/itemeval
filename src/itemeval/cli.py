@@ -184,9 +184,10 @@ def _print_model_sample(prep) -> None:
         if ms.allocation == "equal":
             strat += " (equal)"
     incl = f", {len(ms.include)} via include" if ms.include else ""
+    excl = f", {len(ms.exclude)} excluded" if ms.exclude else ""
     if ms.pinned_now:
         print(
-            f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}{incl}) "
+            f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}{incl}{excl}) "
             f"from {source} — pinned in model_locks.json"
         )
     else:

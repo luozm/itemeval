@@ -116,6 +116,7 @@ budget:
       stratify_by: provider          # optional; see the dimensions below
       allocation: equal              # optional; equal-per-stratum (default: proportional)
       include: [openrouter/openai/gpt-5.1]   # optional; always present, counted against n
+      exclude: [openrouter/openai/gpt-5-judge]  # optional; dropped from any universe before drawing
       universe: pricing-table        # | a file path | an inline list of ids
       where:                         # pricing-table only
         provider: [anthropic, openai, google]
@@ -156,6 +157,14 @@ budget:
   if you pin more than a stratum's share, all pins are kept and the rest
   rebalances.
 
+  **`exclude`** is the inverse of `include`: a list of exact model-ids dropped
+  from the universe before the draw (e.g. the judge model-ids, so a judge can't
+  be drawn as a solver). Unlike `where`, it is **not** roster-only — it works for
+  `pricing-table`, file, and inline-list universes alike ("this list, minus these
+  three"). Ids absent from the universe are a no-op, and an id cannot be both
+  `include`d and `exclude`d (rejected at load). The blocked ids are recorded in
+  `model_locks.json` and `STUDY_CARD.md`, so the card attests them.
+
   **`where`** (pricing-table only — list/file universes are already curated)
   narrows the roster before the draw: a `provider` allowlist, a
   `max_output_usd_per_mtok` ceiling, a `min_context_length` floor, a
@@ -193,7 +202,12 @@ budget:
 
   The `pricing-table` universe is restricted to OpenRouter's **runnable text
   models** — those that take text and emit text and expose generation parameters
-  — so embedding and meta/router entries are never sampled. The roster metadata
+  — so embedding and meta/router entries are never sampled. It also **excludes
+  free (`$0` output) models**: they are rate-limited `:free` endpoints, not
+  representative of the paid models a measurement frame samples (so a
+  `pricing-table` draw never yields a `free` price tier). They stay in the
+  pricing table — name one directly in `solvers.models` if you want it and its
+  price still resolves — they are simply not drawn. The roster metadata
   that powers the universe filter, `where`, and the metadata `stratify_by`
   dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`, and the
   `created` release date behind `released_after` / `recency`) is captured by

@@ -409,44 +409,6 @@ per-vendor flagship table? an OpenRouter usage/ranking field if one stabilizes?)
 Whether to ship the honestly-caveated `latest_per_provider` (newest-by-date)
 filter as a convenience despite the variant footgun, or wait for a real signal.
 
-### Exclude model ids from a sample draw (`solvers.sample.exclude`)
-**Key:** `sample-exclude`
-
-**Motivation.** `include` only *adds* purposive pins; there is no way to *remove*
-specific ids before drawing. The blocking case is rater–object independence: a
-solver panel sampled from the roster must drop the judge model-ids so a judge
-can't be drawn as a solver. `where` can't express it — an exact-id blocklist is
-not roster metadata, and `where` is rejected for list/file universes anyway,
-whereas you also want "this curated list, minus these 3."
-
-**Design sketch.** A top-level `exclude: list[str]` on `ModelSample`, the inverse
-of `include` and, like `include`, valid for every universe type (not roster-only,
-so **not** in `where`):
-
-```yaml
-solvers:
-  sample:
-    n: 40
-    seed: 42
-    stratify_by: recency
-    universe: pricing-table
-    where: {released_after: "2023-01-01", max_output_usd_per_mtok: 15}
-    exclude:                          # judge ids removed from the solver frame
-      - openrouter/openai/gpt-5.4
-      - openrouter/google/gemini-3.1-pro-preview
-```
-
-Exact-id match (absent ids are a no-op); rejects `include ∩ exclude` overlap,
-duplicates, and empty strings; enters the lock `spec` and `ModelSampleResult`
-(append-only) so the study card attests the blocked ids. A **design
-declaration** (changes the drawn set).
-
-**Implementation notes.** `_config.py` (`ModelSample` field + `_check`),
-`_modelsample.py` (a shared exclude tail in `_build_universe` covering all three
-branches; spec dict; `ModelSampleResult`), wiki `Configuration.md`. ~40 lines.
-Full brief: [docs/plans/sample-exclude.md](plans/sample-exclude.md) (also folds
-in the non-free-roster fix that retires the `where.free` idea).
-
 ### Per-model generation config (heterogeneous rosters; structurally-missing cells)
 **Key:** `per-model-config`
 
