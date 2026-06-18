@@ -82,6 +82,29 @@ def _cache_discount_clause(discount: float) -> str:
     return ""
 
 
+def _ceiling_note(stage: str) -> str:
+    """Always-on clause naming what makes the projection an upper bound."""
+    if stage == "generate":
+        return "ceiling: output at max_tokens"
+    return "ceiling: output at max_tokens; ungenerated solutions stubbed at max"
+
+
+def _expected_clause(st, stage: str) -> str:
+    """Provenance for the expected (calibrated) line; '' at cold start."""
+    cal = st.calibration
+    if cal.observed_rows == 0:
+        return ""
+    noun = "generations" if stage == "generate" else "gradings"
+    parts = []
+    if cal.mean_output_tokens is not None:
+        label = "mean output" if stage == "generate" else "mean judge output"
+        parts.append(f"{label} {cal.mean_output_tokens:.0f} tok")
+    if cal.mean_solution_chars is not None:  # grade only
+        parts.append(f"mean solution {cal.mean_solution_chars / 4:.0f} tok")
+    detail = f": {', '.join(parts)}" if parts else ""
+    return f"calibrated from {cal.observed_rows} observed {noun}{detail}"
+
+
 def _print_estimate(est, stage: str) -> None:
     stages = {"generate": est.generate, "grade": est.grade}
     selected = list(stages.items()) if stage == "all" else [(stage, stages[stage])]
@@ -95,8 +118,11 @@ def _print_estimate(est, stage: str) -> None:
         print(
             f"{name.upper()} — {st.calls} calls, "
             f"{st.input_tokens:,} input tok, {st.output_tokens:,} output tok, "
-            f"projected {_fmt_usd(st.usd)}{discount}{delta}"
+            f"projected {_fmt_usd(st.usd)}{discount}{delta} — {_ceiling_note(name)}"
         )
+        exp_clause = _expected_clause(st, name)
+        if exp_clause:
+            print(f"  expected ~{_fmt_usd(st.expected_usd)} ({exp_clause})")
         rows = [
             [
                 c.slug,
@@ -116,7 +142,8 @@ def _print_estimate(est, stage: str) -> None:
         print(f"warning: {w}")
     print(
         "(projected figures cover the full policy-effective grid; the gate "
-        "applies to the remaining figure — completed work is never re-paid)"
+        "applies to the remaining figure — completed work is never re-paid. "
+        "The expected figure is informational; the gate always uses the ceiling)"
     )
 
 
@@ -226,6 +253,7 @@ def _gate_stop_doc(stage: str, study: str, st, est, gate, config_arg: str, hints
         "stage": stage,
         "estimate_usd": st.remaining_usd,  # what this run would spend (gate input)
         "estimate_full_usd": st.usd,
+        "expected_estimate_usd": st.expected_remaining_usd,  # calibrated, informational
         "completed_cells": st.completed_cells,
         "total_cells": st.total_cells,
         "rows_replaced": st.rows_replaced,
@@ -319,8 +347,11 @@ def _run_stage(args, stage, runner) -> int:
         print(
             f"projected {stage} cost: {_fmt_usd(st.remaining_usd)}{delta} "
             f"({_cache_discount_clause(st.remaining_cache_discount_usd)}"
-            f"confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f})"
+            f"confirm_above_usd: ${cfg.budget.confirm_above_usd:.2f}) — {_ceiling_note(stage)}"
         )
+        exp_clause = _expected_clause(st, stage)
+        if exp_clause:
+            print(f"  expected ~{_fmt_usd(st.expected_remaining_usd)} ({exp_clause})")
         if st.rows_replaced:
             print(
                 f"this run replaces {st.rows_replaced} existing rows "
@@ -338,11 +369,19 @@ def _run_stage(args, stage, runner) -> int:
     # the stop document on a gate stop.
     pre_hints = [*st.hints, *([pilot] if pilot else [])]
     if not gate.proceed:
+        # The ceiling hint is pre-spend advice — raise it only at a gate stop
+        # (you are blocked before any spend), never on a proceeding run.
+        from itemeval._hints import detect_estimate_is_ceiling
+
+        ceiling = detect_estimate_is_ceiling(
+            observed_rows=st.calibration.observed_rows, projected_usd=st.remaining_usd
+        )
+        stop_hints = [*pre_hints, *([ceiling] if ceiling else [])]
         if args.json:
-            print(_gate_stop_doc(stage, cfg.study, st, est, gate, args.config, hints=pre_hints))
+            print(_gate_stop_doc(stage, cfg.study, st, est, gate, args.config, hints=stop_hints))
         else:
             print(f"itemeval: {gate.reason}", file=sys.stderr)
-            emit_hints(pre_hints)
+            emit_hints(stop_hints)
         return gate.exit_code
     # --json declares a machine consumer: silence inspect's live display unless
     # the operator explicitly chose one, so stdout stays pure JSON.
@@ -350,6 +389,7 @@ def _run_stage(args, stage, runner) -> int:
     result = runner(prep, display, st.remaining_usd, st.usd)
     result.pricing = est.pricing
     result.estimate_usd = st.remaining_usd
+    result.expected_estimate_usd = st.expected_remaining_usd
     result.rows_replaced = st.rows_replaced
     result.gate = gate
     if pre_hints:

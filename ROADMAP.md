@@ -40,7 +40,9 @@ HuggingFace upload.
 
 **Already landed / in flight** (in `[Unreleased]`, ships with 0.3):
 `model-sampling` · `composite-item-id`; and `model-sample-composition` (recency,
-equal allocation, pinned include) building directly on `model-sampling`.
+equal allocation, pinned include) building directly on `model-sampling`; plus
+`expected-cost` — a calibrated expected-cost projection alongside the estimate
+ceiling (the gate still uses the ceiling).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

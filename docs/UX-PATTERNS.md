@@ -243,6 +243,7 @@ detector function per code); results carry `hints` as structured data.
 | ☐ `dev-policy-at-scale` | config defines many items but `dev` policy runs 2 | `hint: ran 2 of 500 items (policy: dev) — learn more: Budget-and-Costs#policies` | Budget-and-Costs |
 | ✅ `unpriced-models` | a model has no pricing entry | `hint: 1 model unpriced (x/y) — dollars missing, run unaffected — learn more: Budget-and-Costs#pricing-table` | Budget-and-Costs |
 | ✅ `pilot-available` | money gate engages on a study with zero completed rows for the selected conditions | `hint: no completed rows yet for these conditions — you can pilot cheaply first (--policy dev runs 2 items), then re-run at full scope; completed work is never re-paid — learn more: Cost-Savings#never-pay-twice` | Cost-Savings |
+| ✅ `estimate-is-ceiling` | a money-spending stage has no observations yet, so its projection is a pure upper bound (cold start; estimate-time, fires on estimate/generate/grade) | `hint: this is an upper bound (output assumed at max_tokens) — run --policy dev to calibrate an expected cost — learn more: Budget-and-Costs#expected-cost` | Budget-and-Costs |
 
 ---
 

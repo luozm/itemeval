@@ -9,6 +9,7 @@ from itemeval._endpoints import min_cacheable_prefix, routing_warnings
 from itemeval._hints import (
     Hint,
     detect_anthropic_openrouter_no_split,
+    detect_estimate_is_ceiling,
     detect_split_head_below_min,
     detect_unpriced_models,
 )
@@ -36,6 +37,12 @@ if TYPE_CHECKING:
 DEFAULT_OUTPUT_TOKENS_GENERATE = 4096
 DEFAULT_OUTPUT_TOKENS_JUDGE = 512
 
+# Minimum observed samples before a model's own mean is trusted for the expected
+# (calibrated) projection; below it the estimate borrows the reasoning-group
+# mean, then the global pooled mean (see _mean_resolver). Internal, not a config
+# knob — a `--policy dev` pilot yields ~dev_items x prompts samples per model.
+K_CALIBRATION_SAMPLES = 5
+
 
 class ConditionEstimate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -57,6 +64,26 @@ class ConditionEstimate(BaseModel):
     cache_discount_usd: float = 0.0  # undiscounted minus usd; negative = write surcharge net loss
 
 
+class Calibration(BaseModel):
+    """How the stage's expected projection was calibrated (append-only).
+
+    The four model counts partition the stage's models by which mean tier they
+    used, so a *borrowed* estimate is never read as *measured*. `uncalibrated`
+    (the model stayed at its ceiling) only happens at cold start — an empty
+    stage store, where the expected figure equals the ceiling.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    calibrated_models: int = 0  # used their own observed mean (>= K samples)
+    group_models: int = 0  # borrowed the reasoning-group mean
+    pooled_models: int = 0  # borrowed the global pooled mean
+    uncalibrated_models: int = 0  # no data anywhere -> stayed at the ceiling
+    observed_rows: int = 0  # rows the stage's means were computed from
+    mean_output_tokens: float | None = None  # pooled mean output tokens/call
+    mean_solution_chars: float | None = None  # grade only: pooled mean solution length
+
+
 class StageEstimate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,6 +94,13 @@ class StageEstimate(BaseModel):
     usd: float  # unpriced conditions contribute 0; ALWAYS the full grid
     unpriced_models: list[str]
     conditions: list[ConditionEstimate]
+    # Expected (calibrated) projection alongside the ceiling `usd` (append-only).
+    # Swaps each worst-case token assumption for an observed mean from the
+    # stores; equals the ceiling at cold start. INFORMATIONAL ONLY — the money
+    # gate keeps comparing `remaining_usd`/`usd` (UX-PATTERNS Law 2).
+    expected_usd: float = 0.0  # full grid, calibrated
+    expected_remaining_usd: float = 0.0  # the remaining delta, calibrated
+    calibration: Calibration = Field(default_factory=Calibration)
     # Delta-aware figures (append-only; `usd` keeps meaning the full grid).
     # `remaining_usd` is what this run can actually spend — the gate operates
     # on it; completed cells are never re-paid. With force=True it equals full.
@@ -109,6 +143,82 @@ class Estimate(BaseModel):
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
     return prep.plan.batch is not None and provider_of(model) in BATCH_PROVIDERS
+
+
+def _stats_by(
+    df: "pd.DataFrame", key_col: str, values: "str | pd.Series | None"
+) -> "dict[str, tuple[float, int]]":
+    """{model -> (sum, count)} over rows with a non-null value.
+
+    `values` is a column name or a Series aligned to `df` (a derived series such
+    as solution char length); a missing key/value column or None yields {}
+    (tolerates the minimal frames callers sometimes build)."""
+    if df.empty or key_col not in df.columns:
+        return {}
+    if isinstance(values, str):
+        if values not in df.columns:
+            return {}
+        values = df[values]
+    if values is None:
+        return {}
+    sub = pd.DataFrame({"k": df[key_col].astype(str), "v": values})
+    sub = sub[sub["v"].notna()]
+    if sub.empty:
+        return {}
+    grp = sub.groupby("k")["v"].agg(["sum", "count"])
+    return {str(k): (float(r["sum"]), int(r["count"])) for k, r in grp.iterrows()}
+
+
+def _mean_resolver(
+    stats: "dict[str, tuple[float, int]]", reasoning_of
+) -> "tuple[object, float | None, int]":
+    """Coverage-aware per-model mean: own (>=K) -> reasoning-group -> pooled.
+
+    Returns `(resolve, pooled_mean, total_count)` where `resolve(model)` is
+    `(value, tier)` with tier in {"own", "group", "pooled", "none"}; value is
+    None only when no observations exist anywhere (the "none" tier — cold start).
+    `reasoning_of(model)` returns the model's reasoning flag (bool) or None.
+    """
+    total_sum = sum(s for s, _ in stats.values())
+    total_cnt = sum(c for _, c in stats.values())
+    pooled = total_sum / total_cnt if total_cnt else None
+    grp_sum: "dict[bool, float]" = {}
+    grp_cnt: "dict[bool, int]" = {}
+    for m, (s, c) in stats.items():
+        r = reasoning_of(m)
+        if r is None:
+            continue
+        grp_sum[r] = grp_sum.get(r, 0.0) + s
+        grp_cnt[r] = grp_cnt.get(r, 0) + c
+
+    def resolve(model: str) -> "tuple[float | None, str]":
+        s, c = stats.get(model, (0.0, 0))
+        if c >= K_CALIBRATION_SAMPLES:
+            return s / c, "own"
+        r = reasoning_of(model)
+        if r is not None and grp_cnt.get(r):
+            return grp_sum[r] / grp_cnt[r], "group"
+        if pooled is not None:
+            return pooled, "pooled"
+        return None, "none"
+
+    return resolve, pooled, total_cnt
+
+
+def _calibration(resolve, models: "list[str]", pooled: "float | None", rows: int, sol_chars=None):
+    """Bucket the stage's distinct models by their mean tier into a Calibration."""
+    counts = {"own": 0, "group": 0, "pooled": 0, "none": 0}
+    for m in sorted(set(models)):
+        counts[resolve(m)[1]] += 1
+    return Calibration(
+        calibrated_models=counts["own"],
+        group_models=counts["group"],
+        pooled_models=counts["pooled"],
+        uncalibrated_models=counts["none"],
+        observed_rows=rows,
+        mean_output_tokens=pooled,
+        mean_solution_chars=sol_chars,
+    )
 
 
 def _priced_usd(prep: "PreparedStudy", model: str, input_tokens: int, output_tokens: int) -> float:
@@ -233,7 +343,12 @@ def estimate_study(
     corrective feedback loop.
     """
     from itemeval.store._gradings import pending_solutions, read_gradings
-    from itemeval.store._solutions import epochs_to_run, read_solutions, resolve_wave
+    from itemeval.store._solutions import (
+        empty_solution_mask,
+        epochs_to_run,
+        read_solutions,
+        resolve_wave,
+    )
 
     if solutions_df is None:
         solutions_df = read_solutions(prep.paths)
@@ -310,8 +425,42 @@ def estimate_study(
     # runners and task builders use (batch reorders calls; never both).
     scheduling = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
 
+    # Expected (calibrated) projection substrate: per-model means read from the
+    # stores — generate/judge output tokens, and solution length for the grade
+    # input stub — each with a coverage fallback (own >= K -> reasoning-group ->
+    # pooled). Pure read of existing rows; no model calls, never feeds the gate.
+    def reasoning_of(model: str) -> "bool | None":
+        price = lookup_price(prep.pricing, model)
+        return price.reasoning if price is not None else None
+
+    sol_ok = solutions_df[solutions_df["error"].isna()] if not solutions_df.empty else solutions_df
+    gen_out_resolve, gen_out_mean, gen_out_rows = _mean_resolver(
+        _stats_by(sol_ok, "model", "output_tokens"), reasoning_of
+    )
+    sol_lens = (
+        sol_ok["solution"].astype("string").str.len().where(~empty_solution_mask(sol_ok))
+        if not sol_ok.empty and "solution" in sol_ok.columns
+        else None
+    )
+    gen_sol_resolve, gen_sol_mean, _ = _mean_resolver(
+        _stats_by(sol_ok, "model", sol_lens), reasoning_of
+    )
+    grd_ok = gradings_df[gradings_df["error"].isna()] if not gradings_df.empty else gradings_df
+    judge_out_resolve, judge_out_mean, judge_out_rows = _mean_resolver(
+        _stats_by(grd_ok, "grader_model", "output_tokens"), reasoning_of
+    )
+
     gen_conditions = []
-    gen_delta = {"usd": 0.0, "calls": 0, "completed": 0, "total": 0, "replaced": 0, "discount": 0.0}
+    gen_delta = {
+        "usd": 0.0,
+        "calls": 0,
+        "completed": 0,
+        "total": 0,
+        "replaced": 0,
+        "discount": 0.0,
+        "exp": 0.0,
+    }
+    gen_exp_full = 0.0
     for cond in prep.grid.generate:
         template = prep.solver_templates[cond.prompt_name]
 
@@ -389,6 +538,12 @@ def estimate_study(
                 "per call (actuals may exceed the estimate)"
             )
         output_tokens = calls * (max_out or DEFAULT_OUTPUT_TOKENS_GENERATE)
+        # Expected output: the model's calibrated mean output tokens/call (ceiling
+        # per-call when uncalibrated, so expected == ceiling at cold start).
+        exp_out_val, _ = gen_out_resolve(cond.model)
+        exp_per_call = (
+            exp_out_val if exp_out_val is not None else (max_out or DEFAULT_OUTPUT_TOKENS_GENERATE)
+        )
         cache_read = cache_write = 0
         if cache_on:
             cache_read, cache_write = _cache_split(cache_groups(items), min_tok, anth)
@@ -406,6 +561,15 @@ def estimate_study(
                 cache_write=cache_write,
             )
         )
+        # Expected full: same input + cache split, calibrated output (input-side
+        # caching is unaffected by the output assumption).
+        exp_out_full = calls * exp_per_call
+        if cache_on:
+            gen_exp_full += _discounted_usd(
+                prep, cond.model, input_tokens, exp_out_full, cache_read, cache_write
+            )
+        else:
+            gen_exp_full += _priced_usd(prep, cond.model, input_tokens, exp_out_full)
 
         # Delta: what the runner would actually launch for this condition.
         if force:
@@ -425,8 +589,10 @@ def estimate_study(
         gen_delta["calls"] += rem_calls
         rem_in = in_tokens(rem_items)
         rem_out = rem_calls * (max_out or DEFAULT_OUTPUT_TOKENS_GENERATE)
+        rem_out_exp = rem_calls * exp_per_call
         cond_rows = scoped[scoped["condition_id"] == cond.id] if not scoped.empty else scoped
         rem_usd = _priced_usd(prep, cond.model, rem_in, rem_out)
+        rem_exp_usd = _priced_usd(prep, cond.model, rem_in, rem_out_exp)
         if cache_on and rem_items:
             # Same per-group split over the remaining groups only; a group
             # with ≥1 completed row is warm (its leader already ran).
@@ -443,7 +609,9 @@ def estimate_study(
             discounted = _discounted_usd(prep, cond.model, rem_in, rem_out, d_read, d_write)
             gen_delta["discount"] += rem_usd - discounted
             rem_usd = discounted
+            rem_exp_usd = _discounted_usd(prep, cond.model, rem_in, rem_out_exp, d_read, d_write)
         gen_delta["usd"] += rem_usd
+        gen_delta["exp"] += rem_exp_usd
         gen_delta["total"] += calls
         if not cond_rows.empty:
             gen_delta["completed"] += int(cond_rows["error"].isna().sum())
@@ -466,7 +634,9 @@ def estimate_study(
         "total": 0,
         "replaced": 0,
         "discount": 0.0,
+        "exp": 0.0,
     }
+    grade_exp_full = 0.0
     for cond in prep.grid.grade:
         # Delta: the same pending predicate the grade runner uses.
         gradable = pending_solutions(
@@ -525,16 +695,41 @@ def estimate_study(
             head = judge_head_text(it, rubric) if it is not None else None
             return estimate_tokens(head) if head is not None else None
 
+        # Expected judge output: the grader's calibrated mean (ceiling per-call
+        # when uncalibrated).
+        exp_judge_val, _ = judge_out_resolve(cond.grader_model)
+        exp_judge_per_call = (
+            exp_judge_val
+            if exp_judge_val is not None
+            else (cond.grader_max_tokens or DEFAULT_OUTPUT_TOKENS_JUDGE)
+        )
         calls = 0
         input_tokens = 0
+        exp_input_tokens = 0
         for gen_cond in prep.grid.generate:
             placeholder_len = 4 * (gen_cond.gen_params.max_tokens or DEFAULT_OUTPUT_TOKENS_GENERATE)
+            # Expected stub length for un-generated solutions: the gen model's
+            # calibrated mean solution length (ceiling 4xmax_tokens chars when
+            # uncalibrated). Stored real solutions size both passes identically.
+            exp_sol_val, _ = gen_sol_resolve(gen_cond.model)
+            exp_ph_len = max(1, round(exp_sol_val)) if exp_sol_val is not None else placeholder_len
             for it in items:
                 for epoch in range(1, reps + 1):
-                    solution = stored.get((gen_cond.id, it.id, epoch), "x" * placeholder_len)
-                    input_tokens += estimate_tokens(build_judge_input(it, solution, rubric))
+                    real = stored.get((gen_cond.id, it.id, epoch))
+                    if real is not None:
+                        tok = estimate_tokens(build_judge_input(it, real, rubric))
+                        input_tokens += tok
+                        exp_input_tokens += tok
+                    else:
+                        input_tokens += estimate_tokens(
+                            build_judge_input(it, "x" * placeholder_len, rubric)
+                        )
+                        exp_input_tokens += estimate_tokens(
+                            build_judge_input(it, "x" * exp_ph_len, rubric)
+                        )
                     calls += 1
         output_tokens = calls * (cond.grader_max_tokens or DEFAULT_OUTPUT_TOKENS_JUDGE)
+        exp_output_tokens = calls * exp_judge_per_call
         cache_read = cache_write = 0
         if cache_on:
             group_calls = len(prep.grid.generate) * reps
@@ -558,6 +753,21 @@ def estimate_study(
                 cache_write=cache_write,
             )
         )
+        # Expected full: calibrated input stub + calibrated judge output, same
+        # head-based cache split (the head is solution-independent).
+        if cache_on:
+            grade_exp_full += _discounted_usd(
+                prep,
+                cond.grader_model,
+                exp_input_tokens,
+                exp_output_tokens,
+                cache_read,
+                cache_write,
+            )
+        else:
+            grade_exp_full += _priced_usd(
+                prep, cond.grader_model, exp_input_tokens, exp_output_tokens
+            )
         rem_calls = len(pending)
         rem_in = sum(
             estimate_tokens(build_judge_input(prep.items_by_id[row.item_id], row.solution, rubric))
@@ -565,8 +775,12 @@ def estimate_study(
             if row.item_id in prep.items_by_id
         )
         rem_out = rem_calls * (cond.grader_max_tokens or DEFAULT_OUTPUT_TOKENS_JUDGE)
+        # Remaining grades all have real stored solutions, so `rem_in` is the same
+        # for both passes; only the judge output assumption differs.
+        rem_out_exp = rem_calls * exp_judge_per_call
         grade_delta["calls"] += rem_calls
         rem_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out)
+        rem_exp_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out_exp)
         if cache_on and rem_calls:
             # Remaining groups only; an item with already-graded rows is warm
             # (gradable rows minus still-pending rows > 0 for that item).
@@ -581,10 +795,19 @@ def estimate_study(
             discounted = _discounted_usd(prep, cond.grader_model, rem_in, rem_out, d_read, d_write)
             grade_delta["discount"] += rem_usd - discounted
             rem_usd = discounted
+            rem_exp_usd = _discounted_usd(
+                prep, cond.grader_model, rem_in, rem_out_exp, d_read, d_write
+            )
         grade_delta["usd"] += rem_usd
+        grade_delta["exp"] += rem_exp_usd
 
     def stage_total(
-        stage: str, conditions: "list[ConditionEstimate]", delta: dict, stage_warnings: "list[str]"
+        stage: str,
+        conditions: "list[ConditionEstimate]",
+        delta: dict,
+        stage_warnings: "list[str]",
+        exp_full: float,
+        calibration: "Calibration",
     ) -> StageEstimate:
         usd = sum(c.usd or 0.0 for c in conditions)
         return StageEstimate(
@@ -607,10 +830,35 @@ def estimate_study(
             cache_write_tokens=sum(c.cache_write_tokens for c in conditions),
             cache_discount_usd=sum(c.cache_discount_usd for c in conditions),
             remaining_cache_discount_usd=delta["discount"],
+            expected_usd=exp_full,
+            expected_remaining_usd=delta["exp"],
+            calibration=calibration,
         )
 
-    gen = stage_total("generate", gen_conditions, gen_delta, gen_warnings)
-    grade = stage_total("grade", grade_conditions, grade_delta, grade_warnings)
+    gen_cal = _calibration(
+        gen_out_resolve, [c.model for c in prep.grid.generate], gen_out_mean, gen_out_rows
+    )
+    grade_cal = _calibration(
+        judge_out_resolve,
+        [c.grader_model for c in prep.grid.grade if c.kind != "verifiable"],
+        judge_out_mean,
+        judge_out_rows,
+        sol_chars=gen_sol_mean,
+    )
+    gen = stage_total("generate", gen_conditions, gen_delta, gen_warnings, gen_exp_full, gen_cal)
+    grade = stage_total(
+        "grade", grade_conditions, grade_delta, grade_warnings, grade_exp_full, grade_cal
+    )
+    # Cold-start ceiling hint (one per run): a stage that would spend but has no
+    # observations to calibrate from shows a pure ceiling — point at the pilot.
+    # Lives on Estimate.hints (the planning surface), NOT StageEstimate.hints —
+    # the run commands raise it only at a gate stop (pre-spend), never on a
+    # proceeding run where "pilot first" would be stale (see cli._run_stage).
+    ceiling_hint = None
+    for st in (gen, grade):
+        ceiling_hint = ceiling_hint or detect_estimate_is_ceiling(
+            observed_rows=st.calibration.observed_rows, projected_usd=st.remaining_usd
+        )
     unpriced = detect_unpriced_models(sorted({*gen.unpriced_models, *grade.unpriced_models}))
     return Estimate(
         study=prep.config.study,
@@ -621,7 +869,12 @@ def estimate_study(
         total_usd=gen.usd + grade.usd,
         warnings=gen_warnings + grade_warnings,
         pricing=describe_pricing(prep.pricing, refreshed=prep.pricing_refreshed),
-        hints=[*gen.hints, *grade.hints, *([unpriced] if unpriced else [])],
+        hints=[
+            *gen.hints,
+            *grade.hints,
+            *([ceiling_hint] if ceiling_hint else []),
+            *([unpriced] if unpriced else []),
+        ],
         datasets=dataset_provenance(prep.datasets),
         model_sample=prep.model_sample,
     )

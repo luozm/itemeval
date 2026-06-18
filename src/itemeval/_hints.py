@@ -32,6 +32,7 @@ CATALOG_ORDER = [
     "dev-policy-at-scale",
     "unpriced-models",
     "pilot-available",
+    "estimate-is-ceiling",
 ]
 
 MAX_HINTS_PER_COMMAND = 2
@@ -204,6 +205,23 @@ def detect_pilot_available(*, store_is_empty: bool, dev_items: int) -> "Hint | N
             "scope; completed work is never re-paid"
         ),
         learn_more="Cost-Savings#never-pay-twice",
+    )
+
+
+def detect_estimate_is_ceiling(*, observed_rows: int, projected_usd: float) -> "Hint | None":
+    """A money-spending stage has no observations yet, so its projection is a
+    pure upper bound (output assumed at max_tokens). A `--policy dev` pilot would
+    calibrate an expected cost. Fires only at cold start (no rows to learn from)
+    and only when the stage would actually spend."""
+    if observed_rows > 0 or projected_usd <= 0:
+        return None
+    return Hint(
+        code="estimate-is-ceiling",
+        message=(
+            "this is an upper bound (output assumed at max_tokens) — "
+            "run --policy dev to calibrate an expected cost"
+        ),
+        learn_more="Budget-and-Costs#expected-cost",
     )
 
 
