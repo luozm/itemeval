@@ -38,6 +38,43 @@ extension, `on_empty: rerun` re-attempts), the projection block states it as
 part of the same single confirmation:
 `this run replaces 48 existing rows (…)` — never a second prompt.
 
+### Expected cost
+
+The numbers above are a deliberate **upper bound** — every generation is assumed
+to emit `max_tokens`, every judge call `grader_max_tokens`, and each
+*un-generated* solution is stubbed at `4 × max_tokens` characters. On a real
+study that reads 2–3× the eventual bill. So `estimate` (and the
+`generate`/`grade` pre-gate line) also reports a second, **expected** figure
+beside the ceiling, calibrated from data already in your stores — observed
+`output_tokens` on completed solutions and gradings, and real solution length —
+with no extra model calls:
+
+```
+GENERATE — 8 calls, … projected $0.03 — ceiling: output at max_tokens
+  expected ~$0.01 (calibrated from 16 observed generations: mean output 120 tok)
+```
+
+On a fresh study there is nothing to learn from, so the expected figure equals
+the ceiling and an `estimate-is-ceiling` hint points at the pilot. Run the cheap
+`--policy dev` pilot first: it executes the whole model grid on the first few
+items, so one pilot calibrates every model, and the next `estimate` shows a
+realistic expected bill.
+
+**Coverage and honesty.** Each model's mean is chosen by how much data backs it —
+its own observed mean once there are enough samples, otherwise the
+reasoning-group mean (reasoning vs non-reasoning models, the dominant
+output-length driver), otherwise the global pooled mean; a model with no data
+anywhere stays at its ceiling. A `calibration` block (in `--json`) reports how
+many models fell into each tier, so a *borrowed* estimate is never read as
+*measured*.
+
+**The gate always uses the ceiling.** The expected figure is informational only;
+`confirm_above_usd`, `max_usd`, and the `usd`/`remaining_usd` the gate compares
+all stay on the ceiling — a planning aid must never weaken the safety figure.
+JSON parity (append-only): `expected_usd` / `expected_remaining_usd` /
+`calibration` on each `StageEstimate`; `expected_estimate_usd` on the
+`generate`/`grade` run results and the gate-stop document.
+
 ## The gate
 
 `generate` and `grade` compare their stage's **remaining** projection (what

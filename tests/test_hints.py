@@ -160,7 +160,8 @@ def test_estimate_unpriced_hint_on_stderr_and_in_json(unpriced_study, capsys):
     assert "hint" not in captured.out  # hints are stderr commentary, not stdout facts
     assert cli.main(["estimate", str(unpriced_study), "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["hints"][0]["code"] == "unpriced-models"
+    # cold-start estimate also carries estimate-is-ceiling; unpriced is present too
+    assert "unpriced-models" in {h["code"] for h in doc["hints"]}
 
 
 def test_hints_off_silences_text_but_never_json(unpriced_study, capsys, monkeypatch):
@@ -169,7 +170,7 @@ def test_hints_off_silences_text_but_never_json(unpriced_study, capsys, monkeypa
     assert "hint: " not in capsys.readouterr().err
     assert cli.main(["estimate", str(unpriced_study), "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["hints"][0]["code"] == "unpriced-models"  # JSON never suppressed
+    assert "unpriced-models" in {h["code"] for h in doc["hints"]}  # JSON never suppressed
 
 
 def test_grade_empty_solutions_line_is_fact_only(tmp_path, offline_adapter, capsys, monkeypatch):

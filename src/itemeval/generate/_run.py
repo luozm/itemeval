@@ -124,6 +124,7 @@ class GenerateResult(BaseModel):
     # Filled by the CLI for `--json` parity (Python callers compute their own):
     pricing: "PricingProvenance | None" = None
     estimate_usd: "float | None" = None  # remaining figure (gate input)
+    expected_estimate_usd: "float | None" = None  # calibrated remaining; informational
     rows_replaced: "int | None" = None  # existing rows this run planned to overwrite
     gate: "GateResult | None" = None
 

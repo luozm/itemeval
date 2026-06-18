@@ -84,6 +84,32 @@ Closes: model-sampling
 
 Closes: model-sample-composition
 
+- **Expected (calibrated) cost projection alongside the ceiling**: `estimate`
+  (and the `generate`/`grade` pre-gate line) now reports a second, **expected**
+  figure next to the deliberate upper bound. The ceiling assumes every
+  generation emits `max_tokens`, every judge call `grader_max_tokens`, and stubs
+  each un-generated solution at `4 × max_tokens` chars; the expected pass swaps
+  each for an **observed mean** read from the stores (`output_tokens` on
+  solutions/gradings, real solution length) — no new model calls. After a cheap
+  `--policy dev` pilot it predicts the real bill instead of the 2–3× ceiling.
+  Per-model means use a coverage fallback by sample count — own mean (≥ K
+  samples) → reasoning-group mean (`ModelPrice.reasoning`) → global pooled mean →
+  ceiling — recorded in a `calibration` block (calibrated / group / pooled /
+  uncalibrated model counts + observed-row count) so a *borrowed* estimate is
+  never shown as *measured*. **The money gate is unchanged**: `usd` /
+  `remaining_usd`, `confirm_above_usd`, and `max_usd` keep comparing the ceiling
+  (UX-PATTERNS Law 2 — the gate is never driven by an under-estimate); the
+  expected figure is informational. The projection line gains an always-on
+  `ceiling: output at max_tokens` clause and an `expected ~$X (calibrated from N
+  observed …)` line when calibratable. New append-only fields:
+  `expected_usd` / `expected_remaining_usd` / `calibration` per `StageEstimate`
+  (in `estimate --json`), `expected_estimate_usd` on `GenerateResult` /
+  `GradeResult` and the gate-stop document. At cold start (no observations yet)
+  the new coded hint `estimate-is-ceiling` fires on `estimate`/`generate`/`grade`,
+  pointing at `--policy dev`. No new config knob, no new dependency.
+
+Closes: expected-cost
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider
