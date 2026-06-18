@@ -27,7 +27,7 @@ from itemeval.budget._pricing import (
 )
 from itemeval.budget._routing import NativeRoute
 from itemeval._mockmodels import resolve_model
-from itemeval._util import new_run_id, utc_now_iso
+from itemeval._util import new_run_id, sha256_hex, utc_now_iso
 from itemeval.design._grid import GradeCondition
 from itemeval.generate._run import (
     ConditionRunReport,
@@ -46,9 +46,10 @@ from itemeval.generate._run import (
     usd_for_usage,
 )
 from itemeval.grade._judge import build_judge_task
+from itemeval.grade._materialize import build_materialize_task, materialize_id
 from itemeval.grade._parse import parse_judge_output
 from itemeval.grade._verifiable import VERIFIABLE_SCORERS
-from itemeval.store import _gradings, _ledger, _logs, _solutions
+from itemeval.store import _gradings, _ledger, _logs, _materialized, _solutions
 from itemeval.store._base import rel_to_study
 from itemeval.store._solutions import empty_solution_mask
 
@@ -72,6 +73,12 @@ class GradeResult(BaseModel):
     empty_total: int = 0  # scoped empty (no-error) solutions
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
+    # Two-stage rubric materialization (0 unless a `rubrics:` materialize ran):
+    materialized_rubrics: int = 0  # rubrics materialized this run (fresh model calls)
+    materialized_reused: int = 0  # reused from the frozen artifact store ($0)
+    materialize_usd: float = 0.0  # spend on the materialization pre-pass
+    materialize_empty: int = 0  # materializations that returned no rubric text
+    materialize_model: "str | None" = None  # the materializer model (when one ran)
     hints: list[Hint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
     datasets: list[DatasetProvenance] = Field(default_factory=list)
@@ -205,6 +212,124 @@ def _judge_rows(
     return rows
 
 
+def _materialize_rubrics(
+    prep: "PreparedStudy",
+    selected: "list[GradeCondition]",
+    run_id: str,
+    factory: ModelFactory,
+    display: "str | None",
+    batch: "bool | int | None",
+) -> "tuple[dict[str, dict[str, str]], dict[str, Any]]":
+    """Stage-1 pre-pass: materialize (and freeze) one rubric per item for every
+    selected materializing rubric, once per (rubric, materializer) — shared
+    across graders, solutions, replications, and resumed runs. Returns
+    ({rubric_name: {item_id: rubric_text}}, stats). Already-stored rubrics are
+    reused at $0; only un-materialized items make a model call."""
+    rubrics: "dict[str, GradeCondition]" = {}
+    for cond in selected:
+        if cond.kind == "judge" and cond.materialize_model and cond.rubric_name not in rubrics:
+            rubrics[cond.rubric_name] = cond
+    texts: "dict[str, dict[str, str]]" = {}
+    stats: "dict[str, Any]" = {
+        "materialized": 0,
+        "reused": 0,
+        "usd": 0.0,
+        "empty": 0,
+        "model": None,
+    }
+    if not rubrics:
+        return texts, stats
+    items = prep.items_effective
+    existing = _materialized.read_materialized(prep.paths)
+    ledger_rows = []
+    for rubric_name, cond in rubrics.items():
+        build_template = prep.build_templates[rubric_name]
+        spec = prep.config.rubrics[rubric_name].materialize
+        model = cond.materialize_model
+        stats["model"] = model
+        mid = materialize_id(build_template, model)
+        frozen = _materialized.stored_texts(existing, mid)
+        texts.setdefault(rubric_name, {}).update(frozen)
+        for txt in frozen.values():
+            stats["reused"] += 1
+            stats["empty"] += 0 if txt else 1
+        pending = [it for it in items if it.id not in frozen]
+        if not pending:
+            continue
+        exec_model = prep.native_routes.get(model, model)
+        task = build_materialize_task(
+            pending, build_template, spec, prep.config.study, rubric_name, prep.config.cache, batch
+        )
+        logs = inspect_ai.eval(
+            task,
+            model=factory(exec_model, "materialize", model_args_for(exec_model)),
+            display=resolve_display(display),
+            log_dir=str(prep.paths.logs_dir("materialize", cond.id)),
+            log_format="eval",
+            fail_on_error=False,
+            retry_on_error=1,
+            tags=["itemeval", "materialize"],
+            metadata={
+                "itemeval_run_id": run_id,
+                "itemeval_study": prep.config.study,
+                "itemeval_rubric": rubric_name,
+            },
+        )
+        log = logs[0]
+        now = utc_now_iso()
+        rows = []
+        for sample in log.samples or []:
+            iid = str((sample.metadata or {}).get("item_id"))
+            error = sample.error.message if sample.error else None
+            completion = (
+                sample.output.completion
+                if (error is None and sample.output and sample.output.completion)
+                else None
+            )
+            usage = sum_usage(sample)
+            usd = usd_for_usage(prep.pricing, model, usage, batch, exec_model=exec_model)
+            rows.append(
+                {
+                    "materialize_id": mid,
+                    "rubric_name": rubric_name,
+                    "item_id": iid,
+                    "materializer_model": model,
+                    "build_template_hash": build_template.hash12,
+                    "rubric_text": completion,
+                    "rubric_hash": sha256_hex(completion.encode("utf-8"))[:12]
+                    if completion
+                    else None,
+                    "usd": usd,
+                    "input_tokens": usage.input_tokens if usage else None,
+                    "output_tokens": usage.output_tokens if usage else None,
+                    "error": error,
+                    "run_id": run_id,
+                    "created_at": now,
+                }
+            )
+            if error is None:  # empty completion (no error) is a valid, frozen ""
+                resolved = completion or ""
+                texts.setdefault(rubric_name, {})[iid] = resolved
+                stats["materialized"] += 1
+                stats["empty"] += 0 if resolved else 1
+            stats["usd"] += usd or 0.0
+        _materialized.upsert_materialized(prep.paths, rows)
+        ledger_rows.append(
+            ledger_row(
+                run_id,
+                "grade",
+                f"materialize:{rubric_name}",
+                model,
+                rows,
+                batch,
+                exec_model=exec_model,
+            )
+        )
+    if ledger_rows:
+        _ledger.upsert_ledger(prep.paths, ledger_rows)
+    return texts, stats
+
+
 def run_grade(
     prep: "PreparedStudy",
     *,
@@ -301,6 +426,14 @@ def run_grade(
     scheduled = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
     factory = model_factory or resolve_model
 
+    # Stage-1 pre-pass: freeze a per-item rubric for every materializing rubric
+    # before grading. Its spend rides the single grade money gate (estimated in
+    # budget/_estimator.py); reuse from the artifact store is free.
+    rubric_texts_by_rubric, mat_stats = _materialize_rubrics(
+        prep, selected, run_id, factory, display, prep.plan.batch
+    )
+    total_usd += float(mat_stats["usd"])
+
     for cond in selected:
         gradings_df = _gradings.read_gradings(prep.paths)
         pending = _gradings.pending_solutions(
@@ -343,6 +476,7 @@ def run_grade(
                 prep.config.cache,
                 batch=prep.plan.batch,
                 cache_schedule=scheduled,
+                rubric_texts=rubric_texts_by_rubric.get(cond.rubric_name),
             )
             try:
                 logs = inspect_ai.eval(
@@ -481,6 +615,11 @@ def run_grade(
         empty_total=empty_total,
         empty_skipped=empty_skipped,
         empty_stop_reasons=empty_stop_reasons,
+        materialized_rubrics=int(mat_stats["materialized"]),
+        materialized_reused=int(mat_stats["reused"]),
+        materialize_usd=float(mat_stats["usd"]),
+        materialize_empty=int(mat_stats["empty"]),
+        materialize_model=mat_stats["model"],
         hints=hints,
         warnings=drift_warnings,
         datasets=dataset_provenance(prep.datasets),

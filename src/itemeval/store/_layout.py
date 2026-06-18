@@ -20,6 +20,10 @@ class StudyPaths:
         return self.study_dir / "gradings.parquet"
 
     @property
+    def materialized_rubrics(self) -> Path:
+        return self.study_dir / "materialized_rubrics.parquet"
+
+    @property
     def log_index(self) -> Path:
         return self.study_dir / "log_index.parquet"
 

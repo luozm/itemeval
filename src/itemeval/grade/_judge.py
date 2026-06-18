@@ -44,23 +44,30 @@ def _clean_solution(solution: "str | None") -> str:
     return "" if solution is None or solution != solution else str(solution)
 
 
-def _render_values(item: Item, solution: str) -> dict:
-    return {
+def _render_values(item: Item, solution: str, rubric_text: "str | None" = None) -> dict:
+    values = {
         "input": item.input,
         "solution": solution,
         "target": item.target,
         "grading_scheme": item.grading_scheme or "",
         "id": item.id,
     }
+    # Two-stage materialization: fill {rubric} with the frozen per-item rubric.
+    # None means a plain (non-materializing) rubric, which has no {rubric}.
+    if rubric_text is not None:
+        values["rubric"] = rubric_text
+    return values
 
 
-def build_judge_input(item: Item, solution: "str | None", rubric: Template) -> str:
-    values = _render_values(item, _clean_solution(solution))
+def build_judge_input(
+    item: Item, solution: "str | None", rubric: Template, rubric_text: "str | None" = None
+) -> str:
+    values = _render_values(item, _clean_solution(solution), rubric_text)
     return render_template(rubric.text, values) + JUDGE_FORMAT_SUFFIX
 
 
 def build_judge_messages(
-    item: Item, solution: "str | None", rubric: Template
+    item: Item, solution: "str | None", rubric: Template, rubric_text: "str | None" = None
 ) -> "list[ChatMessageSystem | ChatMessageUser]":
     """Split-rubric layout: shared head as system message, solution as user.
 
@@ -73,25 +80,26 @@ def build_judge_messages(
     byte-identical to `build_judge_input`, so token-prefix providers see the
     exact same prompt.
     """
-    values = _render_values(item, _clean_solution(solution))
+    values = _render_values(item, _clean_solution(solution), rubric_text)
     idx = rubric.text.find("{solution}")
     if idx <= 0:  # no placeholder or nothing shared before it: single message
-        return [ChatMessageUser(content=build_judge_input(item, solution, rubric))]
+        return [ChatMessageUser(content=build_judge_input(item, solution, rubric, rubric_text))]
     head = render_template(rubric.text[:idx], values)
     tail = render_template(rubric.text[idx:], values) + JUDGE_FORMAT_SUFFIX
     return [ChatMessageSystem(content=head), ChatMessageUser(content=tail)]
 
 
-def judge_head_text(item: Item, rubric: Template) -> "str | None":
+def judge_head_text(item: Item, rubric: Template, rubric_text: "str | None" = None) -> "str | None":
     """The split-rubric layout's shared head for `item` (rendered rubric text
     before {solution}) — what same-item judge calls share as a cache prefix.
     None when the rubric has nothing before {solution} (build_judge_messages
-    falls back to a single message there). Used by the estimator for the
-    min-cacheable-prefix check and the cache projection."""
+    falls back to a single message there). The materialized {rubric} is
+    solution-independent, so it renders into this shared head. Used by the
+    estimator for the min-cacheable-prefix check and the cache projection."""
     idx = rubric.text.find("{solution}")
     if idx <= 0:
         return None
-    return render_template(rubric.text[:idx], _render_values(item, ""))
+    return render_template(rubric.text[:idx], _render_values(item, "", rubric_text))
 
 
 def judge_sample_id(gen_condition_id: str, item_id: str, epoch: int) -> str:
@@ -107,6 +115,7 @@ def build_judge_task(
     cache: bool,
     batch: "bool | int | None" = None,
     cache_schedule: bool = True,
+    rubric_texts: "dict[str, str] | None" = None,
 ) -> Task:
     # Same-item solutions share the longest cacheable prefix (rubric + problem
     # + scheme + reference). Sort so same-prefix calls are adjacent in the
@@ -115,10 +124,15 @@ def build_judge_task(
     samples = []
     for row in pending.itertuples():
         item = items_by_id[row.item_id]
+        # Frozen per-item rubric for a materializing condition ({rubric}); None
+        # for plain rubrics (the template has no {rubric} placeholder).
+        rubric_text = rubric_texts.get(row.item_id) if rubric_texts is not None else None
         if cond.split_rubric:
-            sample_input: "str | list" = build_judge_messages(item, row.solution, rubric)
+            sample_input: "str | list" = build_judge_messages(
+                item, row.solution, rubric, rubric_text
+            )
         else:
-            sample_input = build_judge_input(item, row.solution, rubric)
+            sample_input = build_judge_input(item, row.solution, rubric, rubric_text)
         samples.append(
             Sample(
                 input=sample_input,

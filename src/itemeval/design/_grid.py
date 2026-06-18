@@ -67,9 +67,14 @@ class GradeCondition(BaseModel):
     grader_max_tokens: int | None = None
     grader_reasoning_effort: ReasoningEffort | None = None
     rubric_name: str | None = None
-    rubric_hash: str | None = None
+    rubric_hash: str | None = None  # grade-template hash (when materializing, the grade template)
     scorer: str | None = None
     split_rubric: bool = False  # render rubric as system(shared)+user(solution)
+    # Two-stage materialization (None unless this rubric materializes per-item):
+    materialize_model: str | None = None
+    materialize_max_tokens: int | None = None
+    materialize_reasoning_effort: ReasoningEffort | None = None
+    build_template_hash: str | None = None  # 12 hex; the materialize (build) template
     payload: dict
 
 
@@ -124,8 +129,11 @@ def expand_generate_grid(
 
 
 def expand_grade_grid(
-    config: ExperimentConfig, rubric_templates: "dict[str, Template]"
+    config: ExperimentConfig,
+    rubric_templates: "dict[str, Template]",
+    build_templates: "dict[str, Template] | None" = None,
 ) -> list[GradeCondition]:
+    build_templates = build_templates or {}
     conditions = []
     if config.facets.scorer is not None:
         scorer = config.facets.scorer
@@ -138,7 +146,22 @@ def expand_grade_grid(
         spec = config.grader_spec(grader_name)
         for rubric_name in config.facets.rubric:
             template = rubric_templates[rubric_name]
-            validate_template(template, {"input", "solution"})
+            rspec = config.rubric_spec(rubric_name)
+            if rspec is None:
+                validate_template(template, {"input", "solution"})
+                build = None
+            else:
+                # Materializing rubric: the grade template receives {rubric}; the
+                # build template renders the item's reference only (no {solution}).
+                build = build_templates[rubric_name]
+                validate_template(template, {"input", "solution", "rubric"})
+                validate_template(build, {"input"})
+                if "{solution}" in build.text:
+                    raise ConfigError(
+                        f"materialize template '{build.name}' must not reference "
+                        "{solution}: the candidate solution does not exist at "
+                        "materialization time"
+                    )
             payload = {
                 "kind": "grade",
                 "grader": drop_none(
@@ -153,6 +176,15 @@ def expand_grade_grid(
                 "rubric": {"name": rubric_name, "hash": template.hash12},
                 "format": JUDGE_FORMAT_VERSION,
             }
+            if build is not None:
+                # Only present when materializing so pre-existing condition ids
+                # are unchanged for plain rubrics. The materialized rubric is
+                # per-item (recorded in the store), so the id carries the *spec*
+                # — materializer model + build-template hash — not the outputs.
+                payload["materialize"] = {
+                    "model": rspec.materialize.model,
+                    "build_hash": build.hash12,
+                }
             if spec.split_rubric:
                 # Only present when enabled so pre-existing condition ids are
                 # unchanged for the default single-message layout.
@@ -170,6 +202,12 @@ def expand_grade_grid(
                     rubric_name=rubric_name,
                     rubric_hash=template.hash12,
                     split_rubric=spec.split_rubric,
+                    materialize_model=rspec.materialize.model if rspec else None,
+                    materialize_max_tokens=rspec.materialize.max_tokens if rspec else None,
+                    materialize_reasoning_effort=(
+                        rspec.materialize.reasoning_effort if rspec else None
+                    ),
+                    build_template_hash=build.hash12 if build else None,
                     payload=payload,
                 )
             )
@@ -180,9 +218,10 @@ def expand_grid(
     config: ExperimentConfig,
     solver_templates: "dict[str, Template]",
     rubric_templates: "dict[str, Template]",
+    build_templates: "dict[str, Template] | None" = None,
 ) -> Grid:
     generate = expand_generate_grid(config, solver_templates)
-    grade = expand_grade_grid(config, rubric_templates)
+    grade = expand_grade_grid(config, rubric_templates, build_templates)
     ids = [c.id for c in generate] + [c.id for c in grade]
     if len(set(ids)) != len(ids):
         dupes = sorted({i for i in ids if ids.count(i) > 1})
