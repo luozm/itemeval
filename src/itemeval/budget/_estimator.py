@@ -946,6 +946,55 @@ def estimate_study(
         grade_delta["usd"] += rem_usd
         grade_delta["exp"] += rem_exp_usd
 
+    # Materialization sub-term: one call per item per materializing rubric, shared
+    # across graders (dedup by materialize_id) and resume-aware via the artifact
+    # store. Folded into the grade stage so the single money gate covers it. The
+    # ceiling assumption (output at the materializer's max_tokens) also feeds the
+    # expected figure — a one-shot per-item rubric is small and not separately
+    # calibrated. force re-grades but never re-materializes (the rubric is frozen),
+    # so the remaining materialize cost ignores force.
+    from itemeval.grade._materialize import build_materialize_input, materialize_id
+    from itemeval.store._materialized import read_materialized, stored_texts
+
+    mat_existing = read_materialized(prep.paths)
+    seen_mat: "set[str]" = set()
+    for cond in prep.grid.grade:
+        if cond.kind != "judge" or not cond.materialize_model:
+            continue
+        build_t = prep.build_templates.get(cond.rubric_name)
+        if build_t is None:
+            continue
+        mid = materialize_id(build_t, cond.materialize_model)
+        if mid in seen_mat:
+            continue
+        seen_mat.add(mid)
+        exec_mat = active_routes.get(cond.materialize_model, cond.materialize_model)
+        out_per = cond.materialize_max_tokens or DEFAULT_OUTPUT_TOKENS_JUDGE
+        in_tok = sum(estimate_tokens(build_materialize_input(it, build_t)) for it in items)
+        out_tok = len(items) * out_per
+        grade_conditions.append(
+            _condition_estimate(
+                prep,
+                "grade",
+                f"materialize:{cond.rubric_name}",
+                f"materialize_{cond.rubric_name}",
+                cond.materialize_model,
+                len(items),
+                in_tok,
+                out_tok,
+                exec_model=exec_mat,
+            )
+        )
+        grade_exp_full += _priced_usd(prep, cond.materialize_model, in_tok, out_tok, exec_mat)
+        frozen = stored_texts(mat_existing, mid)
+        rem_items = [it for it in items if it.id not in frozen]
+        rem_in = sum(estimate_tokens(build_materialize_input(it, build_t)) for it in rem_items)
+        rem_out = len(rem_items) * out_per
+        rem_usd = _priced_usd(prep, cond.materialize_model, rem_in, rem_out, exec_mat)
+        grade_delta["usd"] += rem_usd
+        grade_delta["exp"] += rem_usd
+        grade_delta["calls"] += len(rem_items)
+
     def stage_total(
         stage: str,
         conditions: "list[ConditionEstimate]",

@@ -40,7 +40,12 @@ class PreparedStudy:
     items_by_id: dict[str, Item]
     origins: dict[str, DatasetOrigin]  # item_id -> origin
     solver_templates: dict[str, Template]
-    rubric_templates: dict[str, Template]  # {} when no graders configured
+    rubric_templates: dict[
+        str, Template
+    ]  # {} when no graders configured; grade template per rubric
+    build_templates: dict[
+        str, Template
+    ]  # rubric_name -> materialize (build) template; {} unless any
     grid: Grid
     plan: EffectivePlan
     pricing: PricingTable
@@ -78,9 +83,16 @@ def prepare_study(
     solvers = solver_registry(config)
     solver_templates = {name: solvers.get(name) for name in config.facets.prompt}
     rubric_templates: dict[str, Template] = {}
+    build_templates: dict[str, Template] = {}
     if config.facets.grader:
         rubrics = rubric_registry(config)
-        rubric_templates = {name: rubrics.get(name) for name in config.facets.rubric}
+        for name in config.facets.rubric:
+            rspec = config.rubric_spec(name)
+            if rspec is None:  # plain template reference (unchanged path)
+                rubric_templates[name] = rubrics.get(name)
+            else:  # two-stage: grade template + materialize (build) template
+                rubric_templates[name] = rubrics.get(rspec.grade_template)
+                build_templates[name] = rubrics.get(rspec.materialize.template)
 
     paths = StudyPaths(config.study_dir)
     paths.ensure()
@@ -121,7 +133,7 @@ def prepare_study(
         pricing_refreshed = pricing is not loaded
 
     model_sample = resolve_model_sample(config, pricing, paths.model_locks)
-    grid = expand_grid(config, solver_templates, rubric_templates)
+    grid = expand_grid(config, solver_templates, rubric_templates, build_templates)
     # Native batch routing decided once here (resume-safe): solvers.models is now
     # final (post-sample). active = eligible gated by batch + the opt-in knob.
     native_routes = active_native_routes(config, plan)
@@ -136,6 +148,7 @@ def prepare_study(
         origins=origins,
         solver_templates=solver_templates,
         rubric_templates=rubric_templates,
+        build_templates=build_templates,
         grid=grid,
         plan=plan,
         pricing=pricing,

@@ -7,6 +7,39 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Two-stage rubric materialization** (`rubrics:` with `materialize:`): grade
+  with a per-item rubric *generated from the item's reference and frozen* — the
+  ProofBench/RefGrader protocol — instead of a single static rubric template. A
+  new top-level `rubrics:` mapping (parallel to `graders:`) declares a named
+  rubric with a `grade_template` (which receives a `{rubric}` placeholder) and a
+  `materialize: {model, template, max_tokens?, reasoning_effort?}` block; a
+  `facets.rubric` name found there materializes, while a bare/`builtin:` name
+  stays a plain template, byte-identical to today. Before grading, a pre-pass
+  runs the materializer model **once per item** (rendering the build template
+  over `{input, target, grading_scheme, id}` — never `{solution}`), content-hashes
+  the result, and stores it in a new `materialized_rubrics.parquet`; every judge
+  call for that item then reuses the frozen rubric verbatim — shared across
+  graders, solutions, replications, and resumed runs (reuse is $0). The grade
+  **condition id carries the materialize spec** (materializer model + build-
+  template hash), so a changed build template or model re-derives, like changing
+  a rubric does; the per-item rubric text + hash live in the store (the
+  reproducibility record, copied into `export --snapshot`). Materialization is a
+  **design declaration** (it changes condition ids). Its spend is **estimated in
+  the grade stage and covered by the single existing money gate** — no new
+  command, no second prompt: `estimate`/`grade` show the per-item materializer
+  calls (priced under the materializer model, surfaced for unpriced detection),
+  resume-aware so only un-frozen items cost. `grade` prints a `materialized: N
+  rubrics (model) · $X · M reused` summary line and exposes append-only
+  `materialized_rubrics` / `materialized_reused` / `materialize_usd` /
+  `materialize_empty` / `materialize_model` on `GradeResult`. A new coded hint
+  `empty-materialized-rubrics` fires when the materializer returns no text (an
+  item graded against a blank rubric). The build prompt is study-authored — no
+  built-in materialize template ships. The split-rubric cache layout composes
+  (the materialized rubric is solution-independent, so it caches in the shared
+  head). No new dependency.
+
+Closes: rubric-materialization
+
 - **Pre-flight cost-lever status line.** `estimate`, `generate`, and `grade` now
   print a `cost levers:` line stating whether batch, native batch routing,
   prompt caching, and the local response cache are engaged — with a one-clause

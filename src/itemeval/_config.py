@@ -315,6 +315,32 @@ class GraderSpec(BaseModel):
     provider_routing: "dict[str, Any] | None" = None
 
 
+class MaterializeSpec(BaseModel):
+    """Per-item rubric materialization: an LLM renders a frozen rubric from the
+    item's reference only (no candidate solution), reused verbatim by every
+    grader call for that item. A generated marking scheme is a multi-section
+    document, so `max_tokens` defaults high (2048), not the judge's 512."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str  # the materializer model id
+    template: str  # build template ref; rendered over {input,target,grading_scheme,id}
+    max_tokens: int | None = Field(default=2048, ge=1)
+    reasoning_effort: ReasoningEffort | None = None
+
+
+class RubricSpec(BaseModel):
+    """A named two-stage rubric (declared under top-level `rubrics:`). A
+    `facets.rubric` name found here materializes a per-item rubric before
+    grading; a bare/`builtin:` name stays a plain template reference, unchanged.
+    Temperature is pinned to 0.0 (the materialized rubric is a frozen artifact)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    grade_template: str  # grade template ref; receives the materialized {rubric} + {solution}
+    materialize: MaterializeSpec
+
+
 class BudgetConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -369,6 +395,7 @@ class ExperimentConfig(BaseModel):
     solvers: SolversConfig
     facets: FacetsConfig
     graders: dict[str, GraderSpec] = Field(default_factory=dict)
+    rubrics: dict[str, RubricSpec] = Field(default_factory=dict)  # two-stage rubric specs
     crossing: Literal["full"] = "full"
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
@@ -421,6 +448,11 @@ class ExperimentConfig(BaseModel):
         if "/" in name:  # bare model id used directly as a grader
             return GraderSpec(model=name)
         raise ConfigError(f"grader '{name}' is not defined under graders: and is not a model id")
+
+    def rubric_spec(self, name: str) -> "RubricSpec | None":
+        """A `facets.rubric` name declared under `rubrics:` (two-stage
+        materialization), or None for a plain template reference (today's path)."""
+        return self.rubrics.get(name)
 
 
 def load_config(path: "str | Path", *, work_dir: "str | Path | None" = None) -> ExperimentConfig:

@@ -9,6 +9,7 @@ studies/<study>/
   items.parquet            # canonical items snapshot (all loaded items)
   solutions.parquet        # one row per (generate condition x item x epoch)
   gradings.parquet         # one row per grading event
+  materialized_rubrics.parquet  # frozen per-item rubrics (only with a materializing rubric)
   log_index.parquet        # index of raw inspect .eval logs
   ledger.parquet           # cost ledger (run x stage x condition x model)
   dataset_locks.json       # dataset revisions pinned at first run
@@ -74,6 +75,13 @@ Result: `score, score_raw, parse_ok, parse_error, reasoning,
 judge_completion, error`.
 Cost/audit: token columns, `usd` (0.0 for verifiable), `latency_s`,
 `log_file`, `created_at`.
+
+Written only when a [materializing rubric](Configuration.md#two-stage-materialized-rubrics)
+runs: `materialized_rubrics.parquet` (key: `materialize_id, item_id`) holds the
+frozen per-item rubrics — `materialize_id` (build-template hash + materializer
+model), `rubric_name, materializer_model, build_template_hash, rubric_text,
+rubric_hash`, `usd`, token columns, `error, run_id, created_at`. Reused across
+graders/solutions/replications/resumes; an `error` row is retried next run.
 
 Invariant: `parse_ok=false` ⟺ `parse_error` set ⟺ `score` null (for rows
 without a sample-level `error`). Parse failures are final; errors re-run.
@@ -144,6 +152,7 @@ export/snapshots/<name>/
   ledger.csv
   dataset_locks.json       # pins as of snapshot time
   model_locks.json         # the model sample pin (when solvers.sample was used)
+  materialized_rubrics.parquet  # frozen rubrics (when a materializing rubric was used)
   manifests/               # every manifest covering included rows
   snapshot.json            # name, created_at, itemeval_version, config_sha256,
                            # run_ids, row/condition counts, spend totals

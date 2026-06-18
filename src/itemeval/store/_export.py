@@ -188,6 +188,10 @@ def _write_snapshot(
         shutil.copy2(paths.dataset_locks, tmp / "dataset_locks.json")
     if paths.model_locks.is_file():
         shutil.copy2(paths.model_locks, tmp / "model_locks.json")
+    if paths.materialized_rubrics.is_file():
+        # The frozen per-item rubrics are the reproducibility record (the
+        # condition id only pins the materialize spec, not the generated text).
+        shutil.copy2(paths.materialized_rubrics, tmp / "materialized_rubrics.parquet")
     for run_id in run_ids:  # every manifest covering included rows
         src = paths.manifests_dir / f"{run_id}.json"
         if src.is_file():
