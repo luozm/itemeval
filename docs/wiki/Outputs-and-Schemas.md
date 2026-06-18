@@ -116,9 +116,12 @@ revisions and an items content hash; solver/rubric templates each as
 templates record a package-relative, machine-independent `path`);
 resolved graders; requested sampling params (+ `sampling_effective` per
 condition, backfilled after the run); `endpoints_effective` per condition
-(`{provider, base_url, served_model}`, backfilled after the run — the endpoint
-and provider-returned model snapshot that actually answered; `base_url` is null
-on the provider's default endpoint); policy, effective replications/items
+(`{provider, base_url, served_model, execution_model, routed}`, backfilled after
+the run — the endpoint and provider-returned model snapshot that actually
+answered; `base_url` is null on the provider's default endpoint; under
+`budget.prefer_native_batch`, `execution_model` is the native id the calls were
+sent to and `routed` flags when it differs from the sampled `model`); policy,
+effective replications/items
 limit/batch; the complete condition grid with payloads; the condition ids
 this run selected; and the estimate the run was approved under
 (`estimate_usd` = the remaining figure, `estimate_full_usd` alongside).

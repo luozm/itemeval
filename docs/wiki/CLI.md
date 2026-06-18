@@ -148,6 +148,8 @@ Hint codes are stable and append-only:
 | `anthropic-openrouter-no-split` | an Anthropic-style model runs monolithic prompts through OpenRouter (no `split_prompt`/`split_rubric`), which earns no cache discount (estimate-time) |
 | `split-head-below-min` | `split_prompt`/`split_rubric` is on but the shared head estimates below the provider's minimum cacheable prefix, so the cache silently won't engage (estimate-time) |
 | `openrouter-unpinned-cache` | a cached `openrouter/anthropic/*` run has no `provider_routing` pin, so routing may land on an upstream that ignores cache markers (not raised when `prefer_native_batch` routes the run to the native batch API) |
+| `estimate-is-ceiling` | a money-spending stage has no observed rows yet, so its projection is a pure ceiling (output assumed at `max_tokens`) — a `--policy dev` pilot calibrates an expected cost (estimate-time) |
+| `native-batch-available` | a batch run has `openrouter/*` models with an eligible native batch endpoint (key present) but `budget.prefer_native_batch` is off, leaving the ~50% batch discount unclaimed |
 
 ## Typical session
 
