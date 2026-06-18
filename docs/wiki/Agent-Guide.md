@@ -50,6 +50,14 @@ itemeval status   CONFIG [--json]               # completion matrix (no API call
   config file.
 - For paid runs in non-interactive shells, `--yes` is required whenever the
   projection exceeds `confirm_above_usd` (there is no TTY to confirm on).
+- `estimate`/`generate`/`grade` print a coarse pre-flight wall-clock line
+  (`~Nm at concurrency K (C calls, … latency — rough)`) and a `cost levers:`
+  line. Conditions within a stage run **concurrently** across distinct models
+  (concurrency `K` = distinct execution models), so wall-clock is roughly
+  `calls / K × per-call latency`, not the sum over models. Use the ETA to decide
+  whether to background a long run — the live progress display is ephemeral and
+  never reaches a captured-stdout caller; the durable facts are this line and the
+  end-of-run summary block.
 
 ### Exit codes (deterministic — branch on them)
 
@@ -168,7 +176,7 @@ Prefer the parquet stores over stdout:
 | Gradings | `gradings.parquet` | per grading event incl. `parse_error`, `judge_completion` |
 | Cost ledger | `ledger.parquet` / `export/ledger.csv` | spend by run × stage × condition × model |
 | Manifests | `manifests/<run_id>.json` | full reproducibility record per run |
-| Raw transcripts | `logs/<stage>/<condition_id>/*.eval` | inspect_ai logs (open with `inspect view`) |
+| Raw transcripts | `logs/<stage>/*.eval` | inspect_ai logs, one per condition (open with `inspect view`) |
 
 Or stay in Python — one public function per command, same semantics, pydantic
 results (`.model_dump()` for JSON). Consent is a parameter: pass `max_usd=`

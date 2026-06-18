@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._endpoints import cache_provider_of, model_args_for
@@ -35,12 +34,14 @@ from itemeval.generate._run import (
     cache_columns,
     endpoint_info,
     enforce_budget_cap,
+    eval_error_message,
     ledger_row,
     local_cache_dir,
     local_cache_rows,
     log_index_row,
     matches_filter,
-    resolve_display,
+    max_tasks_for,
+    run_condition_evals,
     sum_usage,
     usage_columns,
     usd_for_usage,
@@ -289,7 +290,7 @@ def run_grade(
     )
     manifest_path = write_manifest(manifest, prep.paths)
 
-    reports: list[ConditionRunReport] = []
+    reports_by_cond: dict[str, ConditionRunReport] = {}
     endpoints_effective: dict[str, Any] = {}
     rows_written = 0
     parse_failures = 0
@@ -300,153 +301,173 @@ def run_grade(
     # One truth value for "cache scheduling active" (matches generate's).
     scheduled = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
     factory = model_factory or resolve_model
+    # Planning snapshot: pending is filtered per cond.id, so a single read is
+    # correct even though verifiable conditions upsert gradings during Phase 1.
+    gradings_df = _gradings.read_gradings(prep.paths)
 
+    def finalize(cond, rows, *, items_run, log_file, cond_usd, local_rows) -> None:
+        """Shared tail for verifiable + judge: persist gradings and report run."""
+        nonlocal rows_written, total_usd, parse_failures
+        n = _gradings.upsert_gradings(prep.paths, rows)
+        rows_written += n
+        total_usd += cond_usd or 0.0
+        parse_failures += sum(1 for r in rows if not r["parse_ok"] and r["error"] is None)
+        reports_by_cond[cond.id] = ConditionRunReport(
+            condition_id=cond.id,
+            slug=cond.slug,
+            status="run",
+            items_run=items_run,
+            rows_written=n,
+            errors=sum(1 for r in rows if r["error"] is not None),
+            usd=cond_usd,
+            log_file=log_file,
+            local_cache_rows=local_rows,
+            **cache_columns(rows),
+        )
+
+    # Phase 1: verifiable conditions score in-process now (no model call); judge
+    # conditions get a task with its own model for the shared parallel eval.
+    planned: list[tuple[GradeCondition, Any, str, Any]] = []
     for cond in selected:
-        gradings_df = _gradings.read_gradings(prep.paths)
         pending = _gradings.pending_solutions(
             scoped, gradings_df, cond.id, force, include_empty=include_empty
         )
         if pending.empty:
-            reports.append(
-                ConditionRunReport(
-                    condition_id=cond.id,
-                    slug=cond.slug,
-                    status="skipped",
-                    items_run=0,
-                    rows_written=0,
-                    errors=0,
-                    usd=None,
-                    log_file=None,
-                )
+            reports_by_cond[cond.id] = ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="skipped",
+                items_run=0,
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
             )
             continue
-
         if cond.kind == "verifiable":
             rows = _verifiable_rows(prep, cond, pending, run_id)
-            log_file = None
-            cond_usd = 0.0
-            local_rows = 0  # in-process scoring: no model calls, no cache
             _ledger.upsert_ledger(
                 prep.paths,
                 [ledger_row(run_id, "grade", cond.id, "(verifiable)", rows, None)],
             )
-        else:
-            grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
-            # Native batch routing for the judge model (sampled id stays recorded).
-            exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
-            task = build_judge_task(
-                pending,
-                prep.items_by_id,
-                cond,
-                prep.rubric_templates[cond.rubric_name],
-                prep.config.study,
-                prep.config.cache,
-                batch=prep.plan.batch,
-                cache_schedule=scheduled,
+            finalize(cond, rows, items_run=len(pending), log_file=None, cond_usd=0.0, local_rows=0)
+            continue
+        # Judge: native batch routing on the grader id (sampled id stays
+        # recorded); the model rides on the Task so all judges run in one eval.
+        grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
+        exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
+        task = build_judge_task(
+            pending,
+            prep.items_by_id,
+            cond,
+            prep.rubric_templates[cond.rubric_name],
+            prep.config.study,
+            prep.config.cache,
+            batch=prep.plan.batch,
+            cache_schedule=scheduled,
+        )
+        try:
+            task.model = factory(
+                exec_grader,
+                "grade",
+                model_args_for(
+                    exec_grader,
+                    provider_routing=grader_routing,
+                    cache_scheduling=scheduled,
+                    study=prep.config.study,
+                    condition_id=cond.id,
+                ),
             )
-            try:
-                logs = inspect_ai.eval(
-                    task,
-                    model=factory(
-                        exec_grader,
-                        "grade",
-                        model_args_for(
-                            exec_grader,
-                            provider_routing=grader_routing,
-                            cache_scheduling=scheduled,
-                            study=prep.config.study,
-                            condition_id=cond.id,
-                        ),
-                    ),
-                    display=resolve_display(display),
-                    log_dir=str(prep.paths.logs_dir("grade", cond.id)),
-                    log_format="eval",
-                    fail_on_error=False,
-                    retry_on_error=1,
-                    tags=["itemeval", "grade"],
-                    metadata={
-                        "itemeval_run_id": run_id,
-                        "itemeval_study": prep.config.study,
-                        "itemeval_condition_id": cond.id,
-                    },
-                )
-                log = logs[0]
-            except Exception as e:
-                reports.append(
-                    ConditionRunReport(
-                        condition_id=cond.id,
-                        slug=cond.slug,
-                        status="error",
-                        items_run=len(pending),
-                        rows_written=0,
-                        errors=0,
-                        usd=None,
-                        log_file=None,
-                        message=f"{type(e).__name__}: {e}",
-                    )
-                )
-                continue
-            rows = _judge_rows(prep, cond, pending, log, run_id)
-            local_rows = local_cache_rows(rows)
-            judge_models.append(cond.grader_model)
-            # Judge tasks always request cache_prompt="auto" (markers on), so
-            # an unpinned openrouter/anthropic judge is a cached-but-routable run
-            # — unless it was routed to its native API, where the call never
-            # touches OpenRouter and the OpenRouter-cache caveat does not apply.
-            if (
-                grader_routing is None
-                and cond.grader_model not in prep.native_routes
-                and provider_of(cond.grader_model) == "openrouter"
-                and cache_provider_of(cond.grader_model) == "anthropic"
-            ):
-                unpinned_cached.append(cond.grader_model)
-            repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
-            endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model, exec_grader)
-            log_file = rel_to_study(prep.paths, log.location)
-            usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
-            cond_usd = sum(usd_vals) if usd_vals else None
-            _logs.upsert_log_index(
-                prep.paths,
-                [
-                    log_index_row(
-                        log, prep.paths, run_id, "grade", cond.id, cond.grader_model, cond_usd
-                    )
-                ],
-            )
-            _ledger.upsert_ledger(
-                prep.paths,
-                [
-                    ledger_row(
-                        run_id,
-                        "grade",
-                        cond.id,
-                        cond.grader_model,
-                        rows,
-                        prep.plan.batch,
-                        exec_model=exec_grader,
-                    )
-                ],
-            )
-
-        n = _gradings.upsert_gradings(prep.paths, rows)
-        rows_written += n
-        total_usd += cond_usd or 0.0
-        n_parse_fail = sum(1 for r in rows if not r["parse_ok"] and r["error"] is None)
-        parse_failures += n_parse_fail
-        reports.append(
-            ConditionRunReport(
+        except Exception as e:  # model construction failure: isolate per cond
+            reports_by_cond[cond.id] = ConditionRunReport(
                 condition_id=cond.id,
                 slug=cond.slug,
-                status="run",
+                status="error",
                 items_run=len(pending),
-                rows_written=n,
-                errors=sum(1 for r in rows if r["error"] is not None),
-                usd=cond_usd,
-                log_file=log_file,
-                local_cache_rows=local_rows,
-                **cache_columns(rows),
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
+                message=f"{type(e).__name__}: {e}",
             )
+            continue
+        planned.append((cond, pending, exec_grader, task))
+
+    # Phase 2: one eval over all judge tasks — graders run concurrently.
+    log_by_cond, fatal = run_condition_evals(
+        [task for _, _, _, task in planned],
+        stage="grade",
+        run_id=run_id,
+        study=prep.config.study,
+        display=display,
+        log_dir=str(prep.paths.logs_stage_dir("grade")),
+        max_tasks=max_tasks_for([ex for _, _, ex, _ in planned]),
+    )
+
+    # Phase 3: harvest each judge condition from its log (mapped by metadata).
+    for cond, pending, exec_grader, _task in planned:
+        log = log_by_cond.get(cond.id)
+        if fatal is not None or log is None or log.status != "success":
+            reports_by_cond[cond.id] = ConditionRunReport(
+                condition_id=cond.id,
+                slug=cond.slug,
+                status="error",
+                items_run=len(pending),
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
+                message=eval_error_message(log, fatal),
+            )
+            continue
+        rows = _judge_rows(prep, cond, pending, log, run_id)
+        local_rows = local_cache_rows(rows)
+        judge_models.append(cond.grader_model)
+        # Judge tasks always request cache_prompt="auto" (markers on), so an
+        # unpinned openrouter/anthropic judge is a cached-but-routable run —
+        # unless it was routed to its native API, where the call never touches
+        # OpenRouter and the OpenRouter-cache caveat does not apply.
+        grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
+        if (
+            grader_routing is None
+            and cond.grader_model not in prep.native_routes
+            and provider_of(cond.grader_model) == "openrouter"
+            and cache_provider_of(cond.grader_model) == "anthropic"
+        ):
+            unpinned_cached.append(cond.grader_model)
+        repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
+        endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model, exec_grader)
+        usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
+        cond_usd = sum(usd_vals) if usd_vals else None
+        _logs.upsert_log_index(
+            prep.paths,
+            [log_index_row(log, prep.paths, run_id, "grade", cond.id, cond.grader_model, cond_usd)],
         )
+        _ledger.upsert_ledger(
+            prep.paths,
+            [
+                ledger_row(
+                    run_id,
+                    "grade",
+                    cond.id,
+                    cond.grader_model,
+                    rows,
+                    prep.plan.batch,
+                    exec_model=exec_grader,
+                )
+            ],
+        )
+        finalize(
+            cond,
+            rows,
+            items_run=len(pending),
+            log_file=rel_to_study(prep.paths, log.location),
+            cond_usd=cond_usd,
+            local_rows=local_rows,
+        )
+
+    # Reassemble in selected order (skips + verifiable + judge) for the summary.
+    reports = [reports_by_cond[c.id] for c in selected]
 
     if endpoints_effective:
         finalize_manifest(manifest_path, endpoints_effective=endpoints_effective)

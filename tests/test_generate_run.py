@@ -137,3 +137,30 @@ def test_generate_eval_failure_reported_not_raised(study, monkeypatch):
     assert all(r.status == "error" for r in result.conditions)
     assert "provider exploded" in result.conditions[0].message
     assert read_solutions(prep.paths).empty
+
+
+def test_generate_one_condition_failure_isolated(study):
+    """One model failing must not block the others (conditions run in one
+    parallel eval; a failure is recorded per condition, siblings proceed)."""
+    from itemeval._mockmodels import resolve_model
+
+    _, prep = study
+
+    def partial_factory(model, stage, model_args=None):
+        if model == "mockllm/solver-b":
+            raise RuntimeError("solver-b down")
+        return resolve_model(model, stage, model_args)
+
+    result = run_generate(prep, model_factory=partial_factory)
+
+    model_by_cond = {c.id: c.model for c in prep.grid.generate}
+    for rep in result.conditions:
+        if model_by_cond[rep.condition_id] == "mockllm/solver-b":
+            assert rep.status == "error" and "solver-b down" in rep.message
+        else:
+            assert rep.status == "run" and rep.rows_written == 4  # 2 items x 2 epochs
+
+    # only the healthy model's rows persisted; the failed one wrote nothing
+    df = read_solutions(prep.paths)
+    assert set(df["model"]) == {"mockllm/solver-a"}
+    assert len(df) == 4

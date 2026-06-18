@@ -20,6 +20,13 @@ def test_full_pipeline_cli_only(tmp_path, offline_adapter, capsys):
     out = capsys.readouterr().out
     assert "rows written: 8" in out
     assert (study_dir / "solutions.parquet").is_file()
+    # cost-lever legibility (Issue #3) + coarse ETA (W2) on the dev pre-flight
+    assert "cost levers: batch off (dev policy)" in out
+    assert "response-cache on" in out
+    assert "at concurrency 2" in out and "default latency — rough" in out
+    # all conditions ran in one shared log dir (no per-condition subdirs)
+    gen_logs = study_dir / "logs" / "generate"
+    assert gen_logs.is_dir() and not any(p.is_dir() for p in gen_logs.iterdir())
 
     # resumability: second generate run skips every condition
     assert cli.main(["generate", config, "--yes"]) == 0
