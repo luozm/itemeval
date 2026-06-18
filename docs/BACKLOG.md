@@ -378,53 +378,6 @@ DataFrame from the long table; no new file formats.
 as `itemeval.pivot_scores(...)` etc., or documentation-only. Start as wiki
 recipes in Tutorial 3/4; promote to code when the recipes stabilize.
 
-### Expressive model-sample composition (recency, equal allocation, pinned set)
-**Key:** `model-sample-composition`
-
-**Motivation.** `solvers.sample` draws a seeded random sample, but `stratify_by`
-allocates *proportionally only* (largest-remainder), so large-roster vendors
-dominate and small ones drop to zero; there is no recency dimension, so a
-price-bounded draw surfaces mostly old models nobody benchmarks; and there is no
-way to pin must-include models alongside the random draw. Real panels need
-balanced coverage, a recency floor, and a purposive+random hybrid — without
-these, an honest "random sample of current LLMs" is hard to express and users
-fall back to hand-curated frames (which weakens the generalization claim).
-
-**Design sketch.**
-
-```yaml
-solvers:
-  sample:
-    n: 25
-    seed: 42
-    where: {released_after: "2025-01-01", max_output_usd_per_mtok: 15}
-    stratify_by: provider
-    allocation: equal          # equal-per-stratum (default: proportional)
-    include: [openrouter/openai/gpt-5.1]   # always present; random fills the rest
-```
-
-- **Recency** as both a `where` filter (`released_after`, an *absolute* cutoff,
-  not wall-clock age, so a pinned table → identical draw) and a
-  `stratify_by: recency` tier. Requires persisting the OpenRouter `created`
-  timestamp on `ModelPrice` (currently never fetched).
-- **`allocation: equal | proportional`** on `ModelSample`.
-- **`include:`** pinned ids counted against `n`; the seeded draw fills the rest.
-
-**Implementation notes.** `budget/_pricing.py` (fetch + persist `created` as an
-additive optional `ModelPrice` field — no pricing-table `schema_version` exists
-or is needed on a regenerable cache; a recency draw against a table that
-predates `created` fails loudly pointing at `--refresh-pricing`, the same
-pattern `text_model` uses), `_config.py` (`released_after` on
-`ModelUniverseFilter`, `recency` in `StratifyBy`, `allocation`/`include` on
-`ModelSample`), `_modelsample.py` (recency stratum + filter, equal-allocation
-path, include-then-fill in `_draw`), provenance line + manifest. Stage in the
-plan: recency first, then allocation/include. ~150 lines + tests.
-
-**Open questions.** Equal allocation when `n` isn't divisible by stratum count
-(largest-remainder over the equal quota). Whether `include:` bypasses `where`
-(yes — purposive picks are intentional). A hint when a proportional draw
-silently zeros a stratum, even after `equal` exists.
-
 ### Auto flagship / latest-per-vendor selection
 **Key:** `flagship-selection`
 

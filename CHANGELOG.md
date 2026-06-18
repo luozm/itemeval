@@ -56,6 +56,34 @@ Closes: composite-item-id
 
 Closes: model-sampling
 
+- **Expressive model-sample composition** (`solvers.sample`): three levers on the
+  candidate-model draw for balanced, current, purposive panels —
+  - **Recency.** `where.released_after: "2025-01-01"` keeps only models released
+    on/after an **absolute** date (never wall-clock age, so a pinned table draws
+    identically), and `stratify_by: recency` balances the draw across release
+    **years** (UTC). Both read a new `ModelPrice.created` release timestamp that
+    `--refresh-pricing` now captures from OpenRouter; undated models are dropped
+    by `released_after`, and a `recency` draw against a table that predates
+    `created` fails loudly pointing at `--refresh-pricing`.
+  - **`allocation: equal | proportional`** (default `proportional`, unchanged):
+    `equal` balances `n` across strata instead of by stratum size, so
+    large-roster vendors stop dominating and small ones stop dropping to zero
+    (capped at each stratum's available models; requires `stratify_by`).
+  - **`include: [ids]`** pins must-have models, counted against `n`; the seeded
+    draw fills the rest. Pins bypass `where` and universe membership (purposive).
+    When also stratified, pins **count toward** their stratum's balanced share
+    (not added on top), so pinning a vendor doesn't over-represent it; pins
+    exceeding a stratum's share are all kept and the remainder rebalances.
+  Provenance surfaces wherever model-sampling already reports it: the
+  `models: sampled N of M …` line gains `(equal)` / `K via include` clauses, the
+  `model_sample` object on each command's `--json`, the run manifest, and
+  `STUDY_CARD.md` gain `allocation`/`include`. `model_locks.json` pins the new
+  knobs in its spec (a changed value fails loudly — clear the lock to re-draw).
+  `ModelPrice.created` is an additive optional field (no pricing-table schema
+  version). Builds on `model-sampling`.
+
+Closes: model-sample-composition
+
 ## [0.2.0] - 2026-06-12
 
 This release is largely about **cost** and **honest accounting**: provider

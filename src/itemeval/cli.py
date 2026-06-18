@@ -151,10 +151,15 @@ def _print_model_sample(prep) -> None:
         "explicit": "an inline list",
         "file": "a model-id file",
     }.get(ms.source, ms.source)
-    strat = f", stratified by {ms.stratify_by}" if ms.stratify_by else ""
+    strat = ""
+    if ms.stratify_by:
+        strat = f", stratified by {ms.stratify_by}"
+        if ms.allocation == "equal":
+            strat += " (equal)"
+    incl = f", {len(ms.include)} via include" if ms.include else ""
     if ms.pinned_now:
         print(
-            f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}) "
+            f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}{incl}) "
             f"from {source} — pinned in model_locks.json"
         )
     else:

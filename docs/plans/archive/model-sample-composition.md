@@ -1,15 +1,14 @@
 # Implementation plan — model-sample-composition (recency, equal allocation, pinned include)
 
-**Status: IN PROGRESS (started 2026-06-17).** Written 2026-06-17 against the
-current `main` (0.3.0.dev) — re-verify the pinned facts below if those moved.
-This feature **extends the just-shipped `model-sampling`** (still in
-`[Unreleased]`; design record in
-[docs/plans/archive/model-sampling.md](archive/model-sampling.md)). It is
+**Status: IMPLEMENTED 2026-06-17.** Written 2026-06-17 against the current
+`main` (0.3.0.dev) and shipped the same day; this file is now the design record,
+past tense. The feature **extends the just-shipped `model-sampling`** (in
+`[Unreleased]`, ships with 0.3; design record in
+[docs/plans/archive/model-sampling.md](model-sampling.md)). It is
 **engine-free** — config, pricing, the draw module, the manifest, the study
 card; **no** `inspect_ai` import, so the inspect boundary (DEVELOPMENT.md) is
-satisfied trivially and is not re-discussed below. This file is the working
-brief for a fresh implementation session: it carries all the context that
-session needs. Read these first, in order:
+satisfied trivially and is not re-discussed below. The context that the
+implementing session needed, in reading order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style,
    "don't over-engineer").

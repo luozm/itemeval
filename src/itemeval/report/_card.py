@@ -86,6 +86,8 @@ def build_study_card(
             "universe_size": ms.universe_size,
             "universe_hash": ms.universe_hash,
             "stratify_by": ms.stratify_by,
+            "allocation": ms.allocation,
+            "include": list(ms.include),
         }
     front_text = yaml.safe_dump(front, sort_keys=False, allow_unicode=True).strip()
 
@@ -114,7 +116,12 @@ def build_study_card(
     sample_note = ""
     if prep.model_sample is not None:
         ms = prep.model_sample
-        strat = f", stratified by {ms.stratify_by}" if ms.stratify_by else ""
+        strat = ""
+        if ms.stratify_by:
+            strat = f", stratified by {ms.stratify_by}"
+            if ms.allocation == "equal":
+                strat += " (equal)"
+        incl = f", {len(ms.include)} via include" if ms.include else ""
         src = {
             "pricing-table": "the OpenRouter roster",
             "explicit": "an inline list",
@@ -122,7 +129,7 @@ def build_study_card(
         }.get(ms.source, ms.source)
         sample_note = (
             f"Models: sampled {ms.n} of {ms.universe_size} from {src} "
-            f"(seed {ms.seed}{strat}); pinned in model_locks.json.\n\n"
+            f"(seed {ms.seed}{strat}{incl}); pinned in model_locks.json.\n\n"
         )
     design = (
         sample_note

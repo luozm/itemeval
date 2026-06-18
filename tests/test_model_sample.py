@@ -345,3 +345,213 @@ def test_metadata_stratify_requires_pricing_table_universe():
     _cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "provider"})
     with pytest.raises(Exception, match="requires universe: pricing-table"):
         _cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "reasoning"})
+
+
+# --- model-sample-composition: recency, equal allocation, pinned include ---
+
+from collections import Counter  # noqa: E402
+
+from itemeval._modelsample import _stratum_value  # noqa: E402
+
+# Release timestamps (Unix seconds, mid-year so the UTC-year bucket is unambiguous).
+Y2023, Y2024, Y2025 = 1685577600, 1717200000, 1748736000
+
+
+def _dated(out: float, created: "int | None") -> ModelPrice:
+    return ModelPrice(
+        input_usd_per_mtok=1.0, output_usd_per_mtok=out, text_model=True, created=created
+    )
+
+
+DATED = PricingTable(
+    updated_at="t",
+    source="seed",
+    models={
+        "openrouter/a/old": _dated(5.0, Y2023),
+        "openrouter/a/mid": _dated(5.0, Y2024),
+        "openrouter/b/new": _dated(5.0, Y2025),
+        "openrouter/c/new2": _dated(5.0, Y2025),
+        "openrouter/d/undated": _dated(5.0, None),  # no release date
+    },
+)
+
+
+def test_released_after_filters_and_drops_undated(tmp_path):
+    cfg = _cfg(
+        {"n": 3, "seed": 1, "universe": "pricing-table", "where": {"released_after": "2024-01-01"}}
+    )
+    res = resolve_model_sample(cfg, DATED, tmp_path / "r.json")
+    assert res.universe_size == 3  # a/mid (2024), b/new, c/new2 — a/old and undated dropped
+    assert set(res.models) <= {"openrouter/a/mid", "openrouter/b/new", "openrouter/c/new2"}
+    assert "openrouter/a/old" not in res.models and "openrouter/d/undated" not in res.models
+
+
+def test_stratify_by_recency_buckets_by_year(tmp_path):
+    cfg = _cfg({"n": 4, "seed": 1, "stratify_by": "recency", "universe": "pricing-table"})
+    res = resolve_model_sample(cfg, DATED, tmp_path / "r.json")
+    # one per stratum: 2023, 2024, 2025, and the undated "unknown" bucket
+    assert {_stratum_value(m, "recency", DATED) for m in res.models} == {
+        "2023",
+        "2024",
+        "2025",
+        "unknown",
+    }
+
+
+def test_stratify_by_recency_all_undated_raises(tmp_path):
+    nodates = _pricing({"openrouter/x/a": 5.0, "openrouter/x/b": 5.0})  # text_model but no created
+    cfg = _cfg({"n": 1, "seed": 1, "stratify_by": "recency", "universe": "pricing-table"})
+    with pytest.raises(ConfigError, match="release dates.*refresh-pricing"):
+        resolve_model_sample(cfg, nodates, tmp_path / "r.json")
+
+
+# Allocation rosters: provider A has 4 models, B has 2 (unequal sizes).
+ALLOC = _pricing(
+    {f"openrouter/a/{i}": 5.0 for i in range(4)} | {f"openrouter/b/{i}": 5.0 for i in range(2)}
+)
+SMALL = _pricing({f"openrouter/a/{i}": 5.0 for i in range(4)} | {"openrouter/b/0": 5.0})
+
+
+def test_allocation_equal_vs_proportional(tmp_path):
+    base = {"n": 4, "seed": 1, "stratify_by": "provider", "universe": "pricing-table"}
+    prop = resolve_model_sample(_cfg(base), ALLOC, tmp_path / "p.json")
+    assert Counter(stratum(m) for m in prop.models) == {"a": 3, "b": 1}  # proportional to size
+    eq = resolve_model_sample(_cfg({**base, "allocation": "equal"}), ALLOC, tmp_path / "e.json")
+    assert Counter(stratum(m) for m in eq.models) == {"a": 2, "b": 2}  # balanced
+    assert eq.allocation == "equal"
+
+
+def test_equal_allocation_caps_small_stratum(tmp_path):
+    eq = resolve_model_sample(
+        _cfg(
+            {
+                "n": 4,
+                "seed": 1,
+                "stratify_by": "provider",
+                "allocation": "equal",
+                "universe": "pricing-table",
+            }
+        ),
+        SMALL,
+        tmp_path / "e.json",
+    )
+    # B has only 1 model -> capped at 1, overflow redistributed to A (sums to n)
+    assert Counter(stratum(m) for m in eq.models) == {"a": 3, "b": 1}
+
+
+def test_include_present_counted_and_filled_from_rest(tmp_path):
+    inc = ["openrouter/anthropic/claude-a", "openrouter/openai/gpt-a"]
+    res = resolve_model_sample(
+        _cfg({"n": 4, "seed": 1, "universe": "pricing-table", "include": inc}),
+        ROSTER,
+        tmp_path / "i.json",
+    )
+    assert set(inc) <= set(res.models) and len(res.models) == 4
+    assert res.include == sorted(inc)
+    drawn = set(res.models) - set(inc)
+    assert drawn <= set(ROSTER_IDS) - set(inc)  # fill from the non-included pool
+
+
+def test_include_bypasses_membership_and_where(tmp_path):
+    res = resolve_model_sample(
+        _cfg(
+            {
+                "n": 2,
+                "seed": 1,
+                "universe": "pricing-table",
+                "where": {"provider": ["google"]},  # roster narrowed to google
+                "include": ["some/custom-model"],  # not in the roster at all
+            }
+        ),
+        ROSTER,
+        tmp_path / "i.json",
+    )
+    assert "some/custom-model" in res.models  # present despite not being in the universe
+    assert "openrouter/google/gemini-a" in res.models  # fill respects where
+    assert len(res.models) == 2 and res.universe_size == 1
+
+
+def test_include_equals_n_no_fill(tmp_path):
+    res = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": "pricing-table", "include": ["x/a", "x/b"]}),
+        ROSTER,
+        tmp_path / "i.json",
+    )
+    assert sorted(res.models) == ["x/a", "x/b"]
+
+
+def test_n_exceeds_available_with_include_raises(tmp_path):
+    cfg = _cfg(
+        {
+            "n": 3,
+            "seed": 1,
+            "universe": "pricing-table",
+            "where": {"provider": ["google"]},
+            "include": ["openrouter/google/gemini-a"],
+        }
+    )
+    with pytest.raises(ConfigError, match="exceeds.*available to draw"):
+        resolve_model_sample(cfg, ROSTER, tmp_path / "i.json")
+
+
+def test_include_counts_toward_stratum_share(tmp_path):
+    # 2 'a' pins + equal stratify over A/B with n=4 -> a stays at its share (2),
+    # NOT 2 + the equal fill (which would over-represent A).
+    res = resolve_model_sample(
+        _cfg(
+            {
+                "n": 4,
+                "seed": 1,
+                "stratify_by": "provider",
+                "allocation": "equal",
+                "universe": "pricing-table",
+                "include": ["openrouter/a/0", "openrouter/a/1"],
+            }
+        ),
+        ALLOC,
+        tmp_path / "i.json",
+    )
+    assert Counter(stratum(m) for m in res.models) == {"a": 2, "b": 2}
+    assert {"openrouter/a/0", "openrouter/a/1"} <= set(res.models)
+
+
+def test_include_over_pin_pins_win_rest_rebalances(tmp_path):
+    # 3 'a' pins exceed a's equal share (2): all pins kept, remainder goes to B.
+    res = resolve_model_sample(
+        _cfg(
+            {
+                "n": 4,
+                "seed": 1,
+                "stratify_by": "provider",
+                "allocation": "equal",
+                "universe": "pricing-table",
+                "include": ["openrouter/a/0", "openrouter/a/1", "openrouter/a/2"],
+            }
+        ),
+        ALLOC,
+        tmp_path / "o.json",
+    )
+    assert Counter(stratum(m) for m in res.models) == {"a": 3, "b": 1}
+
+
+def test_provenance_line_equal_and_include(capsys):
+    from types import SimpleNamespace
+
+    from itemeval._modelsample import ModelSampleResult
+    from itemeval.cli import _print_model_sample
+
+    ms = ModelSampleResult(
+        source="pricing-table",
+        universe_size=400,
+        universe_hash="h",
+        n=5,
+        seed=1,
+        stratify_by="provider",
+        allocation="equal",
+        include=["x/a"],
+        models=["x/a", *[f"o/m{i}" for i in range(4)]],
+        pinned_now=True,
+    )
+    _print_model_sample(SimpleNamespace(model_sample=ms))
+    out = capsys.readouterr().out
+    assert "stratified by provider (equal)" in out and "1 via include" in out

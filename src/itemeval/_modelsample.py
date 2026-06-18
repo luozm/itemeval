@@ -9,9 +9,11 @@ a changed sample spec (n/seed/stratify_by/where/source) *fails loudly*.
 
 import json
 import random
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._config import PRICING_TABLE_UNIVERSE, ExperimentConfig, ModelSample
 from itemeval._errors import ConfigError
@@ -32,6 +34,8 @@ class ModelSampleResult(BaseModel):
     n: int
     seed: int
     stratify_by: str | None
+    allocation: str = "proportional"  # per-stratum apportionment (proportional | equal)
+    include: list[str] = Field(default_factory=list)  # pinned ids counted against n
     models: list[str]  # the drawn ids, sorted
     pinned_now: bool = False  # this run wrote model_locks.json
     universe_drift: bool = False  # universe changed since the pin (frozen draw stands)
@@ -92,11 +96,23 @@ def _stratum_value(model: str, dim: str, pricing: PricingTable) -> str:
         return _price_tier(p.output_usd_per_mtok if p else None)
     if dim == "context_tier":
         return _context_tier(p.context_length if p else None)
+    if dim == "recency":
+        # UTC calendar year of the release date — a pure function of `created`,
+        # so a pinned table tiers identically (no wall-clock edges that age).
+        if p is None or p.created is None:
+            return "unknown"
+        return str(datetime.fromtimestamp(p.created, tz=timezone.utc).year)
     return stratum(model)  # defensive: unknown dim never reaches here (validated)
+
+
+def _released_after_ts(date_str: str) -> int:
+    """A YYYY-MM-DD cutoff as a Unix timestamp (UTC midnight)."""
+    return int(datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
 
 
 def _apply_where(ids: list[str], sample: ModelSample, pricing: PricingTable) -> list[str]:
     where = sample.where
+    cutoff = _released_after_ts(where.released_after) if where.released_after is not None else None
     out = []
     for k in ids:
         p = pricing.models.get(k)
@@ -113,6 +129,9 @@ def _apply_where(ids: list[str], sample: ModelSample, pricing: PricingTable) -> 
         if where.min_context_length is not None and (
             p is None or (p.context_length or 0) < where.min_context_length
         ):
+            continue
+        # released_after: drop undated models (can't prove they're recent enough).
+        if cutoff is not None and (p is None or p.created is None or p.created < cutoff):
             continue
         out.append(k)
     return out
@@ -139,9 +158,16 @@ def _build_universe(
         if sample.where is not None:
             ids = _apply_where(ids, sample, pricing)
             if not ids:
+                extra = (
+                    " (if released_after dropped everything, the table may lack release "
+                    "dates — run with --refresh-pricing)"
+                    if sample.where.released_after is not None
+                    else ""
+                )
                 raise ConfigError(
                     "solvers.sample.where excluded every priced openrouter/* model — "
-                    "loosen where (provider allowlist / max_output_usd_per_mtok)"
+                    "loosen where (provider allowlist / max_output_usd_per_mtok / "
+                    f"released_after){extra}"
                 )
         return "pricing-table", sorted(set(ids))
     # any other string -> a file of ids, one per line ('#' comments / blanks skipped)
@@ -159,14 +185,18 @@ def _build_universe(
 
 
 def _largest_remainder(total: int, sizes: "list[int]") -> "list[int]":
-    """Apportion `total` across strata of the given sizes, summing to `total`.
+    """Apportion `total` across strata weighted by `sizes`, summing to `total`.
 
     Hamilton's method: floor each quota, then hand the leftover +1s to the
-    largest fractional parts (ties broken by larger stratum, then index — fully
-    deterministic). Each allotment stays <= its stratum size because every quota
-    `total*size/grand <= size` when `total <= grand`.
+    largest fractional parts (ties broken by larger weight, then index — fully
+    deterministic). With proportional weights every allotment stays <= its size
+    (quota `total*size/grand <= size` when `total <= grand`); callers that pass
+    non-size weights (equal allocation) clamp to caps separately via `_allocate`.
     """
     grand = sum(sizes)
+    if grand == 0:  # degenerate all-zero weights -> distribute as evenly as possible
+        sizes = [1] * len(sizes)
+        grand = len(sizes)
     quotas = [total * s / grand for s in sizes]
     base = [int(q) for q in quotas]
     order = sorted(
@@ -177,27 +207,88 @@ def _largest_remainder(total: int, sizes: "list[int]") -> "list[int]":
     return base
 
 
+def _allocate(
+    n: int,
+    keys: "list[str]",
+    weights: "dict[str, int]",
+    floors: "dict[str, int]",
+    caps: "dict[str, int]",
+) -> "dict[str, int]":
+    """Apportion `n` across `keys`, balanced ~ `weights`, with
+    ``floors[k] <= alloc[k] <= caps[k]`` (precondition ``sum(floors) <= n <=
+    sum(caps)``, guaranteed by the config + universe-size checks).
+
+    Iterative fix-and-reapportion: a stratum whose proportional quota lands below
+    its floor (purposive `include` pins) or above its cap (too few drawable
+    models) is fixed at that bound and the remaining budget re-apportioned over
+    the rest. Converges — each pass fixes >= 1 stratum. Pure (no rng).
+    """
+    fixed: "dict[str, int]" = {}
+    while True:
+        free = [k for k in keys if k not in fixed]
+        if not free:
+            return fixed
+        budget = n - sum(fixed.values())
+        q = _largest_remainder(budget, [weights[k] for k in free])
+        alloc = dict(zip(free, q))
+        changed = False
+        for k in free:
+            if alloc[k] < floors[k]:
+                fixed[k] = floors[k]
+                changed = True
+            elif alloc[k] > caps[k]:
+                fixed[k] = caps[k]
+                changed = True
+        if not changed:
+            return {**fixed, **alloc}
+
+
 def _draw(universe: "list[str]", sample: ModelSample, pricing: PricingTable) -> "list[str]":
     """Deterministic seeded draw of `n` ids from the sorted universe.
 
     `random.Random(seed).sample` is stable across runs and CPython versions; the
     lock pins the result regardless, so any drift can only matter before the
-    first pin. When stratified, allocate `n` across strata by largest remainder
-    and draw within each.
+    first pin. `include` ids are always present and counted against `n`; the
+    random draw fills the rest from ``universe \\ include``. When stratified,
+    pins count toward each stratum's balanced share (as floors), `allocation`
+    (proportional | equal) balances the *final* per-stratum counts, and the fill
+    tops each stratum up to its target.
     """
     rng = random.Random(sample.seed)
-    ids = sorted(universe)
-    if sample.stratify_by is not None:
-        groups: "dict[str, list[str]]" = {}
-        for mid in ids:
-            groups.setdefault(_stratum_value(mid, sample.stratify_by, pricing), []).append(mid)
-        keys = sorted(groups)
-        counts = _largest_remainder(sample.n, [len(groups[k]) for k in keys])
-        drawn: "list[str]" = []
-        for key, count in zip(keys, counts):
-            drawn.extend(rng.sample(sorted(groups[key]), count))
-        return sorted(drawn)
-    return sorted(rng.sample(ids, sample.n))
+    include = sorted(set(sample.include))
+    fill_pool = sorted(set(universe) - set(include))
+
+    if sample.stratify_by is None:
+        fill_n = sample.n - len(include)
+        fill = rng.sample(fill_pool, fill_n) if fill_n else []
+        return sorted(set(include) | set(fill))
+
+    dim = sample.stratify_by
+    drawable: "dict[str, list[str]]" = {}
+    for mid in fill_pool:  # fill_pool is sorted -> each drawable[k] is sorted
+        drawable.setdefault(_stratum_value(mid, dim, pricing), []).append(mid)
+    floors = dict(Counter(_stratum_value(m, dim, pricing) for m in include))
+    uni_size = dict(Counter(_stratum_value(m, dim, pricing) for m in universe))
+    if dim == "recency" and set(uni_size) == {"unknown"}:
+        raise ConfigError(
+            "solvers.sample.stratify_by: recency needs model release dates, but the "
+            "pricing table has none — run with --refresh-pricing to fetch them"
+        )
+    keys = sorted(set(drawable) | set(floors))
+    weights = (
+        {k: 1 for k in keys}
+        if sample.allocation == "equal"
+        else {k: uni_size.get(k, 0) for k in keys}
+    )
+    floors_d = {k: floors.get(k, 0) for k in keys}
+    caps = {k: floors_d[k] + len(drawable.get(k, [])) for k in keys}
+    final = _allocate(sample.n, keys, weights, floors_d, caps)
+    drawn = list(include)
+    for k in keys:
+        fill_k = final[k] - floors_d[k]
+        if fill_k:
+            drawn.extend(rng.sample(drawable[k], fill_k))
+    return sorted(drawn)
 
 
 def read_model_lock(path: Path) -> "dict | None":
@@ -239,10 +330,20 @@ def resolve_model_sample(
         return None
 
     source, universe = _build_universe(sample, pricing, config._input_base)
-    if sample.n > len(universe):
-        hint = " (the where filter may be too tight)" if sample.where is not None else ""
+    # include pins are counted against n; the random draw fills the rest from
+    # universe \ include, so the fill (not n) must fit the non-included pool.
+    fill_needed = sample.n - len(sample.include)
+    fill_pool_size = len(set(universe) - set(sample.include))
+    if fill_needed > fill_pool_size:
+        reasons = []
+        if sample.where is not None:
+            reasons.append("the where filter may be too tight")
+        if sample.include:
+            reasons.append(f"include reserves {len(sample.include)} of n")
+        tail = f" ({'; '.join(reasons)})" if reasons else ""
         raise ConfigError(
-            f"solvers.sample.n ({sample.n}) exceeds the {len(universe)}-model universe{hint}"
+            f"solvers.sample.n ({sample.n}) exceeds the {len(universe)}-model "
+            f"universe available to draw{tail}"
         )
     universe_hash = sha256_hex(canonical_json(universe).encode("utf-8"))[:12]
     spec = {
@@ -250,6 +351,8 @@ def resolve_model_sample(
         "n": sample.n,
         "seed": sample.seed,
         "stratify_by": sample.stratify_by,
+        "allocation": sample.allocation,
+        "include": sorted(sample.include),
         "where": sample.where.model_dump() if sample.where is not None else None,
     }
 
@@ -270,6 +373,8 @@ def resolve_model_sample(
             n=sample.n,
             seed=sample.seed,
             stratify_by=sample.stratify_by,
+            allocation=sample.allocation,
+            include=sorted(sample.include),
             models=models,
             pinned_now=False,
             universe_drift=lock.get("universe_hash") != universe_hash,
@@ -285,6 +390,8 @@ def resolve_model_sample(
         n=sample.n,
         seed=sample.seed,
         stratify_by=sample.stratify_by,
+        allocation=sample.allocation,
+        include=sorted(sample.include),
         models=models,
         pinned_now=True,
         universe_drift=False,

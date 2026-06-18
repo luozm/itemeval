@@ -242,3 +242,51 @@ def test_sample_stratify_and_extra_forbid():
         data["solvers"] = {"sample": sample}
         with pytest.raises(Exception):
             ExperimentConfig.model_validate(data)
+
+
+def _sample_cfg(sample: dict):
+    import yaml
+
+    data = yaml.safe_load(README_SKETCH)
+    data["solvers"] = {"sample": sample}
+    return ExperimentConfig.model_validate(data)
+
+
+def test_sample_recency_dimensions():
+    base = {"n": 2, "seed": 1, "universe": "pricing-table"}
+    # released_after + recency stratify accepted on a pricing-table universe
+    cfg = _sample_cfg({**base, "stratify_by": "recency", "where": {"released_after": "2025-01-01"}})
+    assert cfg.solvers.sample.stratify_by == "recency"
+    assert cfg.solvers.sample.where.released_after == "2025-01-01"
+    # malformed cutoff rejected at load
+    with pytest.raises(Exception, match="YYYY-MM-DD"):
+        _sample_cfg({**base, "where": {"released_after": "Jan 2025"}})
+    # recency reads roster metadata -> pricing-table only
+    with pytest.raises(Exception, match="requires universe: pricing-table"):
+        _sample_cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "recency"})
+    # released_after lives on where -> rejected for a curated (list) universe
+    with pytest.raises(Exception, match="pricing-table"):
+        _sample_cfg(
+            {"n": 1, "seed": 1, "universe": ["m/a"], "where": {"released_after": "2025-01-01"}}
+        )
+
+
+def test_sample_allocation_equal_requires_stratify():
+    base = {"n": 2, "seed": 1, "universe": "pricing-table"}
+    cfg = _sample_cfg({**base, "stratify_by": "provider", "allocation": "equal"})
+    assert cfg.solvers.sample.allocation == "equal"
+    assert _sample_cfg(base).solvers.sample.allocation == "proportional"  # default
+    with pytest.raises(Exception, match="equal requires stratify_by"):
+        _sample_cfg({**base, "allocation": "equal"})
+    with pytest.raises(Exception):  # unknown allocation value
+        _sample_cfg({**base, "stratify_by": "provider", "allocation": "weighted"})
+
+
+def test_sample_include_validation():
+    base = {"n": 3, "seed": 1, "universe": "pricing-table"}
+    cfg = _sample_cfg({**base, "include": ["openrouter/o/a", "openrouter/o/b"]})
+    assert cfg.solvers.sample.include == ["openrouter/o/a", "openrouter/o/b"]
+    with pytest.raises(Exception, match="include entries must be unique"):
+        _sample_cfg({**base, "include": ["m/a", "m/a"]})
+    with pytest.raises(Exception, match="include.*exceeds n"):
+        _sample_cfg({"n": 1, "seed": 1, "universe": "pricing-table", "include": ["m/a", "m/b"]})
