@@ -47,8 +47,11 @@ class StudyPaths:
     def export_dir(self) -> Path:
         return self.study_dir / "export"
 
-    def logs_dir(self, stage: str, condition_id: str) -> Path:
-        return self.study_dir / "logs" / stage / condition_id
+    def logs_stage_dir(self, stage: str) -> Path:
+        # One dir per stage: all conditions of a stage run in a single inspect
+        # eval (cross-condition parallelism), so they share a log_dir. inspect
+        # names each task's log uniquely; readback is by condition_id columns.
+        return self.study_dir / "logs" / stage
 
     def ensure(self) -> None:
         for d in (self.study_dir, self.manifests_dir, self.export_dir, self.study_dir / "logs"):

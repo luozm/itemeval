@@ -48,10 +48,12 @@ discount, with a per-model native-batch-vs-OpenRouter-cache comparison at
 estimate time (pulled forward from "Later"); and `sample-exclude` — a top-level
 `exclude` id blocklist (the inverse of `include`, valid on any universe) that
 also makes the `pricing-table` roster non-free by default, retiring the need for
-a `where.free` filter; and `rubric-materialization` — two-stage generate-then-grade
+a `where.free` filter; `rubric-materialization` — two-stage generate-then-grade
 rubrics (a materializer LLM freezes a per-item rubric from the reference solution,
 reused verbatim by every judge call), folded into `grade` under the single money
-gate (pulled forward from 0.4).
+gate (pulled forward from 0.4); and `parallel-conditions` — a stage runs its
+conditions concurrently in one eval (was one model at a time), plus a coarse
+pre-flight wall-clock ETA and a cost-lever status line.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

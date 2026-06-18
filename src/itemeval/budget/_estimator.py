@@ -45,6 +45,34 @@ DEFAULT_OUTPUT_TOKENS_JUDGE = 512
 # knob — a `--policy dev` pilot yields ~dev_items x prompts samples per model.
 K_CALIBRATION_SAMPLES = 5
 
+# Coarse per-call latency (seconds) for the wall-clock ETA when this study has
+# no observed latency yet. A rough planning prior, not a measurement — the ETA
+# is always labeled rough and never gates anything.
+DEFAULT_CALL_LATENCY_S = 8.0
+
+
+def median_latency_s(df: "pd.DataFrame | None") -> "float | None":
+    """Median positive per-call latency from a stage store, or None when the
+    store is empty / has no latency column / carries no positive values."""
+    if df is None or getattr(df, "empty", True) or "latency_s" not in df.columns:
+        return None
+    vals = df["latency_s"].dropna()
+    vals = vals[vals > 0]
+    return float(vals.median()) if len(vals) else None
+
+
+def eta_seconds(
+    remaining_calls: int, concurrency: int, latency_s: "float | None"
+) -> "float | None":
+    """Coarse wall-clock estimate: (calls / concurrency) × per-call latency.
+
+    None when nothing is left to run. `latency_s` is this study's observed
+    median when available, else a default prior is used by the caller."""
+    if remaining_calls <= 0:
+        return None
+    per_call = latency_s if (latency_s and latency_s > 0) else DEFAULT_CALL_LATENCY_S
+    return (remaining_calls / max(1, concurrency)) * per_call
+
 
 class ConditionEstimate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -130,6 +158,13 @@ class StageEstimate(BaseModel):
     # API — realized when `budget.prefer_native_batch` is on, otherwise the
     # *available* lever the `native-batch-available` hint points at. 0 off-batch.
     native_route_savings_usd: float = 0.0
+    # Coarse wall-clock projection (append-only; advice-grade, never a gate —
+    # conditions run concurrently across distinct models, so wall-clock is
+    # ~remaining_calls/concurrency × per-call latency). `eta_latency_basis` is
+    # "observed" when seeded from this study's stored latency, else "default".
+    concurrency: int = 1
+    eta_seconds: "float | None" = None
+    eta_latency_basis: str = "default"
 
 
 class Estimate(BaseModel):
@@ -969,10 +1004,18 @@ def estimate_study(
         calibration: "Calibration",
     ) -> StageEstimate:
         usd = sum(c.usd or 0.0 for c in conditions)
+        # Concurrency = distinct execution models that make calls (the run's
+        # parallel-eval cap). Latency seeded from this study's matching store.
+        exec_models = {prep.native_routes.get(c.model, c.model) for c in conditions if c.calls > 0}
+        concurrency = max(1, len(exec_models))
+        lat = median_latency_s(solutions_df if stage == "generate" else gradings_df)
         return StageEstimate(
             hints=stage_hints(stage),
             stage=stage,
             calls=sum(c.calls for c in conditions),
+            concurrency=concurrency,
+            eta_seconds=eta_seconds(delta["calls"], concurrency, lat),
+            eta_latency_basis="observed" if lat else "default",
             input_tokens=sum(c.input_tokens for c in conditions),
             output_tokens=sum(c.output_tokens for c in conditions),
             usd=usd,

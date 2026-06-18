@@ -50,9 +50,12 @@ def gated_generate(
     """
     import anyio  # inspect_ai dependency; backend-agnostic events
 
-    # Per-task-instance state: a fresh dict per eval (the solver factory runs
-    # once per task build). Single event loop -> plain dict is race-free as
-    # long as check-and-set happens without an intervening await.
+    # Per-task-instance state: this factory runs once per task build (one per
+    # condition), so each condition's task gets its own `events` dict. When many
+    # conditions share a single inspect eval (cross-condition parallelism), their
+    # gates stay independent — two conditions reusing the same group key (e.g.
+    # both keyed by item id) never collide. Still one event loop, so the plain
+    # dict is race-free as long as check-and-set has no intervening await.
     events: dict[Any, anyio.Event] = {}
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:

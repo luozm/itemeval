@@ -40,6 +40,15 @@ All notable changes to itemeval are documented here. Format follows
 
 Closes: rubric-materialization
 
+- **Pre-flight cost-lever status line.** `estimate`, `generate`, and `grade` now
+  print a `cost levers:` line stating whether batch, native batch routing,
+  prompt caching, and the local response cache are engaged — with a one-clause
+  reason for each that is off (e.g. `batch off (dev policy) · native-routing off
+  (needs batch plan) · prompt-cache provider-default (auto, reps=1) ·
+  response-cache on ($0 replays on re-run)`). Previously levers were announced
+  only when *active*, so a `--policy dev` run — which turns most of them off —
+  said nothing, leaving operators unable to tell what was on.
+
 - **Composite / templated item ids** (`mapping.id`): pool datasets that share a
   natural key (a per-split row index, a per-release problem number repeated each
   year) into one crossed study without tripping the global item-id uniqueness
@@ -193,7 +202,34 @@ Closes: expected-cost
 
 Closes: native-batch-routing
 
+### Changed
+- **Conditions now run concurrently within a stage.** `generate` and `grade`
+  previously called `inspect_ai.eval()` once per condition in a serial loop, so
+  model #2 waited for model #1 to finish. Each stage now builds every
+  condition's task — each carrying its own model — and runs them in a single
+  eval bounded by the number of distinct execution models, so independent models
+  execute in parallel (a single-model stage is unchanged). Per-sample
+  retry/error semantics are identical (`retry_on_error`/`fail_on_error` still
+  apply per sample); inspect isolates a failing model to its own condition while
+  the others proceed, and a model-construction failure is still reported per
+  condition. Each stage's logs now share one `logs/<stage>/` directory (was
+  `logs/<stage>/<condition_id>/`); readback is unaffected (keyed by condition in
+  the parquet stores). Generate/grade/estimate also print a coarse pre-flight
+  wall-clock estimate (`~Nm at concurrency K` — rough, seeded from this study's
+  observed latency when available, else a default prior), so a run can be sized
+  before it starts.
+
+Closes: parallel-conditions
+
 ### Fixed
+- **An errored or empty generation no longer crashes the whole `generate`
+  stage.** A sample that errored (or completed with no choices) carries a
+  `ModelOutput` whose `choices` list is empty; reading `stop_reason` off it
+  raised `IndexError`, so a single bad solver aborted log→row conversion for the
+  entire run (a multi-model screen could never finish if any one model erred).
+  The `stop_reason` extraction now guards for empty `choices` like its siblings
+  already do — an errored row becomes `{error: <msg>, solution: None,
+  stop_reason: None, …}`, exactly what `status`/`export` expect.
 - **A schema-stale pricing cache no longer dead-ends a `pricing-table` sample.**
   A cached `~/.cache/itemeval/pricing.json` written before the roster-metadata
   fields (`text_model`/`reasoning`/`multimodal`/`context_length`) existed reads

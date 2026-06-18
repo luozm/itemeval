@@ -1,10 +1,11 @@
 """Generate-stage e2e on mockllm: store rows, resume, manifest, ledger."""
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 
-from itemeval.generate._run import resolve_display, run_generate
+from itemeval.generate._run import resolve_display, rows_from_generate_log, run_generate
 from itemeval.store._ledger import read_ledger
 from itemeval.store._logs import read_log_index
 from itemeval.store._solutions import read_solutions
@@ -97,6 +98,35 @@ def test_generate_condition_filter(study):
     assert set(df["condition_id"]) == {cond.id}
 
 
+def test_rows_from_errored_empty_sample(study):
+    """An errored sample whose ModelOutput has empty `choices` must yield one row
+    (error populated, solution/stop_reason None), not crash extracting stop_reason."""
+    from inspect_ai.log import EvalError, EvalSample
+    from inspect_ai.model import ModelOutput
+
+    _, prep = study
+    cond = prep.grid.generate[0]
+    item_id = next(iter(prep.origins))
+
+    sample = EvalSample(
+        id=item_id,
+        epoch=1,
+        input="ignored",
+        target="",
+        output=ModelOutput(model=cond.model, choices=[]),  # errored/empty: no choices
+        error=EvalError(message="provider errored", traceback="", traceback_ansi=""),
+    )
+    log = SimpleNamespace(samples=[sample], location="logs/errored.eval")
+
+    rows = rows_from_generate_log(log, cond, prep, run_id="r1")
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["error"] == "provider errored"
+    assert row["solution"] is None
+    assert row["stop_reason"] is None
+
+
 def test_generate_eval_failure_reported_not_raised(study, monkeypatch):
     _, prep = study
 
@@ -107,3 +137,30 @@ def test_generate_eval_failure_reported_not_raised(study, monkeypatch):
     assert all(r.status == "error" for r in result.conditions)
     assert "provider exploded" in result.conditions[0].message
     assert read_solutions(prep.paths).empty
+
+
+def test_generate_one_condition_failure_isolated(study):
+    """One model failing must not block the others (conditions run in one
+    parallel eval; a failure is recorded per condition, siblings proceed)."""
+    from itemeval._mockmodels import resolve_model
+
+    _, prep = study
+
+    def partial_factory(model, stage, model_args=None):
+        if model == "mockllm/solver-b":
+            raise RuntimeError("solver-b down")
+        return resolve_model(model, stage, model_args)
+
+    result = run_generate(prep, model_factory=partial_factory)
+
+    model_by_cond = {c.id: c.model for c in prep.grid.generate}
+    for rep in result.conditions:
+        if model_by_cond[rep.condition_id] == "mockllm/solver-b":
+            assert rep.status == "error" and "solver-b down" in rep.message
+        else:
+            assert rep.status == "run" and rep.rows_written == 4  # 2 items x 2 epochs
+
+    # only the healthy model's rows persisted; the failed one wrote nothing
+    df = read_solutions(prep.paths)
+    assert set(df["model"]) == {"mockllm/solver-a"}
+    assert len(df) == 4
