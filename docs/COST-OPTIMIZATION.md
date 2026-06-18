@@ -28,6 +28,7 @@ Ordered from "always on, free" to "opt-in, situational":
 | 3 | Keyed resume | re-pays nothing after interruption | none | always | `store._solutions.items_to_run`, `store._gradings.pending_solutions` |
 | 4 | Provider prompt caching (this work) | 75–90% of *repeated input tokens*; can also cut wall time at scale | see matrix below | scheduling on; layouts opt-in | `_cachegate.py`, `split_prompt`/`split_rubric`, `cache_prompt` |
 | 5 | Batch APIs | ~50% of everything | latency minutes–hours; no live progress; **not available via OpenRouter** (`BATCH_PROVIDERS` = openai/anthropic/google/grok/together) | `full-batch` policy | `budget/_policies.py`, `GenerateConfig.batch` |
+| 5b | Native batch routing | makes #5 reachable for `openrouter/*`-sampled models (so the ~50% applies to the dominant grade stage) | endpoint switch can change outputs / confounds an endpoint comparison → opt-in; native key required | off (`budget.prefer_native_batch`) | `budget/_routing.py`; threaded through `_estimator`/`generate/_run`/`grade/_run` |
 | 6 | Budget guardrails | unbounded (prevention) | none | `dev` policy, gate, `max_usd` | `budget/_gate.py`, `_policies.py` |
 | 7 | Output caps + `on_empty` | bounds output spend; avoids re-paying reasoning-burned calls | truncation risk | user-set | `solvers.max_tokens`, `solvers.on_empty` |
 
@@ -214,3 +215,21 @@ and flagged by the `anthropic-openrouter-no-split` hint instead.
 Store-level judge dedup (`dedup_identical`); cheap-then-escalate judging;
 per-cache-group OpenAI `prompt_cache_key` (needs upstream GenerateConfig
 support — today's key is per-condition, attached automatically).
+
+## Batch vs cache (settled by `native-batch-routing`)
+
+`native-batch-routing` (`budget.prefer_native_batch`, plan
+`docs/plans/archive/native-batch-routing.md`) routes `openrouter/*`-sampled
+models to their native API under batch. It settles the standing "which is
+cheaper, batch or cache?" question: **batch wins for itemeval's cost profile** —
+it is ~50% off *everything including output*, whereas caching discounts only the
+repeated input prefix and never output (matrix above). `estimate` now shows the
+per-model native-batch-vs-OpenRouter-cache **expected** comparison
+(`Estimate.routes`, each a `NativeRoute`). The two are kept mutually exclusive
+(batch reorders calls, so it disables cache scheduling); **stacking** native
+cache *on top of* batch is deferred — provider support exists in principle but
+inspect's batch path + marker placement is unverified and the marginal gain is
+small (cache would only re-discount input the batch already halved). Routing
+prices off the **sampled** id (the table keys models under OpenRouter's spelling,
+so native ids are not reliably priceable) — only batch eligibility and the served
+endpoint follow the native id.

@@ -65,7 +65,10 @@ def test_generate_e2e(study):
     assert set(endpoints) == {c.id for c in prep.grid.generate}
     one = endpoints[prep.grid.generate[0].id]
     assert one["provider"] == "mockllm"
-    assert set(one) == {"provider", "base_url", "served_model"}
+    assert set(one) == {"provider", "base_url", "served_model", "execution_model", "routed"}
+    # mock models are never native-batch-routed: execution == sampled, not routed
+    assert one["routed"] is False
+    assert one["execution_model"] == prep.grid.generate[0].model
 
 
 def test_generate_resume_skips_complete(study):

@@ -572,38 +572,6 @@ third component next to cache/batch.
 `store/_solutions.py`/`_gradings.py` (identify cache-hit rows), docs caveat
 (reuse savings are an attribution, not a discount). ~80 lines.
 
-### Native-provider batch routing for OpenRouter-sampled models
-**Key:** `native-batch-routing`
-
-**Motivation.** Models are sampled from the OpenRouter roster, but OpenRouter
-has no batch API, so the dominant (grade) stage forgoes the ~50% batch discount
-the native providers *do* offer. Most expensive models have a native API in
-`BATCH_PROVIDERS`; routing those calls natively recovers the largest single cost
-lever while keeping the one-key OpenRouter convenience for everything else.
-
-**Design sketch.** When batch mode is on, for each sampled
-`openrouter/<provider>/<model>` whose `<provider>` is in `BATCH_PROVIDERS`, the
-native key is present, and the native slug verifiably resolves, *propose*
-routing the call to the native id. Because switching the serving endpoint can
-change outputs, this is **opt-in and recorded, never silent** (UX-PATTERNS): the
-sampled `openrouter/...` id stays the model's pinned scientific identity in
-`model_locks`; the native id is recorded as the execution id and shown in the
-provenance line; routing is all-or-nothing per model and decided before any cell
-runs (resume-safe). The `estimate` surfaces the lever first ("N models route
-native → save ~$X") even before consent.
-
-**Implementation notes.** `budget/_pricing.py` (`provider_of` inner-provider
-parse; an OpenRouter→native slug map + resolve-check), `budget/_estimator.py`
-(`_batch_discount` for routed ids + the savings lever), a routing-resolution
-step before `generate/_run.py`/`grade/_run.py`, `_endpoints.py`/manifest (record
-sampled vs. execution id + the switch), a `prefer_native_batch` budget knob.
-~150 lines + tests.
-
-**Open questions.** Source of the slug map (curated table vs. heuristic strip +
-resolve-check). Whether mixing endpoints across models in one study needs a
-louder warning (endpoint confound). Interaction with `cache_schedule` (batch
-already disables cache scheduling).
-
 ### Standalone study-card command (`itemeval card`)
 **Key:** `card-command`
 

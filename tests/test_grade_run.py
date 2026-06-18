@@ -53,7 +53,14 @@ def test_grade_manifest_records_endpoints(study):
     cond = prep.grid.grade[0]  # judge condition
     assert cond.id in endpoints
     assert endpoints[cond.id]["provider"] == "mockllm"
-    assert set(endpoints[cond.id]) == {"provider", "base_url", "served_model"}
+    assert set(endpoints[cond.id]) == {
+        "provider",
+        "base_url",
+        "served_model",
+        "execution_model",
+        "routed",
+    }
+    assert endpoints[cond.id]["routed"] is False
 
 
 def test_grade_resume_skips(study):

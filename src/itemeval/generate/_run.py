@@ -28,6 +28,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
+from itemeval.budget._routing import NativeRoute
 from itemeval.design._grid import GenCondition
 from itemeval.generate._params import extract_effective_params
 from itemeval.generate._task import build_generate_task
@@ -117,6 +118,9 @@ class GenerateResult(BaseModel):
     # Provider batch mode (Law 1: provider-side job creation is announced):
     batch: bool = False
     batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
+    # Native batch routing (Law 1: serving-endpoint change is announced): the
+    # routes applied this run (empty unless budget.prefer_native_batch engaged).
+    routed_models: list[NativeRoute] = Field(default_factory=list)
     # Wave (re-observation) provenance; 0/None/0 for ordinary runs:
     wave: int = 0
     wave_label: "str | None" = None
@@ -154,9 +158,17 @@ def sum_usage(sample: "EvalSample") -> "ModelUsage | None":
 
 
 def usd_for_usage(
-    pricing, model: str, usage: "ModelUsage | None", batch: "bool | int | None"
+    pricing,
+    model: str,
+    usage: "ModelUsage | None",
+    batch: "bool | int | None",
+    exec_model: "str | None" = None,
 ) -> "float | None":
-    """None = model unpriced. Missing usage with a known price = $0 (cache hit)."""
+    """None = model unpriced. Missing usage with a known price = $0 (cache hit).
+
+    Price is read under the sampled `model` (the roster id the table carries);
+    the batch discount applies when the *execution* provider (`exec_model` — the
+    native id under native batch routing, else `model`) is a batch provider."""
     price = lookup_price(pricing, model)
     if price is None:
         return None
@@ -170,7 +182,7 @@ def usd_for_usage(
         usage.input_tokens_cache_write,
         model=model,
     )
-    if batch is not None and provider_of(model) in BATCH_PROVIDERS:
+    if batch is not None and provider_of(exec_model or model) in BATCH_PROVIDERS:
         value *= 0.5  # documented approximation; provider invoices authoritative
     return value
 
@@ -234,18 +246,21 @@ def ledger_row(
     rows: "list[dict]",
     batch: "bool | int | None",
     epoch_offset: int = 0,
+    exec_model: "str | None" = None,
 ) -> dict:
     def total(col: str) -> "int | None":
         vals = [r[col] for r in rows if r.get(col) is not None]
         return sum(vals) if vals else None
 
     usd_vals = [r["usd"] for r in rows if r.get("usd") is not None]
+    # `model` stays the sampled/scientific id; `provider` is the billing provider
+    # — the native one under native batch routing (per-provider spend stays honest).
     return {
         "run_id": run_id,
         "stage": stage,
         "condition_id": condition_id,
         "model": model,
-        "provider": provider_of(model),
+        "provider": provider_of(exec_model or model),
         "calls": len(rows),
         "input_tokens": total("input_tokens"),
         "output_tokens": total("output_tokens"),
@@ -281,11 +296,16 @@ def local_cache_dir() -> str:
     return str(cache_path())
 
 
-def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
+def endpoint_info(log: "EvalLog", model: str, exec_model: "str | None" = None) -> "dict[str, Any]":
     """Resolved endpoint for a condition's eval: which provider/account/version
     actually answered. `base_url` is None on the provider's default endpoint;
     a non-null value means traffic was routed elsewhere (Azure/proxy/gateway).
     `served_model` is the provider-returned snapshot id (e.g. a dated version).
+
+    `model` is the sampled/scientific id; `execution_model` is the id the calls
+    actually ran on (the native id under native batch routing, else the same),
+    and `routed` flags the difference. Upstream detection keys on the execution
+    provider, so a routed-native call (no OpenRouter hop) is handled correctly.
 
     For openrouter/* models, `upstream` is the host OpenRouter routed to —
     the response's `provider` field ("Anthropic", "Amazon Bedrock", ...),
@@ -293,6 +313,7 @@ def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
     rules applied. Distinct values across the run's calls are comma-joined
     (mixed routing is itself worth seeing); None when no recorded response
     carried the field (e.g. mock models)."""
+    exec_model = exec_model or model
     base_url = getattr(log.eval, "model_base_url", None)
     served_model = None
     for sample in log.samples or []:
@@ -303,8 +324,10 @@ def endpoint_info(log: "EvalLog", model: str) -> "dict[str, Any]":
         "provider": provider_of(model),
         "base_url": base_url,
         "served_model": served_model,
+        "execution_model": exec_model,
+        "routed": exec_model != model,
     }
-    if provider_of(model) == "openrouter":
+    if provider_of(exec_model) == "openrouter":
         seen: set[str] = set()
         for sample in log.samples or []:
             for ev in sample.events or []:
@@ -371,7 +394,13 @@ def rows_from_generate_log(
                 "stop_reason": sample.output.stop_reason if sample.output else None,
                 "error": error,
                 **usage_columns(usage),
-                "usd": usd_for_usage(prep.pricing, cond.model, usage, prep.plan.batch),
+                "usd": usd_for_usage(
+                    prep.pricing,
+                    cond.model,
+                    usage,
+                    prep.plan.batch,
+                    exec_model=prep.native_routes.get(cond.model, cond.model),
+                ),
                 "latency_s": sample.total_time,
                 "log_file": log_file,
                 "sample_uuid": sample.uuid,
@@ -489,15 +518,18 @@ def run_generate(
             cache_schedule=cache_schedule,
             epoch_offset=epoch_offset,
         )
+        # Native batch routing: run the call on the native id when active; the
+        # sampled cond.model stays the recorded scientific identity.
+        exec_model = prep.native_routes.get(cond.model, cond.model)
         try:
             # Serial eval per condition: inspect's eval is one-at-a-time per process.
             logs = inspect_ai.eval(
                 task,
                 model=factory(
-                    cond.model,
+                    exec_model,
                     "generate",
                     model_args_for(
-                        cond.model,
+                        exec_model,
                         provider_routing=prep.config.solvers.provider_routing,
                         cache_scheduling=cache_schedule,
                         study=prep.config.study,
@@ -537,7 +569,7 @@ def run_generate(
             log, cond, prep, run_id, epoch_offset=epoch_offset, wave=wave_num, wave_label=wave
         )
         run_models.append(cond.model)
-        endpoints_effective[cond.id] = endpoint_info(log, cond.model)
+        endpoints_effective[cond.id] = endpoint_info(log, cond.model, exec_model)
         n = _solutions.upsert_solutions(prep.paths, rows)
         rows_written += n
 
@@ -559,6 +591,7 @@ def run_generate(
                     rows,
                     prep.plan.batch,
                     epoch_offset=epoch_offset,
+                    exec_model=exec_model,
                 )
             ],
         )
@@ -613,6 +646,9 @@ def run_generate(
                         m
                         for m in run_models
                         if bool(cache_prompt)
+                        # Routed -> ran on the native API, not OpenRouter; the
+                        # OpenRouter-cache caveat does not apply.
+                        and m not in prep.native_routes
                         and prep.config.solvers.provider_routing is None
                         and provider_of(m) == "openrouter"
                         and cache_provider_of(m) == "anthropic"
@@ -627,6 +663,16 @@ def run_generate(
     ]
     local_total = sum(r.local_cache_rows for r in reports)
     batch_on = prep.plan.batch is not None
+    # Execution ids (native under routing) drive batch_providers; routed_models
+    # records the sampled->native switch for the conditions that actually ran.
+    exec_models = [prep.native_routes.get(m, m) for m in run_models]
+    routed_models = [
+        NativeRoute(
+            sampled=m, execution=prep.native_routes[m], provider=provider_of(prep.native_routes[m])
+        )
+        for m in dict.fromkeys(run_models)
+        if m in prep.native_routes
+    ]
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,
@@ -641,7 +687,8 @@ def run_generate(
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,
         batch=batch_on,
-        batch_providers=batch_providers_used(run_models) if batch_on else [],
+        batch_providers=batch_providers_used(exec_models) if batch_on else [],
+        routed_models=routed_models,
         wave=wave_num,
         wave_label=wave,
         epoch_offset=epoch_offset,

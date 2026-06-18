@@ -33,6 +33,7 @@ CATALOG_ORDER = [
     "unpriced-models",
     "pilot-available",
     "estimate-is-ceiling",
+    "native-batch-available",
 ]
 
 MAX_HINTS_PER_COMMAND = 2
@@ -222,6 +223,26 @@ def detect_estimate_is_ceiling(*, observed_rows: int, projected_usd: float) -> "
             "run --policy dev to calibrate an expected cost"
         ),
         learn_more="Budget-and-Costs#expected-cost",
+    )
+
+
+def detect_native_batch_available(
+    *, n_models: int, providers: "list[str]", savings_usd: float, knob_on: bool
+) -> "Hint | None":
+    """A batch run has OpenRouter models with an eligible native batch endpoint
+    (key present) but `budget.prefer_native_batch` is off, so the ~50% batch
+    discount those calls could earn is left on the table. Fires only when the
+    knob is off and the available saving is positive (data-derived)."""
+    if knob_on or n_models <= 0 or savings_usd <= 0:
+        return None
+    return Hint(
+        code="native-batch-available",
+        message=(
+            f"{n_models} model(s) could route to their native batch API "
+            f"({', '.join(providers)}) to save ~${savings_usd:.2f} — "
+            "set budget.prefer_native_batch (the sampled id stays the model's identity)"
+        ),
+        learn_more="Cost-Savings#native-batch-routing",
     )
 
 

@@ -10,6 +10,7 @@ from itemeval._hints import (
     Hint,
     detect_anthropic_openrouter_no_split,
     detect_estimate_is_ceiling,
+    detect_native_batch_available,
     detect_split_head_below_min,
     detect_unpriced_models,
 )
@@ -26,6 +27,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
+from itemeval.budget._routing import NativeRoute, eligible_native_routes
 from itemeval.grade._judge import build_judge_input, judge_head_text
 
 if TYPE_CHECKING:
@@ -123,6 +125,11 @@ class StageEstimate(BaseModel):
     cache_write_tokens: int = 0
     cache_discount_usd: float = 0.0
     remaining_cache_discount_usd: float = 0.0
+    # Native batch routing (append-only): the discount in `remaining_usd`
+    # attributable to routing eligible OpenRouter models to their native batch
+    # API — realized when `budget.prefer_native_batch` is on, otherwise the
+    # *available* lever the `native-batch-available` hint points at. 0 off-batch.
+    native_route_savings_usd: float = 0.0
 
 
 class Estimate(BaseModel):
@@ -139,6 +146,10 @@ class Estimate(BaseModel):
     hints: list[Hint] = Field(default_factory=list)
     datasets: list[DatasetProvenance] = Field(default_factory=list)
     model_sample: "ModelSampleResult | None" = None  # set when solvers.sample drew the models
+    # Native batch routing (append-only): one entry per OpenRouter model with an
+    # eligible native batch endpoint + key present (batch plans only). Carries
+    # the sampled/native ids and W2's batch-vs-cache comparison.
+    routes: list[NativeRoute] = Field(default_factory=list)
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
@@ -221,12 +232,25 @@ def _calibration(resolve, models: "list[str]", pooled: "float | None", rows: int
     )
 
 
-def _priced_usd(prep: "PreparedStudy", model: str, input_tokens: int, output_tokens: int) -> float:
-    """Projected USD for a call volume; 0 when the model is unpriced."""
+def _priced_usd(
+    prep: "PreparedStudy",
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    exec_model: "str | None" = None,
+) -> float:
+    """Projected USD for a call volume; 0 when the model is unpriced.
+
+    Price is read under `model` — the sampled/scientific id the pricing table
+    carries. Batch-discount eligibility is checked on `exec_model` (the native
+    id when this model is routed, else `model`), so native batch routing earns
+    the discount while the cost stays priced off the roster id (the table keys
+    models under OpenRouter's spelling; the native id isn't reliably priceable).
+    See budget/_routing.py."""
     price = lookup_price(prep.pricing, model)
     if price is None:
         return 0.0
-    discount = 0.5 if _batch_discount(prep, model) else 1.0
+    discount = 0.5 if _batch_discount(prep, exec_model or model) else 1.0
     return cost_usd(price, input_tokens, output_tokens) * discount
 
 
@@ -278,9 +302,12 @@ def _condition_estimate(
     output_tokens: int,
     cache_read: int = 0,
     cache_write: int = 0,
+    exec_model: "str | None" = None,
 ) -> ConditionEstimate:
+    # Price under the sampled `model`; batch eligibility under `exec_model` (the
+    # native id when routed). `ConditionEstimate.model` stays the sampled id.
     price = lookup_price(prep.pricing, model)
-    discount = _batch_discount(prep, model)
+    discount = _batch_discount(prep, exec_model or model)
     usd = None
     cache_discount = 0.0
     if price is not None:
@@ -425,6 +452,23 @@ def estimate_study(
     # runners and task builders use (batch reorders calls; never both).
     scheduling = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
 
+    # Native batch routing: `active_routes` (= prep.native_routes) apply the batch
+    # discount and are non-empty only under a batch plan + the opt-in knob;
+    # `eligible_routes` (key-present routable models, knob aside) drive the
+    # savings lever and the `native-batch-available` hint even when the knob is
+    # off. Routing only buys the batch discount, so both are empty off-batch.
+    batch_plan = prep.plan.batch is not None
+    eligible_routes = eligible_native_routes(prep.config)[0] if batch_plan else {}
+    active_routes = prep.native_routes
+    # W2 dual projection: per eligible model, the *expected remaining* cost under
+    # the two achievable modes — native batch (route + ×0.5) vs OpenRouter cache
+    # (stay on the sampled id, non-batch, cache scheduling). Accumulated in the
+    # loops below from the same rem_in/rem_out_exp the live passes compute, so
+    # the live figures are untouched. cache scheduling is "would it engage if you
+    # ran non-batch" — config setting, not the live (batch) plan.
+    cache_cfg_on = prep.config.budget.cache_schedule != "off"
+    route_work = {m: {"batch": 0.0, "cache": 0.0} for m in eligible_routes}
+
     # Expected (calibrated) projection substrate: per-model means read from the
     # stores — generate/judge output tokens, and solution length for the grade
     # input stub — each with a coverage fallback (own >= K -> reasoning-group ->
@@ -459,10 +503,14 @@ def estimate_study(
         "replaced": 0,
         "discount": 0.0,
         "exp": 0.0,
+        "route_savings": 0.0,
     }
     gen_exp_full = 0.0
     for cond in prep.grid.generate:
         template = prep.solver_templates[cond.prompt_name]
+        # Native batch routing: `exec_model` (the native id when active) earns the
+        # batch discount; cost stays priced under the sampled `cond.model`.
+        exec_model = active_routes.get(cond.model, cond.model)
 
         min_tok = min_cacheable_prefix(cond.model)
         idx = template.text.find("{input}")
@@ -559,17 +607,20 @@ def estimate_study(
                 output_tokens,
                 cache_read=cache_read,
                 cache_write=cache_write,
+                exec_model=exec_model,
             )
         )
         # Expected full: same input + cache split, calibrated output (input-side
-        # caching is unaffected by the output assumption).
+        # caching is unaffected by the output assumption). Routing and caching
+        # never co-occur (routing is batch-only, caching non-batch), so the
+        # cache branch never sees a routed exec model.
         exp_out_full = calls * exp_per_call
         if cache_on:
             gen_exp_full += _discounted_usd(
                 prep, cond.model, input_tokens, exp_out_full, cache_read, cache_write
             )
         else:
-            gen_exp_full += _priced_usd(prep, cond.model, input_tokens, exp_out_full)
+            gen_exp_full += _priced_usd(prep, cond.model, input_tokens, exp_out_full, exec_model)
 
         # Delta: what the runner would actually launch for this condition.
         if force:
@@ -591,8 +642,43 @@ def estimate_study(
         rem_out = rem_calls * (max_out or DEFAULT_OUTPUT_TOKENS_GENERATE)
         rem_out_exp = rem_calls * exp_per_call
         cond_rows = scoped[scoped["condition_id"] == cond.id] if not scoped.empty else scoped
-        rem_usd = _priced_usd(prep, cond.model, rem_in, rem_out)
-        rem_exp_usd = _priced_usd(prep, cond.model, rem_in, rem_out_exp)
+        rem_usd = _priced_usd(prep, cond.model, rem_in, rem_out, exec_model)
+        rem_exp_usd = _priced_usd(prep, cond.model, rem_in, rem_out_exp, exec_model)
+        # Native batch routing savings (W1) + dual projection (W2), over the
+        # remaining expected spend of an eligible condition. `route_savings` is
+        # the available/realized batch discount; `route_work` records both
+        # achievable modes for the per-model comparison.
+        nat = eligible_routes.get(cond.model)
+        if nat is not None and rem_calls:
+            undisc = _priced_usd(prep, cond.model, rem_in, rem_out_exp)
+            batch_c = _priced_usd(prep, cond.model, rem_in, rem_out_exp, nat)
+            gen_delta["route_savings"] += undisc - batch_c
+            # OpenRouter-cache counterfactual: non-batch with caching, honoring
+            # the same eligibility the runtime would (anthropic-monolithic-via-OR
+            # can't cache -> full price, correctly showing cache buys nothing).
+            cf_on = (
+                cache_cfg_on
+                and reps > 1
+                and min_tok is not None
+                and not (anth and prep.config.solvers.cache_prompt == "off")
+                and not or_mono
+            )
+            if cf_on and rem_items:
+                cf_done = (
+                    set(cond_rows.loc[cond_rows["error"].isna(), "item_id"])
+                    if not cond_rows.empty
+                    else set()
+                )
+                cf_r, cf_w = _cache_split(
+                    cache_groups(rem_items, warm_items=cf_done, cond_warm=bool(cf_done)),
+                    min_tok,
+                    anth,
+                )
+                cache_c = _discounted_usd(prep, cond.model, rem_in, rem_out_exp, cf_r, cf_w)
+            else:
+                cache_c = undisc
+            route_work[cond.model]["batch"] += batch_c
+            route_work[cond.model]["cache"] += cache_c
         if cache_on and rem_items:
             # Same per-group split over the remaining groups only; a group
             # with ≥1 completed row is warm (its leader already ran).
@@ -635,6 +721,7 @@ def estimate_study(
         "replaced": 0,
         "discount": 0.0,
         "exp": 0.0,
+        "route_savings": 0.0,
     }
     grade_exp_full = 0.0
     for cond in prep.grid.grade:
@@ -665,6 +752,8 @@ def estimate_study(
             )
             continue
         rubric = prep.rubric_templates[cond.rubric_name]
+        # Native batch routing for the judge model (priced under the sampled id).
+        exec_grader = active_routes.get(cond.grader_model, cond.grader_model)
         min_tok = min_cacheable_prefix(cond.grader_model)
         if cond.split_rubric and min_tok is not None:
             heads = [
@@ -751,6 +840,7 @@ def estimate_study(
                 output_tokens,
                 cache_read=cache_read,
                 cache_write=cache_write,
+                exec_model=exec_grader,
             )
         )
         # Expected full: calibrated input stub + calibrated judge output, same
@@ -766,7 +856,7 @@ def estimate_study(
             )
         else:
             grade_exp_full += _priced_usd(
-                prep, cond.grader_model, exp_input_tokens, exp_output_tokens
+                prep, cond.grader_model, exp_input_tokens, exp_output_tokens, exec_grader
             )
         rem_calls = len(pending)
         rem_in = sum(
@@ -779,8 +869,28 @@ def estimate_study(
         # for both passes; only the judge output assumption differs.
         rem_out_exp = rem_calls * exp_judge_per_call
         grade_delta["calls"] += rem_calls
-        rem_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out)
-        rem_exp_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out_exp)
+        rem_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out, exec_grader)
+        rem_exp_usd = _priced_usd(prep, cond.grader_model, rem_in, rem_out_exp, exec_grader)
+        nat_grader = eligible_routes.get(cond.grader_model)
+        if nat_grader is not None and rem_calls:
+            undisc = _priced_usd(prep, cond.grader_model, rem_in, rem_out_exp)
+            batch_c = _priced_usd(prep, cond.grader_model, rem_in, rem_out_exp, nat_grader)
+            grade_delta["route_savings"] += undisc - batch_c
+            cf_on = cache_cfg_on and min_tok is not None and (not anth or cond.split_rubric)
+            if cf_on:
+                gradable_n = {k: int(v) for k, v in gradable["item_id"].value_counts().items()}
+                pending_n = {k: int(v) for k, v in pending_nf["item_id"].value_counts().items()}
+                cf_groups = [
+                    (int(n), head_tok, gradable_n.get(iid, 0) > pending_n.get(iid, 0))
+                    for iid, n in pending["item_id"].value_counts().items()
+                    if (head_tok := head_tokens_of(iid)) is not None
+                ]
+                cf_r, cf_w = _cache_split(cf_groups, min_tok, anth)
+                cache_c = _discounted_usd(prep, cond.grader_model, rem_in, rem_out_exp, cf_r, cf_w)
+            else:
+                cache_c = undisc
+            route_work[cond.grader_model]["batch"] += batch_c
+            route_work[cond.grader_model]["cache"] += cache_c
         if cache_on and rem_calls:
             # Remaining groups only; an item with already-graded rows is warm
             # (gradable rows minus still-pending rows > 0 for that item).
@@ -833,6 +943,7 @@ def estimate_study(
             expected_usd=exp_full,
             expected_remaining_usd=delta["exp"],
             calibration=calibration,
+            native_route_savings_usd=delta["route_savings"],
         )
 
     gen_cal = _calibration(
@@ -860,6 +971,29 @@ def estimate_study(
             observed_rows=st.calibration.observed_rows, projected_usd=st.remaining_usd
         )
     unpriced = detect_unpriced_models(sorted({*gen.unpriced_models, *grade.unpriced_models}))
+    # Native batch routing surface (batch plans only): one NativeRoute per
+    # eligible OpenRouter model; W2 fills the batch-vs-cache comparison. The
+    # savings hint fires only when the knob is off and a positive lever exists.
+    routes = [
+        NativeRoute(
+            sampled=sampled,
+            execution=native,
+            provider=provider_of(native),
+            batch_usd=route_work[sampled]["batch"],
+            cache_usd=route_work[sampled]["cache"],
+            cheaper="batch"
+            if route_work[sampled]["batch"] <= route_work[sampled]["cache"]
+            else "cache",
+        )
+        for sampled, native in eligible_routes.items()
+    ]
+    route_savings = gen.native_route_savings_usd + grade.native_route_savings_usd
+    native_hint = detect_native_batch_available(
+        n_models=len(routes),
+        providers=sorted({r.provider for r in routes}),
+        savings_usd=route_savings,
+        knob_on=prep.config.budget.prefer_native_batch,
+    )
     return Estimate(
         study=prep.config.study,
         policy=prep.plan.policy,
@@ -873,8 +1007,10 @@ def estimate_study(
             *gen.hints,
             *grade.hints,
             *([ceiling_hint] if ceiling_hint else []),
+            *([native_hint] if native_hint else []),
             *([unpriced] if unpriced else []),
         ],
+        routes=routes,
         datasets=dataset_provenance(prep.datasets),
         model_sample=prep.model_sample,
     )

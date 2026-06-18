@@ -25,6 +25,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
+from itemeval.budget._routing import NativeRoute
 from itemeval._mockmodels import resolve_model
 from itemeval._util import new_run_id, utc_now_iso
 from itemeval.design._grid import GradeCondition
@@ -81,6 +82,8 @@ class GradeResult(BaseModel):
     # Provider batch mode (Law 1: provider-side job creation is announced):
     batch: bool = False
     batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
+    # Native batch routing (Law 1: serving-endpoint change is announced):
+    routed_models: list[NativeRoute] = Field(default_factory=list)
     # Wave (re-observation) provenance; 0/None/0 for ordinary runs:
     wave: int = 0
     wave_label: "str | None" = None
@@ -188,7 +191,13 @@ def _judge_rows(
                 "judge_completion": completion,
                 "error": error,
                 **usage_columns(usage),
-                "usd": usd_for_usage(prep.pricing, cond.grader_model, usage, prep.plan.batch),
+                "usd": usd_for_usage(
+                    prep.pricing,
+                    cond.grader_model,
+                    usage,
+                    prep.plan.batch,
+                    exec_model=prep.native_routes.get(cond.grader_model, cond.grader_model),
+                ),
                 "latency_s": sample.total_time,
                 "log_file": log_file,
             }
@@ -323,6 +332,8 @@ def run_grade(
             )
         else:
             grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
+            # Native batch routing for the judge model (sampled id stays recorded).
+            exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
             task = build_judge_task(
                 pending,
                 prep.items_by_id,
@@ -337,10 +348,10 @@ def run_grade(
                 logs = inspect_ai.eval(
                     task,
                     model=factory(
-                        cond.grader_model,
+                        exec_grader,
                         "grade",
                         model_args_for(
-                            cond.grader_model,
+                            exec_grader,
                             provider_routing=grader_routing,
                             cache_scheduling=scheduled,
                             study=prep.config.study,
@@ -379,15 +390,18 @@ def run_grade(
             local_rows = local_cache_rows(rows)
             judge_models.append(cond.grader_model)
             # Judge tasks always request cache_prompt="auto" (markers on), so
-            # an unpinned openrouter/anthropic judge is a cached-but-routable run.
+            # an unpinned openrouter/anthropic judge is a cached-but-routable run
+            # — unless it was routed to its native API, where the call never
+            # touches OpenRouter and the OpenRouter-cache caveat does not apply.
             if (
                 grader_routing is None
+                and cond.grader_model not in prep.native_routes
                 and provider_of(cond.grader_model) == "openrouter"
                 and cache_provider_of(cond.grader_model) == "anthropic"
             ):
                 unpinned_cached.append(cond.grader_model)
             repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
-            endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model)
+            endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model, exec_grader)
             log_file = rel_to_study(prep.paths, log.location)
             usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
             cond_usd = sum(usd_vals) if usd_vals else None
@@ -401,7 +415,17 @@ def run_grade(
             )
             _ledger.upsert_ledger(
                 prep.paths,
-                [ledger_row(run_id, "grade", cond.id, cond.grader_model, rows, prep.plan.batch)],
+                [
+                    ledger_row(
+                        run_id,
+                        "grade",
+                        cond.id,
+                        cond.grader_model,
+                        rows,
+                        prep.plan.batch,
+                        exec_model=exec_grader,
+                    )
+                ],
             )
 
         n = _gradings.upsert_gradings(prep.paths, rows)
@@ -464,7 +488,20 @@ def run_grade(
         local_cache_rows=sum(r.local_cache_rows for r in reports),
         local_cache_dir=(local_cache_dir() if any(r.local_cache_rows for r in reports) else None),
         batch=prep.plan.batch is not None,
-        batch_providers=(batch_providers_used(judge_models) if prep.plan.batch is not None else []),
+        batch_providers=(
+            batch_providers_used([prep.native_routes.get(m, m) for m in judge_models])
+            if prep.plan.batch is not None
+            else []
+        ),
+        routed_models=[
+            NativeRoute(
+                sampled=m,
+                execution=prep.native_routes[m],
+                provider=provider_of(prep.native_routes[m]),
+            )
+            for m in dict.fromkeys(judge_models)
+            if m in prep.native_routes
+        ],
         wave=wave_num,
         wave_label=wave,
         epoch_offset=wave_num * prep.plan.replications,

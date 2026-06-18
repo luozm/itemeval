@@ -1,6 +1,6 @@
 """PreparedStudy: everything a command needs, computed once per invocation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +17,7 @@ from itemeval.budget._pricing import (
     maybe_refresh_pricing,
     refresh_pricing,
 )
+from itemeval.budget._routing import active_native_routes, eligible_native_routes
 from itemeval.design._grid import Grid, expand_grid
 from itemeval.store._layout import StudyPaths
 
@@ -45,6 +46,12 @@ class PreparedStudy:
     model_sample: ModelSampleResult | None = None  # set when solvers.sample drew the models
     pricing_refreshed: bool = False  # a live OpenRouter refresh ran during prepare
     policy_source: str = "config"  # "config" | "override" (a policy= argument won)
+    # Native batch routing (budget.prefer_native_batch): {sampled_id: native_id}
+    # applied this run (empty unless a batch plan + the knob + an eligible model
+    # with a native key); the sampled id stays the scientific identity. The
+    # companion list is eligible-but-keyless models, for the inert/why-not note.
+    native_routes: dict[str, str] = field(default_factory=dict)
+    native_routes_unavailable: list[str] = field(default_factory=list)
 
 
 POLICY_CHOICES = ("dev", "full-interactive", "full-batch")
@@ -97,6 +104,10 @@ def prepare_study(
 
     model_sample = resolve_model_sample(config, pricing, paths.model_locks)
     grid = expand_grid(config, solver_templates, rubric_templates)
+    # Native batch routing decided once here (resume-safe): solvers.models is now
+    # final (post-sample). active = eligible gated by batch + the opt-in knob.
+    native_routes = active_native_routes(config, plan)
+    _, native_routes_unavailable = eligible_native_routes(config)
     return PreparedStudy(
         config=config,
         paths=paths,
@@ -113,4 +124,6 @@ def prepare_study(
         model_sample=model_sample,
         pricing_refreshed=pricing_refreshed,
         policy_source="config" if policy is None else "override",
+        native_routes=native_routes,
+        native_routes_unavailable=native_routes_unavailable,
     )
