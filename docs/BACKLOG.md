@@ -604,6 +604,76 @@ resolve-check). Whether mixing endpoints across models in one study needs a
 louder warning (endpoint confound). Interaction with `cache_schedule` (batch
 already disables cache scheduling).
 
+### Expected (calibrated) cost projection alongside the ceiling
+**Key:** `expected-cost`
+
+**Motivation.** `itemeval estimate` reports a deliberate **upper bound**: every
+generation is assumed to emit `max_tokens`, every judge call `grader_max_tokens`,
+and — before solutions exist — each judged solution is stubbed at
+`4 × gen_max_tokens` chars (`budget/_estimator.py`). On a real study this reads
+2–3× the eventual bill (a downstream study saw an $802 projection whose grade
+input was ~87% the 8,192-token solution stub), and nothing in the output says
+"this is a ceiling", so it is easily misread as a point estimate. The ceiling is
+correct *as a safety figure* (the gate must never under-estimate) but misleading
+*as a planning figure*.
+
+**Design sketch.** Report a second, **expected** projection next to the ceiling,
+calibrated from data already in the stores (`output_tokens` on solutions/
+gradings, real solution text) — no new model calls. The `--policy dev` pilot
+calibrates the full run: after a cheap dev run the estimator swaps each
+worst-case assumption for an observed mean.
+
+```
+# sketch — estimate output
+GRADE — 12,150 calls, … projected $769.45  (ceiling: output at max_tokens; solutions stubbed at max)
+  expected ~$past (calibrated from 1,350 observed gradings: mean judge output 380 tok, mean solution 2,140 tok)
+```
+
+| Assumption (ceiling) | Expected (when calibratable) |
+|---|---|
+| generate output = `max_tokens` | mean observed `output_tokens` |
+| ungenerated solution = `4×max_tokens` chars | mean observed solution length |
+| judge output = `grader_max_tokens` | mean observed judge `output_tokens` |
+
+**Calibration coverage.** Per-model means, with a coverage-aware fallback per
+model chosen by sample count: own mean (≥k samples) → reasoning-group mean
+(`ModelPrice.reasoning`, the dominant output-length driver) → global pooled
+mean; a model with no data and no group to borrow from stays at its **ceiling**.
+The default `--policy dev` runs the *whole* model grid on the first `dev_items`
+items (it limits items/replications, not models — `budget/_policies.py`), so one
+pilot covers every model; the fallback only fires on selective (`--condition`)
+or grow-in-place runs.
+
+**The gate stays on the ceiling.** `usd`/`remaining_usd`, `confirm_above_usd`,
+and `max_usd` keep comparing the ceiling; the expected figure is informational
+only (UX-PATTERNS: the gate must never be driven by an under-estimate). The
+"(ceiling: …)" clause becomes an always-on parenthetical on the projection line
+(like today's cache-discount clause). New result fields are append-only
+(`expected_usd`/`expected_remaining_usd` per stage + a `calibration` provenance
+block reporting the calibrated / fallback / uncalibrated model split, so a
+borrowed estimate is never shown as measured), with `--json` parity.
+
+**Cold start (no observations yet).** Don't invent a ratio (no
+`expected_output_ratio` knob). Show the ceiling, state the assumption inline,
+and fire a hint pointing at the pilot (folds in the downstream F9 finding and
+reinforces `--policy dev`, F8): `hint: this is an upper bound (output assumed at
+max_tokens) — run --policy dev to calibrate an expected cost`.
+
+**Implementation notes.** `budget/_estimator.py` (an expected pass over the
+stored `output_tokens` / solution text it already reads for judge sizing; the
+new fields + coverage fallback), `cli.py` (render both numbers + the always-on
+ceiling clause), a new coded hint in `_hints.py` (`estimate-is-ceiling`), wiki
+Budget-and-Costs anchor. Pure pandas over existing stores; no inspect, no new
+deps. ~120 lines + tests.
+
+**Open questions.** Minimum sample count `k` for trusting a per-model mean over
+the group fallback (start small — a dev run yields ~`dev_items × prompts`
+samples per model). Whether `estimate --json` carries the per-condition expected
+breakdown or only stage totals (lean stage totals first). Interaction with
+`native-batch-routing`'s W2 dual projection — it should compare *expected*
+figures once both exist; principled (empirical-Bayes) shrinkage of sparse
+per-model means toward the group is out of scope.
+
 ### Standalone study-card command (`itemeval card`)
 **Key:** `card-command`
 
