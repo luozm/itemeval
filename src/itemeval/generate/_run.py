@@ -28,9 +28,14 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
+from itemeval.budget._endpoint_windows import load_endpoint_windows, user_endpoints_path
 from itemeval.budget._routing import NativeRoute
 from itemeval.design._grid import GenCondition
-from itemeval.generate._params import extract_effective_params, fit_max_tokens
+from itemeval.generate._params import (
+    effective_context,
+    extract_effective_params,
+    fit_max_tokens,
+)
 from itemeval.generate._task import build_generate_task
 from itemeval.store import _ledger, _logs, _solutions
 from itemeval.store._base import rel_to_study
@@ -116,6 +121,11 @@ class GenerateResult(BaseModel):
     # Local response-cache reuse (Law 1: reuse announced as loudly as fetching):
     local_cache_rows: int = 0
     local_cache_dir: "str | None" = None  # set when local_cache_rows > 0
+    # Per-endpoint context-window lookups (Law 1: network + global-cache side
+    # effect for the max_tokens clamp; endpoint-context-clamp):
+    endpoint_windows_fetched: int = 0  # models hit over the network this run
+    endpoint_windows_reused: int = 0  # models served from a fresh cache entry
+    endpoint_cache_dir: "str | None" = None  # set when a lookup happened
     # Provider batch mode (Law 1: provider-side job creation is announced):
     batch: bool = False
     batch_providers: list[str] = Field(default_factory=list)  # ran via a batch API
@@ -516,6 +526,12 @@ def run_generate(
     drift_warnings = generate_drift_warnings(prep.grid, store) + endpoint_drift_warnings(
         [c.model for c in selected], prep.paths.manifests_dir
     )
+    # Roster-scoped per-endpoint context windows (endpoint-context-clamp): only
+    # models that carry a max_tokens cap can be clamped, and only openrouter ids
+    # have an endpoints API — so fetch (cached, $0 warm) for exactly those. The
+    # min endpoint window is the truer clamp ceiling than the model-level max.
+    clamp_candidates = [c.model for c in selected if c.gen_params.max_tokens]
+    endpoint_windows, endpoint_stats = load_endpoint_windows(clamp_candidates)
     manifest = build_manifest(
         prep,
         "generate",
@@ -588,7 +604,11 @@ def run_generate(
         # condition id keeps the requested design value. Input is over-estimated
         # (template + item, each chars/4) so the clamp errs toward fitting.
         price = lookup_price(prep.pricing, cond.model)
-        ctx_len = price.context_length if price else None
+        model_ctx = price.context_length if price else None
+        # Clamp against the smaller of the model-level max and the smallest
+        # routed endpoint window (endpoint-context-clamp) — the model-level
+        # number alone is an over-optimistic ceiling under multi-provider routing.
+        ctx_len = effective_context(model_ctx, endpoint_windows.get(cond.model))
         max_input = max(
             (estimate_tokens(template.text) + estimate_tokens(it.input) for it in items),
             default=0,
@@ -805,6 +825,13 @@ def run_generate(
         model_sample=prep.model_sample,
         local_cache_rows=local_total,
         local_cache_dir=local_cache_dir() if local_total else None,
+        endpoint_windows_fetched=endpoint_stats.fetched,
+        endpoint_windows_reused=endpoint_stats.reused,
+        endpoint_cache_dir=(
+            str(user_endpoints_path().parent)
+            if (endpoint_stats.fetched or endpoint_stats.reused)
+            else None
+        ),
         batch=batch_on,
         batch_providers=batch_providers_used(exec_models) if batch_on else [],
         routed_models=routed_models,

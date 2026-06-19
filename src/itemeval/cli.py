@@ -395,6 +395,17 @@ def _print_local_cache(result) -> None:
             f"{result.local_cache_rows} calls answered from local cache ($0) — "
             f"cache dir: {result.local_cache_dir}"
         )
+    fetched = getattr(result, "endpoint_windows_fetched", 0)
+    reused = getattr(result, "endpoint_windows_reused", 0)
+    if fetched or reused:
+        # Law 1: the per-endpoint window lookup is a network + global-cache side
+        # effect (used to clamp max_tokens to the smallest routed window).
+        src = (
+            f"fetched {fetched} from OpenRouter" + (f", {reused} reused" if reused else "")
+            if fetched
+            else f"{reused} reused"
+        )
+        print(f"endpoint windows: {src} — cache dir: {result.endpoint_cache_dir}")
     if result.batch and result.batch_providers:
         # best-effort: inspect manages provider batch jobs internally and does
         # not surface job ids — never fake one.

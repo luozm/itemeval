@@ -12,7 +12,7 @@ from itemeval._item import Item
 from itemeval._templates import Template
 from itemeval._util import sha256_hex
 from itemeval.design._grid import expand_generate_grid
-from itemeval.generate._params import fit_max_tokens
+from itemeval.generate._params import effective_context, fit_max_tokens
 from itemeval.generate._task import build_generate_task
 
 
@@ -38,6 +38,29 @@ def test_fit_small_context_clamps_to_fit_input_and_window():
     assert clamped is True
     # Leaves room for the input plus a margin — the whole point is no 400.
     assert eff + 143 < 16385
+
+
+def test_effective_context_takes_the_smaller_known_window():
+    # Model-level max vs the smallest routed endpoint window: clamp to the floor.
+    assert effective_context(131072, 32768) == 32768
+    assert effective_context(32768, 131072) == 32768
+    # Only one known -> that one (endpoint unknown falls back to model-level,
+    # i.e. today's behavior; model-level unknown uses the endpoint window).
+    assert effective_context(131072, None) == 131072
+    assert effective_context(None, 32768) == 32768
+    # Both unknown -> None, so fit_max_tokens leaves max_tokens untouched.
+    assert effective_context(None, None) is None
+
+
+def test_endpoint_window_clamps_optimistic_model_context():
+    # Regression: openrouter/qwen/qwen-2.5-7b-instruct advertises context_length
+    # 131072 in the pricing table, but the served endpoint capped at 32768, so
+    # the model-level clamp let a guaranteed HTTP 400 through. Clamping against
+    # the endpoint minimum makes the request fit.
+    ctx = effective_context(131072, 32768)  # min endpoint window
+    eff, clamped = fit_max_tokens(32768, ctx, 157)
+    assert clamped is True
+    assert eff + 157 < 32768  # the request that used to 400 now fits the window
 
 
 def test_build_generate_task_honors_override_without_moving_the_id():

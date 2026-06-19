@@ -69,6 +69,16 @@ def _inspect_hermetic_env(tmp_path, monkeypatch):
     # the suite stays quiet and deterministic regardless of where it runs.
     monkeypatch.setenv("INSPECT_DISPLAY", "none")
     monkeypatch.setenv("ITEMEVAL_PRICING_PATH", str(tmp_path / "no_user_pricing.json"))
+    # Per-endpoint context-window cache + fetch (endpoint-context-clamp): isolate
+    # the cache to tmp and stub the OpenRouter fetch to None so generate runs
+    # never touch the network or the real user cache. None means "window unknown"
+    # → the clamp falls back to the model-level context_length (today's behavior),
+    # which is what these tests expect. Tests that exercise the fetch inject their
+    # own `fetch=`.
+    monkeypatch.setenv("ITEMEVAL_ENDPOINTS_PATH", str(tmp_path / "no_endpoints.json"))
+    from itemeval.budget import _endpoint_windows
+
+    monkeypatch.setattr(_endpoint_windows, "endpoint_min_context", lambda *a, **k: None)
     # Outputs anchor to work_dir (CWD); chdir into tmp_path so every test's study
     # tree lands in its own sandbox, never the repo root.
     monkeypatch.chdir(tmp_path)

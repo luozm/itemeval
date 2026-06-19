@@ -39,6 +39,20 @@ def fit_max_tokens(
     return max(MIN_FIT_MAX_TOKENS, budget), True
 
 
+def effective_context(model_context: "int | None", endpoint_context: "int | None") -> "int | None":
+    """The clamp ceiling: the *smaller* of the model-level and endpoint windows.
+
+    The pricing table's ``context_length`` is OpenRouter's model-level max (the
+    largest provider's window); a request routed to a floor provider can hit a
+    smaller window and 400. When the per-endpoint minimum is known
+    (``endpoint-context-clamp``), clamp against it instead. Either input may be
+    None (unknown); the result is the min of those that are known, or None when
+    both are unknown — so ``fit_max_tokens`` falls back to today's behavior.
+    """
+    known = [c for c in (model_context, endpoint_context) if c is not None]
+    return min(known) if known else None
+
+
 class EffectiveParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
