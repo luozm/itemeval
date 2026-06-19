@@ -25,12 +25,17 @@ make fmt                # auto-format + safe lint fixes
 | **Track a deferred bug** | — | a bug you're not fixing now → a section in [KNOWN-ISSUES](docs/KNOWN-ISSUES.md) (symptom · where · fix sketch); no key |
 | **Release** | `/release` | hand [docs/prompts/release.md](docs/prompts/release.md) to an agent; `release_gate.py` blocks a half-baked one |
 | **Pre-push gate** | — *(auto)* | the `pre-push` hook runs `make check` on every push — nothing to type |
+| **Live smoke (CC push)** | — *(auto)* | before Claude Code pushes a `feat/*`/`fix/*`/`chore/*` branch, a `PreToolUse` hook runs `make test-live` (real API, ~$0) and blocks on failure — catches real-model/inspect breakage mocks can't; needs a key (env or `.env`), self-skips without one |
 | **Pre-commit audit** | `/same-change` | same-change rule as a ✓/✗ checklist (CHANGELOG · BACKLOG-disjoint · wiki · SSOT); **machine parts auto** |
 | **Engine bump** | `/upgrade-inspect` | deliberate inspect-ai lockfile bump + `make test-all` ([DEVELOPMENT.md](DEVELOPMENT.md)) |
 
 Each job is detailed below. `make check` is the one habit — and the `pre-push`
 git hook now runs it for you on every push (`make hooks` installs that alongside
-the formatting + commit-msg hooks), so a red push can't slip into CI.
+the formatting + commit-msg hooks), so a red push can't slip into CI. A second,
+**Claude-Code-only** gate runs the paid `make test-live` smoke before CC pushes a
+code branch (`feat/*`/`fix/*`/`chore/*`): it catches real-model/inspect breakage
+the hermetic `make check` can't, so it needs a real key (env or `.env`) and is
+therefore CC-scoped and never in CI (see [DEVELOPMENT.md](DEVELOPMENT.md)).
 
 The **Skill** column is the [Claude Code](https://code.claude.com/docs/en/skills)
 shortcut for each job. The new-feature pipeline runs top-down: `/brainstorm`

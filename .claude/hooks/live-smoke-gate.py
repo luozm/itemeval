@@ -3,13 +3,14 @@
 run the live API smoke (``make test-live``) and block the push if it fails.
 
 By design (maintainer's request): triggered by CC, never manually, never in CI.
-It self-disables when there is no ``OPENAI_API_KEY`` (so keyless shells — and CI,
-which runs no CC hooks anyway — are never blocked) and when
-``ITEMEVAL_SKIP_LIVE_SMOKE`` is set (a deliberate one-off escape hatch).
+The smoke self-skips without a key — ``make test-live``'s test loads .env and
+skips (exit 0) when no ``OPENAI_API_KEY`` is found, so keyless shells (and CI,
+which runs no CC hooks anyway) are never blocked. ``ITEMEVAL_SKIP_LIVE_SMOKE``
+bypasses the gate entirely (a deliberate one-off escape hatch).
 
-Scope: only ``git push`` from a gated branch (feat/* or fix/*). Other commands,
-other branches, and the user's own manual pushes pass straight through. A
-successful smoke costs a fraction of a cent.
+Scope: only ``git push`` from a gated branch (feat/*, fix/*, chore/*). Other
+commands, other branches, and the user's own manual pushes pass straight
+through. A successful smoke costs a fraction of a cent.
 """
 
 from __future__ import annotations
@@ -23,10 +24,10 @@ import sys
 ALLOW = 0
 BLOCK = 2  # PreToolUse: a non-zero (2) exit blocks the tool call; stderr goes to Claude.
 
-# Branch prefixes whose CC pushes run the smoke first. feat/* and fix/* both ship
-# code that can regress the real-model path. main and pure-docs branches are left
-# ungated; chore/* (inspect bumps) is a candidate — extend this tuple to cover it.
-GATED_PREFIXES = ("feat/", "fix/")
+# Branch prefixes whose CC pushes run the smoke first. feat/*, fix/*, and chore/*
+# all ship code (or engine bumps — the highest-risk case for the real-model path)
+# that can regress it. main and pure-docs branches are left ungated.
+GATED_PREFIXES = ("feat/", "fix/", "chore/")
 
 
 def allow(msg: str | None = None) -> None:
@@ -72,12 +73,14 @@ def main() -> None:
     ).stdout.strip()
     if not branch.startswith(GATED_PREFIXES):
         allow()  # only gated branches (GATED_PREFIXES) run the smoke
-    if not os.environ.get("OPENAI_API_KEY"):
-        allow("live smoke skipped (no OPENAI_API_KEY) — push allowed")
 
+    # Always run the smoke on a gated push — never pre-check the key here. The
+    # live key commonly lives in .env (loaded by the test, not exported), so an
+    # os.environ check would wrongly skip every push. make test-live self-skips
+    # (exit 0) when the test finds no key anywhere, so a keyless push still passes.
     proc = subprocess.run(["make", "test-live"], capture_output=True, text=True)
     if proc.returncode == 0:
-        allow(f"live smoke passed — {branch} push allowed")
+        allow(f"live smoke ok — {branch} push allowed")
 
     tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-25:])
     print(

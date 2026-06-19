@@ -62,8 +62,19 @@ budget:
 """
 
 
-@pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="needs OPENAI_API_KEY")
 def test_live_parallel_generate_then_grade(tmp_path, offline_adapter):
+    # The live key commonly lives in .env (inspect loads it at runtime; we need
+    # it now to decide run-vs-skip). Load at call time — never at import — so a
+    # *deselected* collection of this module can't leak a real key into the
+    # hermetic suite's environment.
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("needs OPENAI_API_KEY (in the environment or .env)")
+
     from itemeval._config import load_config
     from itemeval._prepare import prepare_study
     from itemeval.generate._run import run_generate
