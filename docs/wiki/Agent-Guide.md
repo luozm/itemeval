@@ -40,11 +40,19 @@ itemeval status   CONFIG [--json]               # completion matrix (no API call
 
 - `estimate`, `status`, `export` never call a model API and are always safe.
   First-ever run downloads the dataset from the HF Hub (free).
-- `--json` (on every command) emits the full structured report — **prefer it
-  over parsing human-readable stdout.** On `generate`/`grade` it carries the
-  run result plus `pricing`, `estimate_usd`, and the `gate` outcome, and a
-  gate stop still emits a JSON document (projected cost, gate reason, the
-  `--yes` rerun command) before exit 3/4.
+- `--json` emits the full structured report — **prefer it over parsing
+  human-readable stdout** for the no-cost commands (`estimate`, `status`,
+  `export`). **Run the paid `generate`/`grade` without `--json`**, though: it
+  silences both the pre-flight ETA line and the live progress display, so a
+  long paid run shows nothing until it returns. Plain mode keeps both visible,
+  and you lose no machine-readable result — the run prints a self-contained
+  summary (`rows written … spend …`, per-condition `[i/N]` reports,
+  `parse_failures`, empty-solution counts) plus a `manifest: <path>` line, and
+  that manifest is the full structured run result on disk. (If you must capture
+  JSON from the run itself, `--json` still carries the run result plus
+  `pricing`, `estimate_usd`, and the `gate` outcome, and a gate stop still emits
+  a JSON document — projected cost, gate reason, the `--yes` rerun command —
+  before exit 3/4.)
 - `-C/--base-dir DIR` anchors the output tree (`studies/`); default is the
   current directory. Inputs (prompts/rubrics) always resolve relative to the
   config file.

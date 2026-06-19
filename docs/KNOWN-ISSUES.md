@@ -60,3 +60,27 @@ within the spirit of Law 5 — but revisit whether it should be opt-out
 (`solvers.fit_max_tokens: auto | off`, default `auto`) rather than always-on, and
 whether UX-PATTERNS should gain a row for "announced runtime accommodation of an
 infeasible design value."
+
+---
+
+## A paid run under `--json` goes dark — no progress, no ETA
+**Found:** 2026-06-19
+
+**Symptom.** `generate`/`grade` under `--json` silence *both* the pre-flight ETA
+line and inspect's live progress display (`--json` forces `display="none"`, and
+the ETA print sits in the `if not args.json` block). A long paid run then emits
+nothing until it returns — a liveness gap that violates the UX-PATTERNS
+expectation that a long-running spend shows it is alive. Worked around in docs
+(the Agent-Guide now tells agents to run the paid stages without `--json`), but
+the tool still can't give a `--json` caller any liveness signal.
+
+**Where.** `src/itemeval/cli.py` (`_run_stage` — the ETA `print` under
+`if not args.json`, and `display = … "none" if args.json else None`).
+
+**Status.** Deferred — needs a small design decision on the display/stdout
+contract. Fix sketch: route the ETA line and a coarse progress heartbeat to
+**stderr** (always, independent of `--json`), so `--json` stdout stays pure JSON
+*and* both a human and a captured-stderr caller still see liveness. Then the
+Agent-Guide carve-out can relax back to "`--json` everywhere is safe." Confirm no
+agent harness parses stderr as part of the structured contract before moving the
+ETA there.
