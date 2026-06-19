@@ -36,10 +36,11 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check .
 
-      # Unit tests only; the `network` test (HF Hub) is excluded to keep CI
-      # hermetic — run it manually per DEVELOPMENT.md when touching the adapter.
+      # Unit tests only; `network` (HF Hub) and `live` (paid API) are excluded to
+      # keep CI hermetic and free — run them via make test-all / make test-live
+      # per DEVELOPMENT.md. Mirrors `make test`.
       - name: Pytest
-        run: uv run pytest -m "not network"
+        run: uv run pytest -m "not network and not live"
 
   docs:
     name: docs consistency
