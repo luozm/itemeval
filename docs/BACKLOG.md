@@ -578,51 +578,6 @@ variant wins (base? cheapest? most-metadata?) given variants can carry different
 price/context; whether to expose the suffix set as a knob (default: no — keep it
 a fixed internal list per "don't over-engineer").
 
-### Clamp max_tokens to the smallest routed endpoint window
-**Key:** `endpoint-context-clamp`
-
-**Motivation.** The generate context-fit clamp (`fit_max_tokens`, shipped in
-the `max_tokens`-context fix) clamps against OpenRouter's **model-level**
-`context_length` — which is the *maximum across all providers*. OpenRouter can
-route a request to a floor provider whose window is smaller, so the optimistic
-max means no clamp fires and the call deterministically HTTP 400s. Reproduced
-live (g-theory-screen, 2026-06-19): `openrouter/qwen/qwen-2.5-7b-instruct`
-advertises `context_length: 131072` in the pricing table, but the served
-endpoint capped at 32768 — `157 input + 32768 max_tokens = 32925 > 32768` → 400,
-2/2 samples errored, retry budget burned. (The original bug report misdiagnosed
-this as a *missing* `context_length`; it is present — the real cause is the
-model-level number being an over-optimistic per-request ceiling under
-multi-provider routing.)
-
-**Design sketch.** OpenRouter's `/api/v1/models/:author/:slug/endpoints` lists
-each provider endpoint with its own `context_length`; the **minimum** across
-them is the window any routing can land on — the safe clamp ceiling. Fetch it
-**only for the roster's OpenRouter models** (not all ~685), persist to a new
-`~/.cache/itemeval/endpoints.json` (aged like the pricing cache; a warm cache
-is $0 / no calls), and feed `min(model_context_length, endpoint_min)` into the
-**existing** `fit_max_tokens` — no new clamp logic, just a truer window. qwen
-then clamps to ~32331 and succeeds.
-
-**Implementation notes.** New `src/itemeval/budget/_endpoints.py` owns the
-fetch + cache (network confined to the budget layer, like `_pricing.py`). The
-generate clamp site (`generate/_run.py` ~L590) takes the endpoint-min window;
-the clamp warning already prints `model req→eff (ctx C)` — `C` becomes the
-*effective* (endpoint-min) window. The estimator is unchanged: it already
-ignores the clamp (uses requested `max_tokens` as a conservative ceiling), and
-this feature keeps that runtime-only precedent. **Knob bucket:** optimization
-→ invisible default (auto-fetch, no new user knob). **Law 1:** the fetch is a
-new network + global-cache side effect → new ledger row + announce line
-(`endpoints: fetched N model windows from OpenRouter → endpoints cache` /
-`reused`).
-
-**Open questions.** Cache staleness policy (reuse `budget.pricing_max_age_days`
-vs a fixed internal default — lean fixed, no knob); whether to also clamp
-against `max_completion_tokens` when an endpoint advertises it; the truncation
-trade (clamping to the *smallest* window can shorten output even when routed to
-a big-window provider — safe but documented).
-
----
-
 ## Ops / release
 
 ### PyPI publish approval gate

@@ -39,7 +39,7 @@ benchmark:
 solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5]  # inspect model ids, unique
   temperature: 0.7             # optional, 0..2
-  max_tokens: 1024             # optional; unset => uncapped (estimate warns)
+  max_tokens: 1024             # optional; unset => uncapped (estimate warns). auto-clamped at request time to fit each model's context window (incl. the smallest routed OpenRouter endpoint) so a small-context model in a mixed roster never 400s; runtime-only, the condition id keeps this value. Clamping to the smallest provider window can shorten output on a larger-window route.
   top_p: null                  # optional, (0, 1]
   seed: null                   # optional; recorded; only some providers honor it
   on_empty: skip               # empty (no-error) solutions: skip | rerun | grade (default skip)

@@ -236,6 +236,22 @@ Closes: parallel-conditions
   (`warning: max_tokens clamped to fit context window for N model(s) …`, carried
   on `warnings[]` under `--json`). A model with no known `context_length` is left
   as-is. Grade is unaffected (a single judge model, not a roster).
+- **The `max_tokens` clamp now fits the *routed* endpoint window, not just the
+  model-level max.** OpenRouter's `context_length` (in the pricing table) is the
+  maximum across all providers serving a model, but a request can be routed to a
+  floor provider with a smaller window — so the clamp above could still let a
+  guaranteed HTTP 400 through. Reproduced live: `openrouter/qwen/qwen-2.5-7b-instruct`
+  advertises `context_length` 131072 yet the served endpoint capped at 32768
+  (`157 + 32768 > 32768` → 400, every call errored). `generate` now fetches each
+  roster model's per-endpoint windows from OpenRouter
+  (`/models/:slug/endpoints`, **only** for the models about to run) and clamps
+  `max_tokens` against the **smallest** endpoint window — the one any routing can
+  land on. The lookup is cached in `~/.cache/itemeval/endpoints.json` (warm runs
+  cost zero calls), announced in the run summary (`endpoint windows: fetched N
+  from OpenRouter — cache dir: …`; `endpoint_windows_fetched`/`_reused`/
+  `endpoint_cache_dir` under `--json`), and degrades to the model-level value if
+  the fetch fails (never blocks). Still runtime-only — the condition id keeps the
+  requested design value. `Closes: endpoint-context-clamp`
 - **`grade` and the grade cost estimate now scope to the current config's gen
   grid.** Both previously selected gradable solutions by item (and epoch) alone,
   so a solution still in the append-only store but produced by a gen-condition no

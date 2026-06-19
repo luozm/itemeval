@@ -1,6 +1,10 @@
 # Implementation plan — endpoint-context-clamp (clamp max_tokens to the smallest routed endpoint window)
 
-**Status: NOT STARTED.** Written 2026-06-19 against inspect_ai 0.3.239 (pinned
+**Status: IMPLEMENTED 2026-06-19.** This file is the design record for the
+shipped feature (`Closes: endpoint-context-clamp`); the module names landed as
+`src/itemeval/budget/_endpoint_windows.py` + `tests/test_endpoint_windows.py`
+(the plan's `_endpoints.py` name was taken by the unrelated provider-routing
+module). Written 2026-06-19 against inspect_ai 0.3.239 (pinned
 in `uv.lock`) and the OpenRouter `/api/v1/models/:author/:slug/endpoints` API
 (**[verify]** the response shape on first implementation — see Context). This
 file is the working brief for a fresh implementation session; it carries all
