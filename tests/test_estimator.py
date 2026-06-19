@@ -122,6 +122,52 @@ def test_estimate_uses_stored_solutions_for_judge_input(study):
     assert est_stored.grade.input_tokens < est_placeholder.grade.input_tokens
 
 
+def test_grade_estimate_scopes_remaining_to_current_grid(study):
+    """The grade *remaining* projection must count only solutions whose gen-
+    condition is in the current grid — like the ceiling already does. Otherwise
+    an orphaned old roster in the store inflates `remaining_usd` past the full-
+    grid ceiling `usd` (a logically impossible, ungate-able figure)."""
+    from itemeval.generate._run import run_generate
+    from itemeval.store._solutions import upsert_solutions
+
+    _, prep = study
+    run_generate(prep)  # current grid: 2 gen conds x 2 items x 2 epochs
+    grid_gen_ids = {c.id for c in prep.grid.generate}
+    upsert_solutions(
+        prep.paths,
+        [
+            {
+                "study": prep.config.study,
+                "run_id": "old",
+                "condition_id": "orphan-roster-cond",  # not in the current grid
+                "condition_slug": "orphan",
+                "item_id": it.id,
+                "dataset_id": "d",
+                "dataset_revision": "v",
+                "epoch": epoch,
+                "model": "mockllm/old-model",
+                "prompt_name": "minimal",
+                "prompt_hash": "h",
+                "model_config_name": "default",
+                "solution": "ANSWER: 4",
+                "stop_reason": "stop",
+                "error": None,
+                "log_file": "lf",
+                "created_at": "t0",
+            }
+            for it in prep.items_effective
+            for epoch in (1, 2)
+        ],
+    )
+    assert "orphan-roster-cond" not in grid_gen_ids
+
+    est = estimate_study(prep)
+    # Remaining can never exceed the full-grid ceiling (pre-fix the orphans push
+    # it above), and the grade scope stays the current grid: 2x2x2 judge calls.
+    assert est.grade.remaining_usd <= est.grade.usd
+    assert est.grade.calls == 2 * 2 * 2
+
+
 def test_judge_default_output_tokens(study):
     import yaml as _yaml
 

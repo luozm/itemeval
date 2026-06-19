@@ -211,3 +211,57 @@ def test_verifiable_grading_no_model(study, tmp_path):
     assert df["log_file"].isna().all()
     # Mock solutions don't match targets, but every row is scored 0.0/1.0.
     assert df["score"].notna().all()
+
+
+def _seed_orphan_roster(prep, condition_id="orphan-roster-cond"):
+    """Seed solutions under a gen-condition id NOT in the current grid — the
+    post-rehash 'old roster' case (a config change rehashed the gen ids, leaving
+    the old draw's rows stranded in the append-only store)."""
+    from itemeval.store._solutions import upsert_solutions
+
+    upsert_solutions(
+        prep.paths,
+        [
+            {
+                "study": prep.config.study,
+                "run_id": "old",
+                "condition_id": condition_id,
+                "condition_slug": "orphan",
+                "item_id": it.id,
+                "dataset_id": "d",
+                "dataset_revision": "v",
+                "epoch": epoch,
+                "model": "mockllm/old-model",
+                "prompt_name": "minimal",
+                "prompt_hash": "h",
+                "model_config_name": "default",
+                "solution": "ANSWER: 4",
+                "stop_reason": "stop",
+                "error": None,
+                "log_file": "lf",
+                "created_at": "t0",
+            }
+            for it in prep.items_effective
+            for epoch in (1, 2)
+        ],
+    )
+    return condition_id
+
+
+def test_grade_scopes_to_current_grid(study):
+    """Grade must not judge solutions whose gen-condition left the current grid.
+    The runner scopes to the current config's gen grid — the same scope `status`
+    already uses — so an orphaned old roster in the store is never (re-)graded."""
+    _, prep = study
+    run_generate(prep)  # current grid: 2 gen conds x 2 items x 2 epochs = 8
+    grid_gen_ids = {c.id for c in prep.grid.generate}
+    orphan_id = _seed_orphan_roster(prep)  # + 4 stranded rows under a non-grid id
+    assert orphan_id not in grid_gen_ids
+
+    result = run_grade(prep)
+    # Only the 8 current-grid solutions are graded; the 4 orphan rows are not
+    # (pre-fix this graded all 12 — silent overspend + cross-roster mixing).
+    assert result.rows_written == 8
+    df = read_gradings(prep.paths)
+    assert set(df["gen_condition_id"]) <= grid_gen_ids
+    assert orphan_id not in set(df["gen_condition_id"])
