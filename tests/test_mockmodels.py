@@ -1,4 +1,4 @@
-from inspect_ai.model import ChatMessageUser, GenerateConfig, Model
+from inspect_ai.model import ChatMessageUser, GenerateConfig, Model, get_model
 
 from itemeval._mockmodels import (
     is_mock_model,
@@ -34,10 +34,34 @@ def test_judge_callable_emits_parseable_score():
     assert parsed.reasoning
 
 
-def test_resolve_model_passthrough_for_real_ids():
-    assert resolve_model("openai/gpt-5-mini", "generate") == "openai/gpt-5-mini"
+def test_is_mock_model():
     assert is_mock_model("mockllm/x")
     assert not is_mock_model("openai/x")
+
+
+def test_resolve_model_returns_model_for_real_ids(monkeypatch):
+    # Regression (parallel-conditions): a non-mock id must resolve to a Model,
+    # never a bare str. The concurrent eval sets task.model per condition and
+    # inspect reads task.model.model_args — a str raises AttributeError there.
+    # The common case is empty model_args, which previously returned the raw id
+    # string. get_model is stubbed so the contract is checked without a key.
+    import itemeval._mockmodels as mm
+
+    probe = get_model("mockllm/probe")  # a real Model, constructs offline
+    seen: dict = {}
+
+    def fake_get_model(model, **kwargs):
+        seen["model"], seen["kwargs"] = model, kwargs
+        return probe
+
+    monkeypatch.setattr(mm, "get_model", fake_get_model)
+
+    out = mm.resolve_model("openai/gpt-5-mini", "generate")  # empty model_args
+    assert isinstance(out, Model)
+    assert seen == {"model": "openai/gpt-5-mini", "kwargs": {}}
+
+    mm.resolve_model("openai/gpt-5-mini", "grade", {"base_url": "https://x"})
+    assert seen["kwargs"] == {"base_url": "https://x"}  # extras forwarded
 
 
 def test_resolve_model_returns_model_for_mock_ids():

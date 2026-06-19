@@ -5,7 +5,7 @@ the M6 CLI-only pipeline run on these deterministic callables. Outputs and
 fabricated token usage are pure functions of the prompt text.
 """
 
-from typing import Any, Union
+from typing import Any
 
 from inspect_ai.model import Model, ModelOutput, ModelUsage, get_model
 
@@ -60,15 +60,13 @@ def mock_judge_callable(model: str):
     return fn
 
 
-def resolve_model(
-    model: str, stage: str, model_args: "dict[str, Any] | None" = None
-) -> Union[str, Model]:
-    """Non-mock ids pass through as strings (or as a Model carrying request
-    extras when model_args is non-empty — see _endpoints.model_args_for);
-    mock ids get a stage-suited callable."""
+def resolve_model(model: str, stage: str, model_args: "dict[str, Any] | None" = None) -> Model:
+    """Non-mock ids resolve to a plain inspect ``Model`` (carrying request
+    extras from ``_endpoints.model_args_for`` when present); mock ids get a
+    stage-suited callable. Always a ``Model``: the parallel-conditions eval sets
+    ``task.model`` per condition and inspect reads ``resolved_task.model.model_args``
+    (``_eval/run.py``), so a bare id string would raise AttributeError there."""
     if not is_mock_model(model):
-        if model_args:
-            return get_model(model, **model_args)
-        return model
+        return get_model(model, **(model_args or {}))
     factory = mock_judge_callable if stage == "grade" else mock_generate_callable
     return get_model(model, custom_outputs=factory(model))

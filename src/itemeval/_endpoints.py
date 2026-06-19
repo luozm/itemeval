@@ -1,8 +1,8 @@
 """Endpoint request shaping: pure mapping from config to inspect model_args.
 
 No inspect imports — fully unit-testable. The impure chokepoint that consumes
-this mapping is ``resolve_model()`` (``_mockmodels.py``), which turns a
-non-empty dict into ``get_model(model, **args)``.
+this mapping is ``resolve_model()`` (``_mockmodels.py``), which calls
+``get_model(model, **args)`` (always a Model; ``args`` may be empty).
 """
 
 from typing import TYPE_CHECKING, Any, Callable, Union
