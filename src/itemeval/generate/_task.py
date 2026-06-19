@@ -28,6 +28,7 @@ def build_generate_task(
     cache_prompt: "bool | None" = None,
     cache_schedule: bool = True,
     epoch_offset: int = 0,
+    max_tokens_override: "int | None" = None,
 ) -> Task:
     # Replications send byte-identical prompts: every epoch of an item shares
     # the full prompt as a provider cache prefix. Gate them (warm-then-fan-out)
@@ -79,10 +80,14 @@ def build_generate_task(
         cache_policy = False
     solver = gated_generate(cache=cache_policy) if gate else generate(cache=cache_policy)
     p = cond.gen_params
+    # max_tokens_override: a runtime clamp to fit the model's context window
+    # (see generate/_params.fit_max_tokens). None -> use the requested design
+    # value. The condition id is keyed on cond.gen_params, so the clamp never
+    # moves the id — only what the provider is actually asked for.
     config = GenerateConfig(
         temperature=p.temperature,
         top_p=p.top_p,
-        max_tokens=p.max_tokens,
+        max_tokens=p.max_tokens if max_tokens_override is None else max_tokens_override,
         seed=p.seed,
         reasoning_effort=p.reasoning_effort,
         reasoning_tokens=p.reasoning_tokens,

@@ -18,7 +18,7 @@ from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval._modelsample import ModelSampleResult
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
-from itemeval._util import new_run_id, utc_now_iso
+from itemeval._util import estimate_tokens, new_run_id, utc_now_iso
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
@@ -30,7 +30,7 @@ from itemeval.budget._pricing import (
 )
 from itemeval.budget._routing import NativeRoute
 from itemeval.design._grid import GenCondition
-from itemeval.generate._params import extract_effective_params
+from itemeval.generate._params import extract_effective_params, fit_max_tokens
 from itemeval.generate._task import build_generate_task
 from itemeval.store import _ledger, _logs, _solutions
 from itemeval.store._base import rel_to_study
@@ -554,6 +554,7 @@ def run_generate(
     # the per-condition upserts that now happen after the shared eval). Build a
     # task (with its own model) for each condition that has work; report skips.
     planned: list[tuple[GenCondition, list[Item], str, Any]] = []
+    clamped_models: dict[str, tuple[int, int, int]] = {}  # model -> (requested, effective, ctx)
     for cond in selected:
         if force:
             to_run = list(item_ids)
@@ -580,10 +581,25 @@ def run_generate(
             continue
         to_run_set = set(to_run)
         items = [it for it in prep.items_effective if it.id in to_run_set]
+        template = prep.solver_templates[cond.prompt_name]
+        # Clamp max_tokens to the model's own context window when the requested
+        # value can't fit (input + max_tokens > context) — otherwise every call
+        # to a small-context model is a guaranteed HTTP 400. Runtime-only: the
+        # condition id keeps the requested design value. Input is over-estimated
+        # (template + item, each chars/4) so the clamp errs toward fitting.
+        price = lookup_price(prep.pricing, cond.model)
+        ctx_len = price.context_length if price else None
+        max_input = max(
+            (estimate_tokens(template.text) + estimate_tokens(it.input) for it in items),
+            default=0,
+        )
+        eff_max_tokens, clamped = fit_max_tokens(cond.gen_params.max_tokens, ctx_len, max_input)
+        if clamped:
+            clamped_models[cond.model] = (cond.gen_params.max_tokens, eff_max_tokens, ctx_len)
         task = build_generate_task(
             items,
             cond,
-            prep.solver_templates[cond.prompt_name],
+            template,
             prep.config.study,
             prep.plan.replications,
             prep.config.cache,
@@ -592,6 +608,7 @@ def run_generate(
             cache_prompt=cache_prompt,
             cache_schedule=cache_schedule,
             epoch_offset=epoch_offset,
+            max_tokens_override=eff_max_tokens if clamped else None,
         )
         # Native batch routing: run the call on the native id when active; the
         # sampled cond.model stays the recorded scientific identity. The model
@@ -764,6 +781,17 @@ def run_generate(
         for m in dict.fromkeys(run_models)
         if m in prep.native_routes
     ]
+    # Announce any max_tokens clamp (a design value was adjusted to run at all);
+    # rides the existing warnings channel (one aggregated line, never blocks).
+    clamp_warnings: list[str] = []
+    if clamped_models:
+        parts = ", ".join(
+            f"{m} {req}→{eff} (ctx {ctx})" for m, (req, eff, ctx) in sorted(clamped_models.items())
+        )
+        clamp_warnings.append(
+            f"max_tokens clamped to fit context window for {len(clamped_models)} "
+            f"model(s) — would have errored (HTTP 400) otherwise: {parts}"
+        )
     return GenerateResult(
         run_id=run_id,
         study=prep.config.study,
@@ -772,7 +800,7 @@ def run_generate(
         total_usd=total_usd,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
-        warnings=drift_warnings,
+        warnings=drift_warnings + clamp_warnings,
         datasets=dataset_provenance(prep.datasets),
         model_sample=prep.model_sample,
         local_cache_rows=local_total,

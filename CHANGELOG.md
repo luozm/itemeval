@@ -222,6 +222,20 @@ Closes: native-batch-routing
 Closes: parallel-conditions
 
 ### Fixed
+- **A small-context model in a mixed roster no longer 400s on every call.** A
+  global `solvers.max_tokens` larger than a model's context window made every
+  request to that model a guaranteed HTTP 400 (`input + max_tokens > context`),
+  so small-context models in a sampled roster produced only errors while the
+  rest of the roster ran. `generate` now clamps each condition's `max_tokens` at
+  request time to fit the model's own `context_length` (from the pricing/roster
+  table), leaving a margin for the estimated input; large-context models are
+  untouched (byte-identical). The clamp is **runtime-only** — the condition id
+  keeps the requested design value, so store keys never move and never churn
+  when the roster's `context_length` refreshes — and the adjusted value is
+  recorded as the per-row effective `max_tokens` and announced in the run summary
+  (`warning: max_tokens clamped to fit context window for N model(s) …`, carried
+  on `warnings[]` under `--json`). A model with no known `context_length` is left
+  as-is. Grade is unaffected (a single judge model, not a roster).
 - **`grade` and the grade cost estimate now scope to the current config's gen
   grid.** Both previously selected gradable solutions by item (and epoch) alone,
   so a solution still in the append-only store but produced by a gen-condition no
@@ -275,6 +289,14 @@ Closes: parallel-conditions
   but the hint fired anyway (keyed on the sampled `openrouter/*` id regardless of
   the active route), in both `generate` and `grade`. The hint now excludes routed
   models. Surfaced by the native-batch-routing live smoke.
+- **Agent-Guide no longer steers agents into a blind paid run.** The guide's
+  "prefer `--json` on every command" advice contradicted its own quickstart:
+  `--json` silences both the pre-flight ETA line and the live progress display,
+  so following it on `generate`/`grade` left a long paid run with no visible
+  progress. The `--json` guidance now scopes to the no-cost commands
+  (`estimate`/`status`/`export`) and points agents to run the paid stages
+  without it (parsing the printed summary + `manifest:` path for structured
+  results instead).
 
 ## [0.2.0] - 2026-06-12
 

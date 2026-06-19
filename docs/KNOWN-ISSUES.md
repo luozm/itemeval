@@ -30,3 +30,33 @@ store.
 stale rows are never read back. It becomes a real correctness bug the moment
 item metadata is wired into the export (the `item-covariates-export` feature),
 so fix it as part of that change or before it.
+
+---
+
+## max_tokens context-fit clamp ignores the reasoning-token budget
+**Found:** 2026-06-19
+
+**Symptom.** `generate`'s context-fit clamp shrinks `max_tokens` so a request
+fits a model's `context_length` (preventing the guaranteed HTTP 400 on a
+small-context model in a mixed roster). But a *reasoning* model also spends a
+separate `reasoning_tokens` / `reasoning_effort` budget that counts against the
+same window, and the clamp does not subtract it — so a small-context *reasoning*
+model with a large reasoning budget could still exceed its window and 400 after
+the clamp. Non-reasoning models (the common small-context case, e.g.
+`gpt-3.5-turbo`, `qwen-2.5-7b`, `gemma-3n`) are fully covered.
+
+**Where.** `src/itemeval/generate/_params.py` (`fit_max_tokens`) and the clamp
+call site in `src/itemeval/generate/_run.py` (`run_generate`).
+
+**Status.** Deferred — no small-context reasoning model in the roster that
+surfaced this. Fix sketch: fold the resolved reasoning-token budget into the
+clamp's output reserve (subtract it alongside `max_tokens`), or mark such a
+(model, config) cell structurally infeasible and skip it.
+
+**Also decide (design — UX-PATTERNS Law 5).** The clamp auto-adjusts a *design
+declaration* (`max_tokens`) at runtime. It is kept id-stable (the condition id
+keeps the requested value) and announced via a `warnings[]` line, which keeps it
+within the spirit of Law 5 — but revisit whether it should be opt-out
+(`solvers.fit_max_tokens: auto | off`, default `auto`) rather than always-on, and
+whether UX-PATTERNS should gain a row for "announced runtime accommodation of an
+infeasible design value."
