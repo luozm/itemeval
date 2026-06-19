@@ -65,9 +65,15 @@ in a consuming study.
    ```
 3. **Unit tests** (no API calls): `make test-all` (the whole suite, incl. the
    HF-adapter test — an engine bump should exercise everything)
-4. **Live smoke test** (manual, costs cents): run the consuming study's pilot
-   config at `dev` scope end-to-end (generate → grade → export) and confirm
-   the export schema and cost ledger are unchanged.
+4. **Live smoke test** (costs ~$0): `make test-live` — a real two-model
+   generate→grade on the cheapest non-reasoning OpenAI models (needs
+   `OPENAI_API_KEY`), exercising the concurrent-eval path that mockllm cannot.
+   For schema/ledger changes also run the consuming study's pilot config at
+   `dev` scope end-to-end (generate → grade → export) and confirm the export
+   schema and cost ledger are unchanged. `make test-live` is also a Claude Code
+   pre-push gate (`.claude/hooks/live-smoke-gate.py`): it runs automatically
+   before CC pushes a `feat/*` branch, self-skips without a key, and never runs
+   in CI (the `live` marker is deselected by `make test`/`check`).
 5. **Commit** the lockfile bump: `chore: bump inspect-ai 0.3.X -> 0.3.Y`, with
    any behavior notes in the body. Merge.
 6. **On breakage**: pin a temporary upper bound in `pyproject.toml`
@@ -79,9 +85,11 @@ inspect-ai PR** (its own, because it's load-bearing) and a weekly **grouped PR**
 for everything else, plus monthly GitHub-Actions bumps. Each PR is a lockfile
 move that CI validates against the full matrix automatically (`ci.yml` runs on
 `pull_request` with `uv sync --locked`) — so steps 1–3 above happen on the PR.
-What stays **manual**: reading inspect-ai's release notes (step 1) and the live
-smoke (step 4), which gates *paid runs*, not the merge — merging on green unit
-tests is the documented bar. Dependabot bumps `uv.lock` only and leaves
+What stays **manual**: reading inspect-ai's release notes (step 1) and the
+consuming-study pilot in step 4 (schema/ledger validation), which gates *paid
+runs*, not the merge — merging on green unit tests is the documented bar.
+(`make test-live` from step 4 is cheap and codified — run it on the bump branch
+too.) Dependabot bumps `uv.lock` only and leaves
 `pyproject.toml` ranges alone, matching the policy above.
 
 All other dependencies ride the weekly grouped PR; merge it when convenient
