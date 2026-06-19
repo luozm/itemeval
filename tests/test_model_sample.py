@@ -424,6 +424,55 @@ def test_where_reasoning_multimodal_and_min_context(tmp_path):
     assert all(META.models[m].context_length >= 128_000 for m in res.models)
 
 
+def test_where_output_text_only(tmp_path):
+    import json
+
+    # A generator that also emits text passes the text_model gate ("text" is in
+    # output_modalities), so output_text_only is what actually drops it.
+    def _m(out_mods):
+        return ModelPrice(
+            input_usd_per_mtok=1.0,
+            output_usd_per_mtok=5.0,
+            text_model=True,
+            output_modalities=out_mods,
+        )
+
+    table = PricingTable(
+        updated_at="t",
+        source="seed",
+        models={
+            "openrouter/p/text-a": _m(["text"]),
+            "openrouter/p/text-b": _m(["text"]),
+            "openrouter/p/image-gen": _m(["image", "text"]),
+            "openrouter/p/audio-gen": _m(["audio", "text"]),
+        },
+    )
+    # Without the filter, the generators are drawable.
+    res = resolve_model_sample(
+        _cfg({"n": 4, "seed": 1, "universe": "pricing-table"}), table, tmp_path / "l1.json"
+    )
+    assert len(res.models) == 4
+    # output_text_only: True keeps only the text-only-output models.
+    res = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": "pricing-table", "where": {"output_text_only": True}}),
+        table,
+        tmp_path / "l2.json",
+    )
+    assert set(res.models) == {"openrouter/p/text-a", "openrouter/p/text-b"}
+    # The filter value is pinned in the lock spec (flows via where.model_dump()).
+    lock = json.loads((tmp_path / "l2.json").read_text())
+    assert lock["sample"]["where"]["output_text_only"] is True
+    # False is the symmetric inverse: keep only the non-text-output generators.
+    res = resolve_model_sample(
+        _cfg(
+            {"n": 2, "seed": 1, "universe": "pricing-table", "where": {"output_text_only": False}}
+        ),
+        table,
+        tmp_path / "l3.json",
+    )
+    assert set(res.models) == {"openrouter/p/image-gen", "openrouter/p/audio-gen"}
+
+
 def test_metadata_stratify_requires_pricing_table_universe():
     # provider stratify is fine for an inline list; metadata strata are not.
     _cfg({"n": 1, "seed": 1, "universe": ["m/a", "m/b"], "stratify_by": "provider"})

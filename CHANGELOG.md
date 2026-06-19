@@ -7,6 +7,25 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Output-modality filter for sampled rosters**
+  (`solvers.sample.where.output_text_only`): drop image/audio/video **generators**
+  from a `pricing-table` draw. The runnable-text gate only checks that a model
+  *can* emit text (`"text" in output_modalities`), so a model that emits text
+  **and** image/audio still qualifies and pollutes a closed-text frame (10 of
+  ~309 drawable OpenRouter ids today: the `*-image` / `gpt-audio*` models).
+  `--refresh-pricing` now persists the raw `output_modalities` list on
+  `ModelPrice` (additive, optional — `None` for the seed / pinned tables, no
+  schema bump); the opt-in `where.output_text_only: true` keeps only models whose
+  output set is exactly `{"text"}` (and `false`, the symmetric inverse, keeps only
+  the generators), parallel to the input-side `where.multimodal`. Opt-in rather
+  than a default universe gate — a multimodal-*output* model is a legitimate
+  target for a study that *means* to sample it, unlike a non-reproducible alias.
+  Roster-only (rejected for list/file universes, which are already curated);
+  enters the `model_locks.json` `where` spec (a changed value fails loudly — clear
+  the lock to re-draw). Builds on `model-sampling`. No new dependency.
+
+Closes: sample-output-modality
+
 - **Two-stage rubric materialization** (`rubrics:` with `materialize:`): grade
   with a per-item rubric *generated from the item's reference and frozen* — the
   ProofBench/RefGrader protocol — instead of a single static rubric template. A

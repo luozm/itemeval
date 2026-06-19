@@ -88,6 +88,15 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
                 "created": 1727308800,  # OpenRouter release timestamp (Unix seconds)
             },
             {
+                "id": "openai/gpt-image",  # emits text AND image -> passes text_model gate
+                "pricing": {"prompt": "0.0000005", "completion": "0.0000010"},
+                "architecture": {
+                    "input_modalities": ["text"],
+                    "output_modalities": ["image", "text"],
+                },
+                "supported_parameters": ["max_tokens", "temperature"],
+            },
+            {
                 "id": "meta/router",  # no generation params -> not a runnable text model
                 "pricing": {"prompt": "0.0000005", "completion": "0.0000010"},
                 "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
@@ -109,6 +118,10 @@ def test_refresh_pricing_merges_openrouter(monkeypatch, tmp_path):
     assert price.reasoning is True and price.multimodal is True  # has reasoning + image input
     assert price.context_length == 131072
     assert price.created == 1727308800  # release timestamp captured for recency
+    assert price.output_modalities == ["text"]  # emitted modalities persisted
+    gen = table.models["openrouter/openai/gpt-image"]
+    assert gen.text_model is True  # text in output -> passes the gate
+    assert gen.output_modalities == ["image", "text"]  # but emits non-text too
     assert table.models["openrouter/meta/router"].created is None  # absent -> None
     assert table.models["openrouter/meta/router"].text_model is False  # empty params
     assert (tmp_path / "user.json").is_file()

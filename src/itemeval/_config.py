@@ -104,6 +104,10 @@ class ModelUniverseFilter(BaseModel):
     max_output_usd_per_mtok: float | None = Field(default=None, gt=0.0)
     reasoning: bool | None = None  # keep only reasoning (True) / non-reasoning (False) models
     multimodal: bool | None = None  # keep only multimodal (True) / text-only (False) models
+    # Keep only text-only-output models (True) / only non-text-output models
+    # (False). True drops image/audio/video generators that still emit text and
+    # so pass the text_model gate; reads ModelPrice.output_modalities.
+    output_text_only: bool | None = None
     min_context_length: int | None = Field(default=None, ge=1)  # keep models with >= this context
     # Absolute YYYY-MM-DD release cutoff (uses the roster's `created` timestamp);
     # keep only models released on/after it. Absolute, never wall-clock age, so a
