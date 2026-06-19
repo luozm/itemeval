@@ -398,6 +398,12 @@ name-parsing (`opus`>`sonnet`>`haiku`) is the fragile heuristic
 **`include:` recipe** (`model-sample-composition` ships it + a wiki recipe):
 pin the flagships you mean, explicitly and reproducibly.
 
+**Update (2026-06-19).** A live roster pull found OpenRouter now returns a
+**`benchmarks`** block per model (per-arena Elo / win-rate / rank, ~38%
+coverage) — a candidate for the "ranking field if one stabilizes" the open
+question named. Still partial and third-party (not flagship-per-vendor, ~⅓
+coverage), so the deferral stands; revisit if coverage broadens.
+
 **Design sketch (when a signal exists).** A draw-time universe filter
 `where: {latest_per_provider: true}` computed from `created` (never stored on
 `ModelPrice` — it's a *relative* property), or a richer "top per vendor" once a
@@ -442,6 +448,12 @@ explicit hole, not a silent gap.
 the manifest/grid record. Pre-flight: a facet requesting reasoning on a model
 the roster knows is non-reasoning fails at grid-build, not mid-run (folds in the
 late-error robustness fix). ~120 lines + tests.
+
+**Update (2026-06-19).** A live roster pull found OpenRouter now returns a
+structured **`reasoning`** object per model (`supported_efforts`,
+`default_effort`, `mandatory`; ~58% coverage) — a cleaner pre-flight answer to
+"does this model support reasoning, and at what efforts" than the inferred
+boolean, for the open question below.
 
 **Open questions.** How "this model supports reasoning" is known pre-flight
 (pricing-table `reasoning` flag vs. a runtime probe). Whether `skip_models` is
@@ -568,6 +580,13 @@ the `:free` duplicates, which are the bulk; the survey behind
 exactly **1** suffixed id left in the non-free ≥2023 roster, so exact-id dedup is sufficient
 for now. Building this earns almost nothing until a real duplicate problem
 appears.
+
+**Update (2026-06-19).** A live roster pull confirmed the deferral holds —
+still exactly **1** drawable duplicate (`qwen-plus-2025-07-28` + its `:thinking`
+sibling, arguably a distinct variant to *keep*). It also showed OpenRouter now
+returns a first-class **`canonical_slug`** per model (100% coverage): when this
+is built, grouping by `canonical_slug` replaces the fuzzy suffix-stripping below
+and largely answers the "which variant wins" open question.
 
 **Design sketch (when needed).** A canonical-key collapse at the **roster layer**
 (`_build_universe`, never `refresh_pricing` — the saved table must keep every

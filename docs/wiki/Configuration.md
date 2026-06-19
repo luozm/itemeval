@@ -206,9 +206,12 @@ budget:
   — so embedding and meta/router entries are never sampled. It also **excludes
   free (`$0` output) models**: they are rate-limited `:free` endpoints, not
   representative of the paid models a measurement frame samples (so a
-  `pricing-table` draw never yields a `free` price tier). They stay in the
-  pricing table — name one directly in `solvers.models` if you want it and its
-  price still resolves — they are simply not drawn. The roster metadata
+  `pricing-table` draw never yields a `free` price tier). It likewise excludes
+  **non-reproducible routing aliases** — `-latest` / `:latest` ids and
+  `~`-prefixed variant routes (`openrouter/~anthropic/claude-opus-latest`),
+  which resolve to a moving target a pinned draw can't reproduce. All of these
+  stay in the pricing table — name one directly in `solvers.models` if you want
+  it and its price still resolves — they are simply not drawn. The roster metadata
   that powers the universe filter, `where`, and the metadata `stratify_by`
   dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`, and the
   `created` release date behind `released_after` / `recency`) is captured by

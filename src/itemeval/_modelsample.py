@@ -54,6 +54,16 @@ def stratum(model: str) -> str:
     return parts[0]
 
 
+def _is_routing_alias(model_id: str) -> bool:
+    """True for OpenRouter ids that route to a *moving* target rather than a
+    pinned snapshot — `-latest`/`:latest` aliases and `~`-prefixed variant
+    routes. Such an id can't be reproducibly pinned in a draw, so it is dropped
+    from the drawable pricing-table universe (like free models); name one
+    directly in `solvers.models` to use it anyway.
+    """
+    return model_id.endswith(("-latest", ":latest")) or "/~" in model_id
+
+
 def _price_tier(out_usd: "float | None") -> str:
     """Tier by output (completion) $/Mtok. Fixed edges (documented in the wiki)."""
     if out_usd is None:
@@ -153,11 +163,16 @@ def _build_universe(
         # endpoints, not representative of the paid models a measurement frame
         # samples. They stay in the pricing table (so lookup_price still prices
         # one named directly in solvers.models); they are just not *drawable*.
-        # Free edge matches _price_tier (output_usd_per_mtok <= 0).
+        # Free edge matches _price_tier (output_usd_per_mtok <= 0). Routing
+        # aliases (-latest/:latest/~-prefixed) are likewise dropped — they
+        # resolve to a moving target, so a pinned draw can't reproduce them.
         ids = [
             k
             for k, p in pricing.models.items()
-            if k.startswith("openrouter/") and p.text_model and p.output_usd_per_mtok > 0
+            if k.startswith("openrouter/")
+            and p.text_model
+            and p.output_usd_per_mtok > 0
+            and not _is_routing_alias(k)
         ]
         if not ids:
             raise ConfigError(
