@@ -38,14 +38,14 @@ from itemeval.store._items import upsert_items
 
 if TYPE_CHECKING:
     from inspect_ai.log import EvalLog, EvalSample
-    from inspect_ai.model import ModelUsage
+    from inspect_ai.model import Model, ModelUsage
 
     from itemeval._item import Item
     from itemeval._prepare import PreparedStudy
 
-# (model_id, stage, model_args) -> str | Model; model_args carries per-condition
-# request extras (provider routing, cache keys) built by _endpoints.model_args_for.
-ModelFactory = Callable[[str, str, "dict[str, Any]"], Any]
+# (model_id, stage, model_args) -> Model; model_args carries per-condition request
+# extras (provider routing, cache keys) built by _endpoints.model_args_for.
+ModelFactory = Callable[[str, str, "dict[str, Any]"], "Model"]
 
 
 def enforce_budget_cap(

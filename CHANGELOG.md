@@ -222,6 +222,18 @@ Closes: native-batch-routing
 Closes: parallel-conditions
 
 ### Fixed
+- **Real (non-mock) models no longer crash instantly under the new concurrent
+  stage execution.** With a stage's conditions now running in a single eval
+  (parallel-conditions), each condition carries its own resolved model and
+  inspect reads `task.model.model_args` per task — so the model must be an
+  inspect `Model`. For the common case of a model with no extra request args
+  (no provider routing / cache keys), `resolve_model` returned the bare model-id
+  *string*, so every `generate` and `grade` condition failed at $0 with
+  `AttributeError: 'str' object has no attribute 'model_args'` — no real-model
+  run could start. `resolve_model` now always returns a `Model` (its contract is
+  narrowed accordingly; the dead string branch is gone). A regression in the
+  unreleased parallel-conditions change, missed because every test drove the
+  concurrent path with `mockllm/*` ids, which always resolved to a `Model`.
 - **An errored or empty generation no longer crashes the whole `generate`
   stage.** A sample that errored (or completed with no choices) carries a
   `ModelOutput` whose `choices` list is empty; reading `stop_reason` off it

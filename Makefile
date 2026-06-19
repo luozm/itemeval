@@ -4,7 +4,7 @@
 # "passes locally" means "passes in CI".
 
 .DEFAULT_GOAL := help
-.PHONY: help sync lint fmt test test-all docs-check check build hooks precommit
+.PHONY: help sync lint fmt test test-all test-live docs-check check build hooks precommit
 
 help:  ## list available targets
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -21,11 +21,14 @@ fmt:  ## auto-format and apply safe lint fixes
 	uv run ruff format .
 	uv run ruff check --fix .
 
-test:  ## fast unit tests (no network)
-	uv run pytest -m "not network"
+test:  ## fast unit tests (no network, no paid API)
+	uv run pytest -m "not network and not live"
 
-test-all:  ## full suite, including network (HF Hub) tests
-	uv run pytest
+test-all:  ## full suite, including network (HF Hub) tests; still no paid API
+	uv run pytest -m "not live"
+
+test-live:  ## paid live API smoke (needs OPENAI_API_KEY); pre-push CC hook runs this, never CI
+	uv run pytest -m live
 
 docs-check:  ## doc/version/config-example consistency tests only
 	uv run pytest tests/test_docs_consistency.py -q

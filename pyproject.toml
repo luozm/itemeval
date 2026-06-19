@@ -63,7 +63,10 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["network: hits the network (HF Hub, free); deselect with -m 'not network'"]
+markers = [
+    "network: hits the network (HF Hub, free); deselect with -m 'not network'",
+    "live: hits a paid LLM API (real generate+grade smoke); never in CI — run only via 'make test-live' or the pre-push CC hook",
+]
 
 [dependency-groups]
 dev = [
