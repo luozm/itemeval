@@ -222,6 +222,21 @@ Closes: native-batch-routing
 Closes: parallel-conditions
 
 ### Fixed
+- **`grade` and the grade cost estimate now scope to the current config's gen
+  grid.** Both previously selected gradable solutions by item (and epoch) alone,
+  so a solution still in the append-only store but produced by a gen-condition no
+  longer in the config — e.g. after a config change rehashed the condition ids,
+  stranding the previous roster — was (re-)graded and (re-)priced. The fallout
+  was silent overspend, cross-roster mixing in `gradings.parquet`, and a grade
+  `remaining_usd` that grew with the store and could exceed the full-grid ceiling
+  `usd` (the very figure the money gate enforces on) while ignoring `--policy`.
+  `grade` and `estimate` now count only solutions whose gen-condition is in the
+  current grid — the scope `status` already used, so the runner, the estimate,
+  and the status completion matrix finally agree. The decoupled workflows are
+  unchanged: grading with the same config (add a grader/rubric later, or generate
+  today / grade tomorrow) still scores every stored solution, because the grid
+  ids match — only solutions orphaned by a config change are excluded. To grade
+  an old roster, restore the config that produced it.
 - **Real (non-mock) models no longer crash instantly under the new concurrent
   stage execution.** With a stage's conditions now running in a single eval
   (parallel-conditions), each condition carries its own resolved model and

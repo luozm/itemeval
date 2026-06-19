@@ -422,6 +422,11 @@ def estimate_study(
     reps = prep.plan.replications
     item_ids = [it.id for it in items]
     effective_ids = set(item_ids)
+    # Grade scopes to the current gen grid: solutions whose gen-condition left
+    # the grid (a config change rehashed the ids) are orphans, never (re-)graded
+    # — the same scope the grade runner and `status` use. Without this the grade
+    # *remaining* projection counts orphaned rows and can exceed the ceiling usd.
+    grid_gen_ids = {c.id for c in prep.grid.generate}
     rerun_empty = prep.config.solvers.on_empty == "rerun"
     include_empty = prep.config.solvers.on_empty == "grade"
     gen_warnings, grade_warnings = routing_warnings(prep.config)
@@ -481,6 +486,7 @@ def estimate_study(
             solutions_df["item_id"].isin(effective_ids)
             & (epochs >= epoch_lo)
             & (epochs <= epoch_hi)
+            & solutions_df["condition_id"].isin(grid_gen_ids)
         ]
 
     # One truth value for "cache scheduling active" — the same predicate the

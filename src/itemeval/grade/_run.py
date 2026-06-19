@@ -357,19 +357,27 @@ def run_grade(
         raise StoreError("no solutions in store; run generate first")
 
     # Policy scope: effective items, epochs within the effective replications —
-    # or, with --wave, exactly that wave's epoch block.
+    # or, with --wave, exactly that wave's epoch block. Also scoped to the
+    # current gen grid: solutions whose gen-condition left the grid (a config
+    # change rehashed the ids) are orphans, never (re-)graded — the same scope
+    # the estimator and `status` use. Without this, grade would judge every
+    # stored roster for these items (silent overspend + cross-roster mixing).
     effective_ids = {it.id for it in prep.items_effective}
+    grid_gen_ids = {c.id for c in prep.grid.generate}
     if wave is not None:
         wave_rows = solutions_df[solutions_df["wave_label"] == wave]
         if wave_rows.empty:
             raise StoreError(f"no solutions for wave '{wave}'; run generate --wave {wave} first")
         wave_num = int(wave_rows["wave"].iloc[0])
-        scoped = wave_rows[wave_rows["item_id"].isin(effective_ids)]
+        scoped = wave_rows[
+            wave_rows["item_id"].isin(effective_ids) & wave_rows["condition_id"].isin(grid_gen_ids)
+        ]
     else:
         wave_num = 0
         scoped = solutions_df[
             solutions_df["item_id"].isin(effective_ids)
             & (solutions_df["epoch"].astype(int) <= prep.plan.replications)
+            & solutions_df["condition_id"].isin(grid_gen_ids)
         ]
 
     # Empty (no-error) completions: a distinct channel from API errors. The
