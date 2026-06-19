@@ -578,46 +578,6 @@ variant wins (base? cheapest? most-metadata?) given variants can carry different
 price/context; whether to expose the suffix set as a knob (default: no — keep it
 a fixed internal list per "don't over-engineer").
 
-### Output-modality filter for `solvers.sample`
-**Key:** `sample-output-modality`
-
-**Motivation.** The `pricing-table` universe keeps any model whose `text_model`
-gate passes, and that gate only checks `"text" in output_modalities` — so a model
-that emits **text *and* non-text** survives. A live roster pull (2026-06-19) found
-**10 of 309 drawable ids** emit non-text (8 `image+text`, 2 `audio+text`: the
-`gemini-*-image`, `gpt-*-image`, `gpt-audio*` generators), ~3% and growing as
-multimodal-output models ship. None can be the object of a closed-text eval, so
-today they must be hand-listed in `solvers.sample.exclude` (the recipe a consuming
-study had to use).
-
-**Design sketch.** `--refresh-pricing` already reads
-`architecture.output_modalities` to compute `text_model`, then discards it —
-**persist it** as an additive `output_modalities: list[str] | None` on
-`ModelPrice` (the raw list, not a derived bool, so a later "drop audio-output
-only" filter needs no re-refresh; `None` for the seed / pinned tables, like
-`created`). Add an opt-in `where.output_text_only: bool` to `_apply_where`
-dropping any model whose output set isn't `{"text"}` — parallel to the input-side
-`where.multimodal`. Rejected for list/file universes (already curated, like the
-other `where` booleans); enters the `model_locks.json` `where` spec (a changed
-value fails loudly — clear the lock to re-draw); surfaces wherever the draw
-already reports (`models: sampled N of M …` line, `model_sample` JSON,
-`STUDY_CARD.md`). Each side is ~one clause: a refresh-capture line + field, and
-one filter clause.
-
-**Opt-in, not a default universe gate** — unlike the non-pinnable `-latest` / `~`
-alias ids (dropped from the default universe as a fix, since they break the draw
-lock's reproducibility for *any* sample). A multimodal-*output* model is a
-legitimate, reproducible, paid model — a valid target for a study that *means* to
-sample image/audio-capable models — so the package can't presume it unwanted; the
-filter lets a text-only study say so explicitly, leaving the default frame
-unchanged.
-
-**Open questions.** Whether to also fire a hint when a non-text-output model lands
-in a draw without the filter set (the alias-guard safety-net pattern), or keep it
-purely opt-in. Whether `output_text_only` is the right spelling vs a more general
-`where.output: [text]` allowlist (deferred — no second use yet; one boolean per
-"don't over-engineer").
-
 ---
 
 ## Ops / release

@@ -53,7 +53,10 @@ rubrics (a materializer LLM freezes a per-item rubric from the reference solutio
 reused verbatim by every judge call), folded into `grade` under the single money
 gate (pulled forward from 0.4); and `parallel-conditions` — a stage runs its
 conditions concurrently in one eval (was one model at a time), plus a coarse
-pre-flight wall-clock ETA and a cost-lever status line.
+pre-flight wall-clock ETA and a cost-lever status line; and
+`sample-output-modality` — an opt-in `where.output_text_only` that drops
+image/audio generators (which pass the runnable-text gate by also emitting text)
+from a sampled `pricing-table` roster.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

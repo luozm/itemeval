@@ -127,6 +127,12 @@ def _apply_where(ids: list[str], sample: ModelSample, pricing: PricingTable) -> 
             continue
         if where.multimodal is not None and (p is None or bool(p.multimodal) != where.multimodal):
             continue
+        # output_text_only: a drawable model always has output_modalities (text_model
+        # requires "text" in it); drop those that emit more than text.
+        if where.output_text_only is not None:
+            text_only = p is not None and set(p.output_modalities or []) == {"text"}
+            if text_only != where.output_text_only:
+                continue
         if where.min_context_length is not None and (
             p is None or (p.context_length or 0) < where.min_context_length
         ):

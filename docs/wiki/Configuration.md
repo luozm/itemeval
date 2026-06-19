@@ -125,7 +125,8 @@ budget:
         min_context_length: 131072
         released_after: "2025-01-01" # keep only models released on/after this date
         reasoning: true              # keep only reasoning models
-        multimodal: false            # keep only text-only models
+        multimodal: false            # keep only text-only-INPUT models
+        output_text_only: true       # drop image/audio generators (text-only OUTPUT)
   ```
 
   `n` models are selected with `seed` (deterministic given the seed and the
@@ -171,7 +172,11 @@ budget:
   `max_output_usd_per_mtok` ceiling, a `min_context_length` floor, a
   `released_after` **absolute** `YYYY-MM-DD` release cutoff (uses `created`;
   drops undated models; never wall-clock age, so a pinned table draws
-  identically), and `reasoning` / `multimodal` booleans.
+  identically), `reasoning` / `multimodal` (input-side) booleans, and
+  `output_text_only` — which drops image/audio/video **generators** that still
+  emit text (so pass the runnable-text gate) but can't be the object of a
+  closed-text eval; keeps text-only-output models, including multimodal-*input*
+  ones (gpt-4o/gemini/claude).
 
   The draw is **pinned** in `model_locks.json` beside the study: later runs reuse
   the same models, a roster that has since changed only prints a warning (the
@@ -210,7 +215,8 @@ budget:
   pricing table — name one directly in `solvers.models` if you want it and its
   price still resolves — they are simply not drawn. The roster metadata
   that powers the universe filter, `where`, and the metadata `stratify_by`
-  dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`, and the
+  dimensions (`text_model`, `reasoning`, `multimodal`, `context_length`,
+  `output_modalities` behind `output_text_only`, and the
   `created` release date behind `released_after` / `recency`) is captured by
   `--refresh-pricing`. When the cached table predates this metadata, `prepare`
   refreshes once automatically before a `pricing-table` draw (announced on the

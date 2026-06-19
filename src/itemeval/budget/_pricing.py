@@ -32,6 +32,12 @@ class ModelPrice(BaseModel):
     text_model: bool | None = None  # runnable text->text chat model (text in/out + params)
     reasoning: bool | None = None  # exposes a reasoning parameter
     multimodal: bool | None = None  # accepts more than text as input
+    # Emitted modalities from OpenRouter's architecture (e.g. ["text"],
+    # ["image", "text"]). A model whose set is not exactly {"text"} is an
+    # image/audio/video generator that still passes the text_model gate (which
+    # only checks `"text" in output_modalities`); `where.output_text_only` reads
+    # this to drop them. None for the seed / pinned tables, like `created`.
+    output_modalities: list[str] | None = None
     context_length: int | None = None  # max context window (tokens)
     # OpenRouter release timestamp, Unix seconds (the top-level `created` field;
     # verified unit 2026-06-17). Powers `released_after` filtering and the
@@ -110,9 +116,8 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
         arch = entry.get("architecture") or {}
         params = entry.get("supported_parameters") or []
         in_mods = arch.get("input_modalities") or []
-        text_model = (
-            "text" in in_mods and "text" in (arch.get("output_modalities") or []) and bool(params)
-        )
+        out_mods = arch.get("output_modalities") or []
+        text_model = "text" in in_mods and "text" in out_mods and bool(params)
 
         price = ModelPrice(
             input_usd_per_mtok=inp,
@@ -122,6 +127,7 @@ def refresh_pricing(timeout: float = 30.0) -> PricingTable:
             text_model=text_model,
             reasoning="reasoning" in params,
             multimodal=len(in_mods) > 1,
+            output_modalities=out_mods or None,
             context_length=entry.get("context_length"),
             created=entry.get("created"),
         )
