@@ -84,6 +84,31 @@ def test_pricing_table_universe_is_runnable_text_models_only(tmp_path):
     assert cfg.solvers.models == res.models  # config mutated to the draw
 
 
+def test_pricing_table_drops_routing_aliases(tmp_path):
+    # OpenRouter routing aliases (-latest / :latest / ~-prefixed variant routes)
+    # resolve to a *moving* target, so a "pinned" draw can't reproduce them —
+    # they must not be drawable from the default pricing-table universe, just as
+    # free models aren't.
+    def _m():
+        return ModelPrice(input_usd_per_mtok=1.0, output_usd_per_mtok=5.0, text_model=True)
+
+    table = PricingTable(
+        updated_at="t",
+        source="seed",
+        models={
+            "openrouter/a/model-1": _m(),
+            "openrouter/a/model-2": _m(),
+            "openrouter/a/model-latest": _m(),  # -latest alias
+            "openrouter/~b/model-pin": _m(),  # ~-prefixed variant route
+            "openrouter/c/model:latest": _m(),  # :latest alias
+        },
+    )
+    cfg = _cfg({"n": 2, "seed": 1, "universe": "pricing-table"})
+    res = resolve_model_sample(cfg, table, tmp_path / "model_locks.json")
+    assert res.universe_size == 2  # the three aliases are dropped
+    assert set(res.models) == {"openrouter/a/model-1", "openrouter/a/model-2"}
+
+
 def test_pricing_table_without_text_metadata_raises(tmp_path):
     # openrouter/* keys present but none flagged text_model (e.g. a stale cache)
     stale = PricingTable(

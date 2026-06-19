@@ -222,6 +222,16 @@ Closes: native-batch-routing
 Closes: parallel-conditions
 
 ### Fixed
+- **Non-reproducible routing aliases are no longer drawable in a `pricing-table`
+  sample.** OpenRouter lists `-latest` / `:latest` and `~`-prefixed *variant
+  routes* (e.g. `openrouter/~anthropic/claude-opus-latest`) that resolve to a
+  *moving* target — so a draw could pin one in `model_locks.json` yet silently
+  run a different served model on each run, defeating the lock's reproducibility
+  guarantee (the live roster carries ~10 such ids). The default `pricing-table`
+  universe now drops them before the draw, exactly as it already drops free
+  (`$0` output) models: they stay in the pricing table (so `lookup_price` still
+  prices one named directly in `solvers.models`), they are just not *drawable*.
+  Name one explicitly in `solvers.models` if you accept the non-reproducibility.
 - **A small-context model in a mixed roster no longer 400s on every call.** A
   global `solvers.max_tokens` larger than a model's context window made every
   request to that model a guaranteed HTTP 400 (`input + max_tokens > context`),
