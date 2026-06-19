@@ -7,9 +7,9 @@ It self-disables when there is no ``OPENAI_API_KEY`` (so keyless shells — and 
 which runs no CC hooks anyway — are never blocked) and when
 ``ITEMEVAL_SKIP_LIVE_SMOKE`` is set (a deliberate one-off escape hatch).
 
-Scope: only ``git push`` from a feat/* branch (the /feature flow's branch). Other
-commands, other branches, and the user's own manual pushes pass straight
-through. A successful smoke costs a fraction of a cent.
+Scope: only ``git push`` from a gated branch (feat/* or fix/*). Other commands,
+other branches, and the user's own manual pushes pass straight through. A
+successful smoke costs a fraction of a cent.
 """
 
 from __future__ import annotations
@@ -22,6 +22,11 @@ import sys
 
 ALLOW = 0
 BLOCK = 2  # PreToolUse: a non-zero (2) exit blocks the tool call; stderr goes to Claude.
+
+# Branch prefixes whose CC pushes run the smoke first. feat/* and fix/* both ship
+# code that can regress the real-model path. main and pure-docs branches are left
+# ungated; chore/* (inspect bumps) is a candidate — extend this tuple to cover it.
+GATED_PREFIXES = ("feat/", "fix/")
 
 
 def allow(msg: str | None = None) -> None:
@@ -65,8 +70,8 @@ def main() -> None:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    if not branch.startswith("feat/"):
-        allow()  # only feature pushes are gated
+    if not branch.startswith(GATED_PREFIXES):
+        allow()  # only gated branches (GATED_PREFIXES) run the smoke
     if not os.environ.get("OPENAI_API_KEY"):
         allow("live smoke skipped (no OPENAI_API_KEY) — push allowed")
 

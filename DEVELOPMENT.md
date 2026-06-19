@@ -72,8 +72,8 @@ in a consuming study.
    `dev` scope end-to-end (generate → grade → export) and confirm the export
    schema and cost ledger are unchanged. `make test-live` is also a Claude Code
    pre-push gate (`.claude/hooks/live-smoke-gate.py`): it runs automatically
-   before CC pushes a `feat/*` branch, self-skips without a key, and never runs
-   in CI (the `live` marker is deselected by `make test`/`check`).
+   before CC pushes a `feat/*` or `fix/*` branch, self-skips without a key, and
+   never runs in CI (the `live` marker is deselected by `make test`/`check`).
 5. **Commit** the lockfile bump: `chore: bump inspect-ai 0.3.X -> 0.3.Y`, with
    any behavior notes in the body. Merge.
 6. **On breakage**: pin a temporary upper bound in `pyproject.toml`
