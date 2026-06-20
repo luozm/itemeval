@@ -56,6 +56,7 @@ class _RunContext:
     errors: int = 0
     start_monotonic: float = 0.0
     last_emit: float = 0.0
+    last_emit_ended: int = -1  # ``ended`` count at the last emitted line (dedups the final line)
 
 
 _CTX = _RunContext()
@@ -101,6 +102,7 @@ def _emit(ctx: _RunContext, now: float, force: bool = False) -> None:
     if not force and ctx.last_emit > 0 and (now - ctx.last_emit) < _MIN_INTERVAL_S:
         return
     ctx.last_emit = now
+    ctx.last_emit_ended = ctx.ended
     try:
         print(render_heartbeat(ctx, now), file=sys.stderr, flush=True)
     except Exception:
@@ -132,10 +134,14 @@ def tracking(
     _CTX.errors = 0
     _CTX.start_monotonic = time.monotonic()
     _CTX.last_emit = 0.0
+    _CTX.last_emit_ended = -1
     try:
         yield
     finally:
-        if _CTX.ended:
+        # Force a closing line carrying the terminal counts — unless the last
+        # per-sample emit already showed this exact ``ended`` count (an unthrottled
+        # final sample), which would otherwise duplicate the last line.
+        if _CTX.ended and _CTX.last_emit_ended != _CTX.ended:
             _emit(_CTX, time.monotonic(), force=True)
         _CTX.active = False
 

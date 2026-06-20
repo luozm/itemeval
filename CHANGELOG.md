@@ -490,6 +490,12 @@ Closes: recovery-run-identity
 Closes: parallel-conditions
 
 ### Fixed
+- **The live-run heartbeat no longer prints its closing line twice.** When the
+  final sample's `SampleEnd` emitted an unthrottled heartbeat, `tracking()`'s
+  closing force-emit repeated the identical terminal line (e.g. `… · 6/6 (100%)`
+  appeared twice on stderr at the end of a `generate`/`grade` run). The closing
+  emit now fires only when the terminal `ended` count was not already shown.
+  Cosmetic — the heartbeat carries no fact of record (UX-PATTERNS Law 8).
 - **A pinned `solvers.sample` study no longer bricks after a package update that
   grows the sample spec.** The model-sample lock (`model_locks.json`) compared its
   stored spec against the current one by raw-dict equality, so an itemeval update

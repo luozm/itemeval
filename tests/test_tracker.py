@@ -66,6 +66,25 @@ def test_heartbeat_emits_to_stderr_on_mock_run(study, capsys):
     assert "0 errors" in err
 
 
+def test_no_duplicate_final_heartbeat_line(capsys, monkeypatch):
+    # When the LAST sample's on_sample_end emits the terminal line (not throttled),
+    # tracking()'s closing force-emit must NOT repeat it. Zero the throttle so every
+    # on_sample_end emits, making the final sample's line unthrottled.
+    import asyncio
+
+    monkeypatch.setattr(_tracker, "_MIN_INTERVAL_S", 0.0)
+    tracker = _tracker.LiveTracker()
+
+    class _End:
+        sample = type("S", (), {"error": None})()
+
+    with _tracker.tracking("generate", "exp1", 1, 2, enabled=True):
+        asyncio.run(tracker.on_sample_end(_End()))  # 1/2
+        asyncio.run(tracker.on_sample_end(_End()))  # 2/2 — emits the terminal line
+    err = capsys.readouterr().err
+    assert err.count("2/2 (100%)") == 1  # closing line not duplicated
+
+
 def test_no_heartbeat_when_display_not_silenced(study, capsys):
     cfg, prep = study
     run_generate(prep, display="plain")  # rich/plain carries its own liveness
