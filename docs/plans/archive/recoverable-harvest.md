@@ -1,12 +1,14 @@
 # Implementation plan — recoverable-harvest (make a crashed run's partial progress durable)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-20 against the
-current `main` (post-#18/#19) and inspect_ai as pinned in `uv.lock`. **Re-verified
-2026-06-20** against the post-`parallel-conditions` tree — the anchors below are
-current; deltas vs the first draft are captured in *Re-verification* at the end of
-Context. This file is the working brief for a fresh implementation session and
-carries all the context that session needs (assume no conversation history — only
-this file and the repo). Read these first, in order:
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/recoverable-harvest`
+(CHANGELOG `Closes: recoverable-harvest`). This file is the design record (kept as
+the brief it was built from). Written 2026-06-20 against `main` (post-#18/#19) and
+inspect_ai as pinned in `uv.lock`, re-verified against the post-`parallel-
+conditions` tree before building — the anchors below are current; deltas vs the
+first draft are in *Re-verification* at the end of Context. The Context/workstream
+sections describe what was built; the **Development checklist** at the end records
+the binding UX-PATTERNS audit. For reference, the read order during implementation
+was:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. The load-bearing rule here:
@@ -270,3 +272,43 @@ harvested rows. Land this first.
   builders and keys unchanged.
 - **Cross-machine / S3 logs** — `list_eval_logs` supports `fs_options`, but
   remote log dirs are out of scope; local `logs/<stage>/` only.
+
+---
+
+## Development checklist (UX-PATTERNS, answered at ship 2026-06-20)
+
+1. **Side effects.** Harvest writes recovered rows to the **study dir**
+   (solutions/gradings parquet) — *inside* the dir, so not the classic outside-dir
+   side effect. But auto-harvest **extends a read command's contract** (a read that
+   writes), so it is announced and gets a normative side-effect-ledger row
+   ("Crash-recovery harvest"). It reads on-disk `.eval` (also inside the study dir).
+   No network, no global cache, no locks, no provider state.
+2. **Quotable summary.** `recovered N solutions + M gradings from K interrupted run
+   log(s) into the store (logs/…)` — printed only when rows were recovered (no
+   noise on the common no-crash path).
+3. **JSON parity.** A `harvested` object (`generate_rows`/`grade_rows`/`logs`) rides
+   each auto-harvesting command's `--json` (`GenerateResult`/`GradeResult`/
+   `StatusReport`/`ExportResult`, append-only) and is the whole document for
+   `harvest --json`. `--no-harvest` → `harvested: null`.
+4. **Doc anchor.** `Error-Handling#crash-recovery` owns the concept; `CLI#harvest`
+   the command reference; `Python-API` the `harvest_study` entry + the reads-stay-
+   pure contract; `Agent-Guide` the after-a-kill SOP.
+5. **Hint candidate.** **None added** — harvest introduces no *silent* failure
+   mode (the recovery is loud: announced + `harvested` JSON field). A hint that
+   fires "I recovered your data" on every crash is an announcement, not a
+   silent-failure detector. `--no-harvest` discoverability lives in `--help` + the
+   wiki (capability-before-execution), not a post-hoc hint.
+6. **Knob bucket.** `--no-harvest` is an **optimization/escape-hatch** flag, not a
+   design declaration — the default (auto-harvest on) is the correct invisible
+   behavior; the flag exists only to opt out of an in-dir write on a read.
+7. **Consent class.** Spends **nothing** and **replaces nothing** (purely
+   additive: recovers rows that don't exist; idempotent upsert dedups). So it is
+   *not* part of the money gate and adds no prompt — correct per "nothing blocks
+   but money."
+8. **Surface parity.** CLI (`harvest` + auto on status/export/generate/grade) and
+   Python (`harvest_study(prep)`). Per D3 the Python reads stay pure (no auto-write,
+   no prompt) — the parity is *the explicit function*, not auto behavior.
+9. **Stability.** New CLI command `harvest`, new public `harvest_study`, new
+   `--no-harvest` flag, new append-only `harvested` fields — all bumped in
+   `test_public_api_snapshot.py`/`test_public_api.py` in the same change; no exit
+   code / existing JSON key changed.

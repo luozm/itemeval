@@ -18,6 +18,7 @@ itemeval.run_generate(prep)       # -> GenerateResult (stage 1; writes solutions
 itemeval.run_grade(prep)          # -> GradeResult (stage 2; writes gradings store)
 itemeval.export_study(cfg)        # -> ExportResult (writes export/ tables)
 itemeval.build_status(cfg, prep)  # -> StatusReport (completion matrix)
+itemeval.harvest_study(prep)      # -> HarvestReport (recover a crashed run's .eval into the stores)
 
 itemeval.ExperimentConfig         # the validated config model
 itemeval.Item                     # the canonical item model
@@ -70,6 +71,7 @@ freely:
 | `run_grade` | `GradeResult` | as above plus `parse_failures` |
 | `export_study` | `ExportResult` | `rows`, output paths, `generation_usd`, `grading_usd`, `internally_reconciled`, `cost` (savings + per-provider `CostReport`), `pricing` (provenance) |
 | `build_status` | `StatusReport` | datasets, item counts, per-condition `expected/completed/errors/parse_failures`, spend, manifests |
+| `harvest_study` | `HarvestReport` | `generate_rows`, `grade_rows`, `logs` (rel `.eval` paths recovered into the stores) |
 
 ## Useful keyword arguments
 
@@ -111,6 +113,14 @@ itemeval.estimate_study(prep)            # reads the solutions store automatical
    `itemeval.BudgetExceededError`. `ItemevalError` and `BudgetExceededError`
    are public exports; the narrower classes live in an internal module
    pre-1.0.
+4. **Reads never auto-write; harvest is explicit.** The CLI's `status`/`export`/
+   `generate`/`grade` auto-harvest a crashed run's `.eval` into the stores first
+   (see [Crash recovery](Error-Handling.md#crash-recovery)). On this surface,
+   `build_status`/`export_study`/`prepare_study` stay **pure reads** — a library
+   silently writing to disk on a read is a worse surprise in a notebook than at a
+   CLI. Call `itemeval.harvest_study(prep)` explicitly to project a crashed run's
+   logs into the stores (it returns a `HarvestReport`: `generate_rows`,
+   `grade_rows`, `logs`); it is idempotent.
 
 ## Notes
 

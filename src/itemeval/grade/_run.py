@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._endpoints import cache_provider_of, model_args_for
 from itemeval._errors import StoreError
+from itemeval._harvest import HarvestReport
 from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
@@ -105,6 +106,9 @@ class GradeResult(BaseModel):
     expected_estimate_usd: "float | None" = None  # calibrated remaining; informational
     rows_replaced: "int | None" = None  # existing rows this run planned to overwrite
     gate: "GateResult | None" = None
+    # Crash recovery (recoverable-harvest): rows projected from a prior run's
+    # `.eval` into the store before this run, when the CLI auto-harvested first.
+    harvested: "HarvestReport | None" = None
 
 
 def _base_row(
@@ -214,6 +218,40 @@ def _judge_rows(
             }
         )
     return rows
+
+
+def persist_grade_condition(
+    prep: "PreparedStudy", cond: GradeCondition, pending: "pd.DataFrame", log, run_id: str
+) -> "tuple[list[dict], int, float | None]":
+    """Build judge gradings rows from one grade log and write them + the log
+    index + ledger to the durable stores. The single home for the judge harvest
+    write — shared by the live run (Phase 3) and disk harvest (`_harvest.py`).
+    Returns ``(rows, rows_written, cond_usd)``. Verifiable conditions never go
+    through here (no model call → no `.eval` to recover)."""
+    exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
+    rows = _judge_rows(prep, cond, pending, log, run_id)
+    n = _gradings.upsert_gradings(prep.paths, rows)
+    usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
+    cond_usd = sum(usd_vals) if usd_vals else None
+    _logs.upsert_log_index(
+        prep.paths,
+        [log_index_row(log, prep.paths, run_id, "grade", cond.id, cond.grader_model, cond_usd)],
+    )
+    _ledger.upsert_ledger(
+        prep.paths,
+        [
+            ledger_row(
+                run_id,
+                "grade",
+                cond.id,
+                cond.grader_model,
+                rows,
+                prep.plan.batch,
+                exec_model=exec_grader,
+            )
+        ],
+    )
+    return rows, n, cond_usd
 
 
 def _materialize_rubrics(
@@ -449,10 +487,10 @@ def run_grade(
     )
     total_usd += float(mat_stats["usd"])
 
-    def finalize(cond, rows, *, items_run, log_file, cond_usd, local_rows) -> None:
-        """Shared tail for verifiable + judge: persist gradings and report run."""
+    def finalize(cond, rows, *, n, items_run, log_file, cond_usd, local_rows) -> None:
+        """Shared report tail for verifiable + judge (the write already happened:
+        verifiable upserts inline, judge via persist_grade_condition)."""
         nonlocal rows_written, total_usd, parse_failures
-        n = _gradings.upsert_gradings(prep.paths, rows)
         rows_written += n
         total_usd += cond_usd or 0.0
         parse_failures += sum(1 for r in rows if not r["parse_ok"] and r["error"] is None)
@@ -490,11 +528,14 @@ def run_grade(
             continue
         if cond.kind == "verifiable":
             rows = _verifiable_rows(prep, cond, pending, run_id)
+            n = _gradings.upsert_gradings(prep.paths, rows)
             _ledger.upsert_ledger(
                 prep.paths,
                 [ledger_row(run_id, "grade", cond.id, "(verifiable)", rows, None)],
             )
-            finalize(cond, rows, items_run=len(pending), log_file=None, cond_usd=0.0, local_rows=0)
+            finalize(
+                cond, rows, n=n, items_run=len(pending), log_file=None, cond_usd=0.0, local_rows=0
+            )
             continue
         # Judge: native batch routing on the grader id (sampled id stays
         # recorded); the model rides on the Task so all judges run in one eval.
@@ -565,7 +606,7 @@ def run_grade(
                 message=eval_error_message(log, fatal),
             )
             continue
-        rows = _judge_rows(prep, cond, pending, log, run_id)
+        rows, n, cond_usd = persist_grade_condition(prep, cond, pending, log, run_id)
         local_rows = local_cache_rows(rows)
         judge_models.append(cond.grader_model)
         # Judge tasks always request cache_prompt="auto" (markers on), so an
@@ -582,29 +623,10 @@ def run_grade(
             unpinned_cached.append(cond.grader_model)
         repeated_prefix_calls += int(len(pending) - pending["item_id"].nunique())
         endpoints_effective[cond.id] = endpoint_info(log, cond.grader_model, exec_grader)
-        usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
-        cond_usd = sum(usd_vals) if usd_vals else None
-        _logs.upsert_log_index(
-            prep.paths,
-            [log_index_row(log, prep.paths, run_id, "grade", cond.id, cond.grader_model, cond_usd)],
-        )
-        _ledger.upsert_ledger(
-            prep.paths,
-            [
-                ledger_row(
-                    run_id,
-                    "grade",
-                    cond.id,
-                    cond.grader_model,
-                    rows,
-                    prep.plan.batch,
-                    exec_model=exec_grader,
-                )
-            ],
-        )
         finalize(
             cond,
             rows,
+            n=n,
             items_run=len(pending),
             log_file=rel_to_study(prep.paths, log.location),
             cond_usd=cond_usd,

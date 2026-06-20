@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._config import ExperimentConfig
 from itemeval._errors import ConfigError, StoreError
+from itemeval._harvest import HarvestReport
 from itemeval._hints import Hint, detect_unpriced_models
 from itemeval._util import utc_now_iso
 from itemeval.budget._pricing import PricingProvenance, describe_pricing, load_pricing
@@ -118,6 +119,10 @@ class ExportResult(BaseModel):
     # Set when export ran with snapshot=NAME / --snapshot NAME:
     snapshot: "SnapshotInfo | None" = None
     snapshot_path: "str | None" = None  # == snapshot.path, the documented return
+    # Crash recovery (recoverable-harvest): rows the CLI auto-harvested from a prior
+    # run's `.eval` into the store before this export (None = nothing/opt-out). Set
+    # by the CLI; the Python `export_study` stays a pure read (use `harvest_study`).
+    harvested: "HarvestReport | None" = None
 
 
 _SOLUTION_COLS = {

@@ -36,6 +36,7 @@ _LAZY = {
     "run_grade": ("itemeval.grade._run", "run_grade"),
     "export_study": ("itemeval.store._export", "export_study"),
     "build_status": ("itemeval._status", "build_status"),
+    "harvest_study": ("itemeval._harvest", "harvest_study"),
 }
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "build_status",
     "estimate_study",
     "export_study",
+    "harvest_study",
     "load_config",
     "prepare_study",
     "run_generate",

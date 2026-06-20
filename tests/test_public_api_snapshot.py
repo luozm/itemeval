@@ -24,13 +24,14 @@ PUBLIC_API = {
     "build_status",
     "estimate_study",
     "export_study",
+    "harvest_study",
     "load_config",
     "prepare_study",
     "run_generate",
     "run_grade",
 }
 
-CLI_COMMANDS = {"init", "estimate", "generate", "grade", "export", "status", "rebless"}
+CLI_COMMANDS = {"init", "estimate", "generate", "grade", "export", "status", "rebless", "harvest"}
 
 
 def test_public_api_surface_unchanged():

@@ -163,3 +163,33 @@ duplicates work:
 
 Interrupting a run (Ctrl-C, a crash, a provider outage mid-run) needs no special
 handling — just run the same command again.
+
+## Crash recovery — getting a hard-killed run back into the store
+
+Resume above relies on the **store** holding what completed. But durable parquet
+(`solutions`/`gradings`) is written only **after** a stage's `inspect_ai.eval()`
+returns cleanly — itemeval projects the run's *in-memory* logs into the store at
+that point. A **hard** mid-run death — `SIGKILL`, OOM, or a force-killed stuck
+request (the kind of kill that a flaky endpoint provokes) — never reaches that
+step, so it can write **zero** rows even though most of the work finished. The
+progress isn't lost: inspect writes its `.eval` log **incrementally** (it is the
+write-ahead log) under `logs/<stage>/`. It just hasn't been read back into the
+store, so `status`/`export` go blind to the killed run.
+
+**`itemeval harvest CONFIG`** reads those `.eval` files back and projects them
+into the stores through the same row builders a live run uses — making the crashed
+run's completed cells readable and resumable without re-running. It is idempotent
+(skips logs already in the store; the upserts dedup), so it is always safe to run.
+
+You rarely call it by hand: **`status`, `export`, `generate`, and `grade`
+auto-harvest first**, so the store reflects a crashed run *whenever you look*, and
+a re-run resumes the recovered cells instead of re-paying them. When rows are
+recovered, those commands print `recovered N solutions + M gradings from K
+interrupted run log(s) into the store …` (Law 1: a read/resume command that writes
+recovered rows announces it; `harvested` rides the `--json` payload). Pass
+`--no-harvest` to skip the automatic step. The distinction from ordinary resume:
+*resume* re-runs what the store says is missing; *harvest* first teaches the store
+what a crashed run already finished, so the missing set is honest. A normal Ctrl-C
+or clean interrupt needs no harvest — only a kill that skipped the store write
+does, and the auto-harvest handles it for you. See
+[CLI#harvest](CLI.md#harvest--recover-a-crashed-runs-logs-into-the-store).

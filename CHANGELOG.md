@@ -7,6 +7,40 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Crash-survivable progress: harvest `.eval` into the stores** (`itemeval
+  harvest`, and auto-harvest on read/resume). Durable parquet was written
+  all-or-nothing *after* a clean `eval()` return: a stage ran one
+  `inspect_ai.eval()` over all conditions, then projected the **in-memory** logs
+  into the solutions/gradings stores — never the on-disk `.eval`, with no
+  `try/finally` salvage. So a hard mid-run death (SIGKILL/OOM, or a force-killed
+  stuck SSL read) wrote **zero rows**: every store surface (`status`/`export`/
+  `report`) went blind to the killed run, and a persistently flaky study that
+  never completed one clean `eval()` produced no reportable store at all — though
+  ~all the data already existed in inspect's `.eval` (its incremental write-ahead
+  log) plus the response cache. itemeval now **reads that `.eval` back**. A new
+  `itemeval harvest CONFIG [--json]` projects every unharvested generate + grade
+  `.eval` into the stores through the **same** row builders the live run uses
+  (factored into shared `persist_generate_condition` / `persist_grade_condition`
+  helpers, so a recovered row is byte-identical to a live one), recovering a
+  crashed run's epoch/wave identity from its manifest (written *before* the eval,
+  so it survives the kill). It is **idempotent** two ways — a classifier skips
+  logs already in the stores, and the content-keyed upserts dedup regardless — so
+  it is safe to run repeatedly. `status`, `export`, `generate`, and `grade`
+  **auto-harvest first** (announced: `recovered N solutions + M gradings from K
+  interrupted run log(s) into the store …`; UX-PATTERNS Law 1 — a read/resume
+  command that writes recovered rows), so the store reflects reality *whenever you
+  look* and a re-run resumes (never re-pays) the recovered cells; `--no-harvest`
+  opts out, and the harvest rides an append-only `harvested` object on each
+  command's `--json`. The Python surface adds `harvest_study(prep) ->
+  HarvestReport` (new public export); `prepare_study`/`build_status`/
+  `export_study` stay pure reads (no hidden writes — a library never surprises a
+  notebook). The live-during-run variant (an inspect hook flushing rows mid-run)
+  is deferred to ship with the mid-run tracker (shared heartbeat hook). Owns the
+  `.eval` harvested/unharvested lifecycle classifier that `recovery-run-identity`
+  will consume. No new dependency.
+
+Closes: recoverable-harvest
+
 - **Safe re-bless + change briefing for a drifted sample lock** (`itemeval
   rebless`): when a pinned `solvers.sample` spec *genuinely* changes (a real
   `n`/`seed`/`stratify_by`/`where`/`universe` edit — additive fields are already

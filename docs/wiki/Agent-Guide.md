@@ -36,10 +36,19 @@ itemeval generate CONFIG [--yes] [--json] [--force] [--condition F]...  # stage 
 itemeval grade    CONFIG [--yes] [--json] [--force] [--grader N] [--rubric N] [--condition F]...  # stage 2 (paid if judge)
 itemeval export   CONFIG [--json]               # tables + ledger (no API calls)
 itemeval status   CONFIG [--json]               # completion matrix (no API calls)
+itemeval harvest  CONFIG [--json]               # recover a crashed run's logs into the store (no API calls)
 ```
 
-- `estimate`, `status`, `export` never call a model API and are always safe.
-  First-ever run downloads the dataset from the HF Hub (free).
+- `estimate`, `status`, `export`, `harvest` never call a model API and are always
+  safe. First-ever run downloads the dataset from the HF Hub (free).
+- **After a hard kill** (SIGKILL/OOM/force-kill — not a clean Ctrl-C), the store
+  can be empty even though most of the run finished, because durable parquet is
+  written only after the stage returns cleanly. `status`/`export`/`generate`/
+  `grade` **auto-harvest** the crashed run's on-disk `.eval` back into the store
+  first (printing `recovered N …`; `harvested` in `--json`), so resume never
+  re-pays the recovered cells. Run `itemeval harvest CONFIG` to do it explicitly,
+  or `--no-harvest` to skip it. See
+  [Crash recovery](Error-Handling.md#crash-recovery).
 - `--json` emits the full structured report — **prefer it over parsing
   human-readable stdout** for the no-cost commands (`estimate`, `status`,
   `export`). **Run the paid `generate`/`grade` without `--json`**, though: it

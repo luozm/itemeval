@@ -4,6 +4,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from itemeval._config import ExperimentConfig
+from itemeval._harvest import HarvestReport
 from itemeval._modelsample import ModelSampleResult
 from itemeval._prepare import PreparedStudy, prepare_study
 from itemeval.store import _gradings, _ledger, _solutions
@@ -78,6 +79,9 @@ class StatusReport(BaseModel):
     manifests: list[str]  # sorted filenames
     snapshots: list[SnapshotStatus] = []  # frozen export snapshots, sorted by name
     waves: list[WaveStatus] = []  # per-wave completion; single entry when no waves used
+    # Crash recovery (recoverable-harvest): rows the CLI auto-harvested from a prior
+    # run's `.eval` into the store before building this report (None = nothing/opt-out).
+    harvested: "HarvestReport | None" = None
 
 
 def _usd(series) -> float:

@@ -117,41 +117,6 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
-### Crash-survivable progress (harvest `.eval` into the stores)
-**Key:** `recoverable-harvest`
-
-**Motivation.** Durable parquet is written **all-or-nothing after a clean
-`eval()` return**: `generate/_run.py` runs one `inspect_ai.eval()` over all
-conditions, then harvests per-condition from the **in-memory** logs — never the
-on-disk `.eval`, no `try/finally` salvage. A hard mid-run death (SIGKILL/OOM, or
-the force-kill of a stuck SSL read) writes **zero rows**; progress survives only
-in inspect's `.eval`, which our code never reads back. So every store surface
-(`status`/`export`/`report`) is blind to a killed run, and a persistently flaky
-study that never completes one clean `eval()` yields no reportable store at all —
-though ~all the data already exists in cache + `.eval`.
-
-**Design sketch.** inspect already writes `.eval` incrementally (it's the WAL);
-we just never project it back. Add a `_harvest.py` that reads stage `.eval` files
-from disk (`read_eval_log`/`list_eval_logs`) and runs the **existing** row
-builders into the stores — harvesting a stray `.eval` is self-describing
-(`log.eval.metadata["itemeval"]["condition_id"]`) and idempotent (content-key
-dedup). Trigger it on **every read** (`status`/`export`/`prepare`) and via an
-explicit `itemeval harvest` command, announced (a read command that writes — Law
-1), with `--no-harvest` to opt out. A live-during-run variant via inspect's hooks
-API is deferred to ship with the mid-run tracker (shared heartbeat hook).
-
-**Implementation notes.** Full brief in
-[docs/plans/recoverable-harvest.md](plans/recoverable-harvest.md): 2 workstreams
-(disk-harvest projection / classifier + integration), file:line grounded, no
-fundamental blockers. **Gates `recovery-run-identity`** — R's "recovery fills
-holes" assumes harvested rows, and R's per-experiment index consumes this
-feature's `.eval` lifecycle classifier (harvested/unharvested) rather than owning
-it.
-
-**Open questions.** Resolved-with-recommendation in the brief: ship W1+W2
-(read-triggered), defer the live hook to C; auto-harvest defaults on (announced)
-with `--no-harvest`. Confirm at the brief-review gate.
-
 ### Recovery-aware run identity (experiment-scoped, with attempts)
 **Key:** `recovery-run-identity`
 

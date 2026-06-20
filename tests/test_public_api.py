@@ -12,6 +12,7 @@ PROMISED = [
     "build_status",
     "estimate_study",
     "export_study",
+    "harvest_study",
     "load_config",
     "prepare_study",
     "run_generate",

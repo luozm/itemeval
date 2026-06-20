@@ -114,6 +114,40 @@ def _load(args, *, allow_spec_drift: bool = False) -> "tuple":
     return cfg, prep
 
 
+def _print_harvest(report, *, suffix: str = "") -> None:
+    """Announce a harvest (Law 1: a read/resume command that writes recovered rows
+    to the store). Self-contained line with numbers (Law 8). Printed only when rows
+    were recovered."""
+    where = ", ".join(sorted({f.rsplit("/", 1)[0] for f in report.logs}))
+    bits = []
+    if report.generate_rows:
+        bits.append(f"{report.generate_rows:,} solutions")
+    if report.grade_rows:
+        bits.append(f"{report.grade_rows:,} gradings")
+    print(
+        f"recovered {' + '.join(bits)} from {len(report.logs)} interrupted run "
+        f"log(s) into the store ({where}){suffix}"
+    )
+
+
+def _maybe_harvest(prep, args):
+    """Project any unharvested `.eval` from a crashed run into the stores before a
+    read or resume, unless `--no-harvest`. Idempotent and recovers the user's own
+    data, so it is default-on; announced because it extends a read command's
+    contract (Law 1). Returns the `HarvestReport` for `--json` parity (None when
+    suppressed or nothing was recovered)."""
+    if getattr(args, "no_harvest", False):
+        return None
+    from itemeval._harvest import harvest_study
+
+    report = harvest_study(prep)
+    if not report.recovered:
+        return None
+    if not getattr(args, "json", False):
+        _print_harvest(report, suffix=" — pass --no-harvest to skip")
+    return report
+
+
 def _store_is_empty(prep, stage: str, condition_filter: "list[str] | None") -> bool:
     """Zero completed rows for the selected conditions of this stage's store."""
     from itemeval.generate._run import matches_filter
@@ -467,6 +501,10 @@ def _run_stage(args, stage, runner) -> int:
     from itemeval.budget._estimator import estimate_study
 
     cfg, prep = _load(args)
+    # Recover a crashed prior run's `.eval` into the store before estimating/resuming,
+    # so resume skips already-completed work (never re-paid) and the estimate is
+    # accurate. Announced (Law 1); --no-harvest opts out.
+    harvested = _maybe_harvest(prep, args)
     est = estimate_study(prep, force=args.force, wave=args.wave)
     st = est.generate if stage == "generate" else est.grade
     if not args.json:
@@ -533,6 +571,7 @@ def _run_stage(args, stage, runner) -> int:
     result.expected_estimate_usd = st.expected_remaining_usd
     result.rows_replaced = st.rows_replaced
     result.gate = gate
+    result.harvested = harvested  # --json parity for the pre-run auto-harvest
     if pre_hints:
         result.hints = [*result.hints, *pre_hints]
     if args.json:
@@ -615,14 +654,16 @@ def _cmd_grade(args) -> int:
 
 
 def _cmd_export(args) -> int:
-    from itemeval._config import load_config
     from itemeval._hints import emit_hints
     from itemeval.store._export import export_study
 
-    result = export_study(
-        load_config(args.config, work_dir=getattr(args, "base_dir", None)),
-        snapshot=args.snapshot,
-    )
+    # Read-only command: build a prep (drift-tolerant) so it can auto-harvest a
+    # crashed run's `.eval` into the store before exporting. export_study itself
+    # stays a pure read (re-prepares internally; the Python API never auto-writes).
+    cfg, prep = _load(args, allow_spec_drift=True)
+    harvested = _maybe_harvest(prep, args)
+    result = export_study(cfg, snapshot=args.snapshot)
+    result.harvested = harvested
     if args.json:
         print(result.model_dump_json(indent=2))
         return 0
@@ -659,7 +700,9 @@ def _cmd_status(args) -> int:
     cfg, prep = _load(
         args, allow_spec_drift=True
     )  # read-only: inspect a pinned panel even if drifted
+    harvested = _maybe_harvest(prep, args)  # reflect a crashed run before reporting
     report = build_status(cfg, prep)
+    report.harvested = harvested
     if args.json:
         print(report.model_dump_json(indent=2))
         return 0
@@ -757,6 +800,21 @@ def _cmd_rebless(args) -> int:
     return 0
 
 
+def _cmd_harvest(args) -> int:
+    from itemeval._harvest import harvest_study
+
+    cfg, prep = _load(args, allow_spec_drift=True)  # read-only; tolerate a drifted pin
+    report = harvest_study(prep)
+    if args.json:
+        print(report.model_dump_json(indent=2))
+        return 0
+    if report.recovered:
+        _print_harvest(report)
+    else:
+        print("harvest: nothing to recover — the store already reflects every run log")
+    return 0
+
+
 def _cmd_init(args) -> int:
     import yaml
 
@@ -850,6 +908,13 @@ def _build_parser() -> argparse.ArgumentParser:
             help="override budget.policy for this invocation only (config unchanged)",
         )
 
+    def add_no_harvest(p):
+        p.add_argument(
+            "--no-harvest",
+            action="store_true",
+            help="skip auto-recovering a crashed run's .eval logs into the store",
+        )
+
     p = add("estimate", _cmd_estimate, "projected $ per stage; no model API calls")
     add_policy(p)
     p.add_argument("--stage", choices=["generate", "grade", "all"], default="all")
@@ -895,6 +960,7 @@ def _build_parser() -> argparse.ArgumentParser:
         if name == "grade":
             p.add_argument("--grader", action="append", help="only this grader (repeatable)")
             p.add_argument("--rubric", action="append", help="only this rubric (repeatable)")
+        add_no_harvest(p)
 
     p = add("export", _cmd_export, "long-format parquet + CSV + cost ledger")
     p.add_argument(
@@ -905,10 +971,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "(with manifests, locks, snapshot.json, STUDY_CARD.md); an existing "
         "name is refused",
     )
+    add_no_harvest(p)
     p.add_argument("--json", action="store_true")
 
     p = add("status", _cmd_status, "expanded grid + completion matrix; no model API calls")
     add_policy(p)
+    add_no_harvest(p)
+    p.add_argument("--json", action="store_true")
+
+    p = add(
+        "harvest",
+        _cmd_harvest,
+        "recover a crashed run's .eval logs into the store (idempotent; no API calls)",
+    )
     p.add_argument("--json", action="store_true")
 
     p = add(

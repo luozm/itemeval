@@ -2,14 +2,14 @@
 
 ```
 itemeval init DIR [options]
-itemeval {estimate,generate,grade,export,status,rebless} CONFIG [options]
+itemeval {estimate,generate,grade,export,status,rebless,harvest} CONFIG [options]
 ```
 
 `init` scaffolds a new study into `DIR`; every other command takes the config
 YAML path as its argument. `itemeval` is installed as a console script;
 `python -m itemeval.cli` is equivalent.
 
-The config-taking commands (`estimate|generate|grade|export|status|rebless`)
+The config-taking commands (`estimate|generate|grade|export|status|rebless|harvest`)
 accept `-C/--base-dir DIR` to set the **work directory** that anchors outputs (the
 `studies/` tree). It defaults to the current directory; inputs (prompts/rubrics)
 always resolve relative to the config file, independent of `-C`.
@@ -101,7 +101,7 @@ reports `parse_failures` (rows kept with `parse_ok=false`).
 ## `export` — analysis-ready tables
 
 ```
-itemeval export CONFIG [--snapshot NAME] [--json]
+itemeval export CONFIG [--snapshot NAME] [--no-harvest] [--json]
 ```
 
 Joins gradings × solutions into `export/gradings_long.parquet` (one row per
@@ -117,7 +117,7 @@ vs row sums; reconciliation against provider dashboards is a manual step).
 ## `status` — completion matrix, no model API calls
 
 ```
-itemeval status CONFIG [--json]
+itemeval status CONFIG [--no-harvest] [--json]
 ```
 
 Prints datasets (id @ revision, item counts), the policy-effective scope,
@@ -146,6 +146,31 @@ and reuse. Prints the field-level diff and `N models kept`; `--json` emits the
 — deleting `model_locks.json` — re-draws a **different** panel (a different frame),
 so prefer `rebless` whenever you want to keep your results. Errors (exit 2) if
 there is no lock or the spec already matches.
+
+## `harvest` — recover a crashed run's logs into the store
+
+```
+itemeval harvest CONFIG [--json]
+```
+
+Durable parquet (`solutions`/`gradings`) is written **after** a stage's
+`inspect_ai.eval()` returns cleanly. A hard mid-run death — SIGKILL, OOM, or a
+force-killed stuck request — leaves the progress only in inspect's on-disk `.eval`
+(its incremental write-ahead log), so `status`/`export` go blind to the killed
+run. `harvest` reads those `.eval` files back and projects them into the stores
+through the same row builders a live run uses, so a crashed run's completed cells
+become readable — and resumable — without re-running. It is **idempotent** (it
+skips logs already in the store and the upserts dedup), so running it repeatedly is
+safe; with nothing to recover it prints `harvest: nothing to recover`. `--json`
+emits the `HarvestReport` (`generate_rows`, `grade_rows`, `logs`).
+
+You rarely need to call it directly: **`status`, `export`, `generate`, and
+`grade` auto-harvest first**, so the store reflects a crashed run *whenever you
+look*, and a re-run resumes the recovered cells instead of re-paying them. When a
+harvest recovers rows, those commands print a `recovered N solutions + M gradings
+from K interrupted run log(s) into the store …` line (and carry a `harvested`
+object under `--json`). Pass **`--no-harvest`** to any of them to skip the
+automatic recovery. See [Error-Handling#crash-recovery](Error-Handling.md#crash-recovery).
 
 ## Hints
 

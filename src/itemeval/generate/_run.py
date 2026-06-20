@@ -14,6 +14,7 @@ from itemeval._hints import (
     detect_openrouter_unpinned_cache,
     detect_unpriced_models,
 )
+from itemeval._harvest import HarvestReport
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval._modelsample import ModelSampleResult
@@ -142,6 +143,9 @@ class GenerateResult(BaseModel):
     expected_estimate_usd: "float | None" = None  # calibrated remaining; informational
     rows_replaced: "int | None" = None  # existing rows this run planned to overwrite
     gate: "GateResult | None" = None
+    # Crash recovery (recoverable-harvest): rows projected from a prior run's
+    # `.eval` into the store before this run, when the CLI auto-harvested first.
+    harvested: "HarvestReport | None" = None
 
 
 def resolve_display(display: "str | None") -> str:
@@ -492,6 +496,50 @@ def rows_from_generate_log(
     return rows
 
 
+def persist_generate_condition(
+    prep: "PreparedStudy",
+    cond: GenCondition,
+    log: "EvalLog",
+    run_id: str,
+    *,
+    epoch_offset: int = 0,
+    wave: int = 0,
+    wave_label: "str | None" = None,
+) -> "tuple[list[dict], int, float | None]":
+    """Build solutions rows from one generate log and write them + the log index
+    + ledger to the durable stores. The single home for the generate harvest
+    write — shared by the live run (Phase 3) and disk harvest (`_harvest.py`), so
+    a recovered `.eval` lands byte-identically to a live one. Returns
+    ``(rows, rows_written, cond_usd)``."""
+    exec_model = prep.native_routes.get(cond.model, cond.model)
+    rows = rows_from_generate_log(
+        log, cond, prep, run_id, epoch_offset=epoch_offset, wave=wave, wave_label=wave_label
+    )
+    n = _solutions.upsert_solutions(prep.paths, rows)
+    usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
+    cond_usd = sum(usd_vals) if usd_vals else None
+    _logs.upsert_log_index(
+        prep.paths,
+        [log_index_row(log, prep.paths, run_id, "generate", cond.id, cond.model, cond_usd)],
+    )
+    _ledger.upsert_ledger(
+        prep.paths,
+        [
+            ledger_row(
+                run_id,
+                "generate",
+                cond.id,
+                cond.model,
+                rows,
+                prep.plan.batch,
+                epoch_offset=epoch_offset,
+                exec_model=exec_model,
+            )
+        ],
+    )
+    return rows, n, cond_usd
+
+
 def run_generate(
     prep: "PreparedStudy",
     *,
@@ -692,36 +740,13 @@ def run_generate(
             )
             continue
 
-        rows = rows_from_generate_log(
-            log, cond, prep, run_id, epoch_offset=epoch_offset, wave=wave_num, wave_label=wave
+        rows, n, cond_usd = persist_generate_condition(
+            prep, cond, log, run_id, epoch_offset=epoch_offset, wave=wave_num, wave_label=wave
         )
         run_models.append(cond.model)
         endpoints_effective[cond.id] = endpoint_info(log, cond.model, exec_model)
-        n = _solutions.upsert_solutions(prep.paths, rows)
         rows_written += n
-
-        usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
-        cond_usd = sum(usd_vals) if usd_vals else None
         total_usd += cond_usd or 0.0
-        _logs.upsert_log_index(
-            prep.paths,
-            [log_index_row(log, prep.paths, run_id, "generate", cond.id, cond.model, cond_usd)],
-        )
-        _ledger.upsert_ledger(
-            prep.paths,
-            [
-                ledger_row(
-                    run_id,
-                    "generate",
-                    cond.id,
-                    cond.model,
-                    rows,
-                    prep.plan.batch,
-                    epoch_offset=epoch_offset,
-                    exec_model=exec_model,
-                )
-            ],
-        )
         ok_rows = [r for r in rows if r["error"] is None]
         if ok_rows:
             sampling_effective[cond.id] = {

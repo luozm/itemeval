@@ -21,9 +21,10 @@ order:
    *Study migration* below). Also the inspect_ai boundary rules (wrap don't
    fork; pass through don't rename; inspect imports stay in the
    task-builder/orchestrator modules).
-4. `docs/plans/recoverable-harvest.md` — **prerequisite feature (S)**. It makes
-   a crashed run's progress durable and owns the `.eval` lifecycle classifier
-   (`classify_logs`) that W3 consumes. **Build `recoverable-harvest` before this.**
+4. `docs/plans/archive/recoverable-harvest.md` — **prerequisite feature (S),
+   shipped 2026-06-20**. It made a crashed run's progress durable and owns the
+   `.eval` lifecycle classifier (`itemeval._harvest.classify_logs`) that W3
+   consumes — import it from `itemeval._harvest`, don't re-implement.
 5. This file end-to-end before coding any part — the workstreams share one
    identity model.
 
