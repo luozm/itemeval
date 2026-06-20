@@ -72,7 +72,11 @@ the reusable terminal-vs-transient error classifier that `request-timeout`'s
 deferred "don't retry a terminal timeout" refinement will consume; and
 `truncation-signal` — a `truncated` status channel + export column + hint that
 flags non-empty length-cap (`max_tokens`/`model_length`) completions, so a budget
-cut is no longer silently scored as a content failure.
+cut is no longer silently scored as a content failure; and `cache-projection` — a
+pre-flight `cache: N cached / M fresh → ~$X real` line that probes inspect's local
+response cache before the gate (reusing inspect's own `CacheEntry`), so a recovery
+/ `--force` / replication re-run's true cost is visible up front (the gate still
+compares the ceiling).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

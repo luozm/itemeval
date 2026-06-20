@@ -16,6 +16,24 @@ if TYPE_CHECKING:
     from itemeval._prepare import DatasetOrigin
 
 
+def render_generate_input(item: Item, cond: GenCondition, template: Template) -> "str | list":
+    """The exact `Sample.input` a generate condition sends for one item — a plain
+    rendered string, or (split_prompt) a system(head)+user(item) message pair.
+    Shared by the task builder and the cache probe so the two never drift (the
+    probe must reconstruct byte-identical messages to predict a response-cache hit).
+    """
+    values = {"input": item.input, "id": item.id}
+    if cond.split_prompt:
+        # Static template head -> system message (provider cache breakpoint lands
+        # there); remainder starting at the item -> user message.
+        idx = template.text.find("{input}")
+        if idx > 0:
+            head = render_template(template.text[:idx], values)
+            tail = render_template(template.text[idx:], values)
+            return [ChatMessageSystem(content=head), ChatMessageUser(content=tail)]
+    return render_template(template.text, values)
+
+
 def build_generate_task(
     items: "list[Item]",
     cond: GenCondition,
@@ -44,21 +62,9 @@ def build_generate_task(
     def group_key(item: Item) -> str:
         return cond.id if head_is_static else item.id
 
-    def render_input(item: Item) -> "str | list":
-        values = {"input": item.input, "id": item.id}
-        if cond.split_prompt:
-            # Static template head -> system message (provider cache breakpoint
-            # lands there); remainder starting at the item -> user message.
-            idx = template.text.find("{input}")
-            if idx > 0:
-                head = render_template(template.text[:idx], values)
-                tail = render_template(template.text[idx:], values)
-                return [ChatMessageSystem(content=head), ChatMessageUser(content=tail)]
-        return render_template(template.text, values)
-
     samples = [
         Sample(
-            input=render_input(item),
+            input=render_generate_input(item, cond, template),
             target=item.target,
             id=item.id,
             metadata={

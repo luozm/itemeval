@@ -32,10 +32,20 @@ Two layers:
 - **Resume**: re-running a command skips work that's already done — completed
   calls aren't even attempted after an interruption or crash.
 - **Call memo**: if an identical call *is* issued again (extending
-  replications, `--force` after a fix, duplicate judge inputs), it's answered
-  from your disk for $0 instead of re-billed. When this happens the run says
-  so — `12 calls answered from local cache ($0) — cache dir: …` — and the
-  run JSON carries `local_cache_rows`/`local_cache_dir`.
+  replications, `--force` after a fix, duplicate judge inputs, or a recovery
+  re-run of a crashed flaky study), it's answered from your disk for $0 instead
+  of re-billed. When this happens the run says so — `12 calls answered from local
+  cache ($0) — cache dir: …` — and the run JSON carries
+  `local_cache_rows`/`local_cache_dir`.
+
+  **Seen up front, too.** Before the gate, `estimate`/`generate`/`grade` *project*
+  how much of the memo a re-run will hit, so a cheap recovery isn't over-stated:
+  `cache: 38 of 40 remaining calls already in the local response cache ($0) →
+  ~$0.04 real of $2.10 projected`. (Append-only `cache_hits`/`cache_misses`/
+  `real_remaining_usd` in `estimate --json`.) It is informational — the money gate
+  still compares the full ceiling, never the cached-down figure. The line appears
+  only when something is actually cached (so an ordinary first run stays silent),
+  and a materializing rubric's judge calls are counted as fresh to be safe.
 
 In practice this matters because iterating *is* the workflow — you will
 re-run things, and none of it re-bills.

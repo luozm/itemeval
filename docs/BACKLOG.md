@@ -117,22 +117,6 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
-### Pre-flight cache projection
-**Key:** `cache-projection`
-
-**Motivation.** A re-run's true cost is invisible up front: you can't see how
-much will be served from inspect's response cache ($0) versus paid fresh, so the
-pre-flight estimate over-states a cheap recovery re-run.
-
-**Design sketch.** Probe inspect's response cache (its own dir,
-`inspect_cache_dir("generate")`) before the gate and report `N cached / M fresh
-→ ~$X real`. Distinct from `reuse-savings` (which reports reuse *post-hoc*); this
-is a *pre-flight projection*. Pairs with `preflight-check` as one report.
-
-**Implementation notes.** The risk is replicating inspect's cache key well
-enough to predict hits without a live call. Read-only probe; no new spend, no
-new knob.
-
 ### Custom scorer plugin point + more built-in verifiable scorers
 **Key:** `scorer-plugins`
 

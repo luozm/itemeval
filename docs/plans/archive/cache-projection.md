@@ -1,6 +1,6 @@
 # Implementation plan — cache-projection (pre-flight response-cache hit projection)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-20 against
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/cache-projection` (CHANGELOG `Closes: cache-projection`); design record below. Written 2026-06-20 against
 inspect_ai 0.3.x (pinned in `uv.lock`). **The load-bearing facts below are tied
 to inspect's private response-cache internals — re-verify every `[verify]` on an
 inspect bump; a guard test (W-test) pins them so a drift goes red, not silent.**

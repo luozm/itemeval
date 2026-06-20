@@ -208,6 +208,21 @@ def _expected_clause(st, stage: str) -> str:
     return f"calibrated from {cal.observed_rows} observed {noun}{detail}"
 
 
+def _cache_projection_line(st) -> "str | None":
+    """Pre-flight response-cache projection (cache-projection): how many remaining
+    calls will replay from inspect's local cache ($0), so a recovery/--force/
+    replication re-run isn't over-stated. Silent when nothing is cached (never
+    noise). Informational — the gate still compares the ceiling (Law 2)."""
+    if not st.cache_hits:
+        return None
+    total = st.cache_hits + st.cache_misses
+    return (
+        f"cache: {st.cache_hits} of {total} remaining calls already in the local "
+        f"response cache ($0) → ~{_fmt_usd(st.real_remaining_usd)} real of "
+        f"{_fmt_usd(st.remaining_usd)} projected"
+    )
+
+
 def _print_estimate(est, stage: str) -> None:
     stages = {"generate": est.generate, "grade": est.grade}
     selected = list(stages.items()) if stage == "all" else [(stage, stages[stage])]
@@ -226,6 +241,9 @@ def _print_estimate(est, stage: str) -> None:
         exp_clause = _expected_clause(st, name)
         if exp_clause:
             print(f"  expected ~{_fmt_usd(st.expected_usd)} ({exp_clause})")
+        cache_line = _cache_projection_line(st)
+        if cache_line:
+            print(f"  {cache_line}")
         eta = _eta_line(st)
         if eta:
             print(eta)
@@ -528,6 +546,9 @@ def _run_stage(args, stage, runner) -> int:
         exp_clause = _expected_clause(st, stage)
         if exp_clause:
             print(f"  expected ~{_fmt_usd(st.expected_remaining_usd)} ({exp_clause})")
+        cache_line = _cache_projection_line(st)
+        if cache_line:
+            print(f"  {cache_line}")
         eta = _eta_line(st)
         if eta:
             print(eta)

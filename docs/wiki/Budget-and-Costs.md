@@ -75,6 +75,18 @@ JSON parity (append-only): `expected_usd` / `expected_remaining_usd` /
 `calibration` on each `StageEstimate`; `expected_estimate_usd` on the
 `generate`/`grade` run results and the gate-stop document.
 
+### Pre-flight cache projection
+
+When the local response cache holds calls a re-run will re-issue (a recovery
+re-run after a crash, `--force`, a `replications` bump), the estimate would
+otherwise over-state the bill. So `estimate`/`generate`/`grade` also probe that
+cache before the gate and add `cache: N of M remaining calls already in the local
+response cache ($0) → ~$X real of $Y projected` — append-only `cache_hits` /
+`cache_misses` / `real_remaining_usd` on each `StageEstimate`. Like the expected
+figure it is **informational** (the gate still compares the ceiling), it shows
+only when something is actually cached, and it never re-bills — see
+[Cost-Savings#2-never-pay-for-the-same-call-twice--automatic](Cost-Savings.md#2-never-pay-for-the-same-call-twice--automatic).
+
 ## The gate
 
 `generate` and `grade` compare their stage's **remaining** projection (what

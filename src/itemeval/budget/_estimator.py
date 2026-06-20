@@ -139,6 +139,16 @@ class StageEstimate(BaseModel):
     remaining_calls: int = 0
     completed_cells: int = 0  # completed (condition x item x epoch) cells in scope
     total_cells: int = 0
+    # Pre-flight local-response-cache projection (cache-projection; append-only).
+    # Of the remaining calls, how many will inspect serve from its local response
+    # cache ($0) vs pay fresh — so a recovery/--force/replication re-run isn't
+    # over-stated. `real_remaining_usd` prices only the fresh remainder
+    # (≈ remaining_usd × misses/(hits+misses)). INFORMATIONAL ONLY — the money
+    # gate keeps comparing `remaining_usd`/`usd` (UX-PATTERNS Law 2). 0 / equal
+    # to remaining_usd when caching is off or nothing is cached.
+    cache_hits: int = 0
+    cache_misses: int = 0
+    real_remaining_usd: float = 0.0
     rows_replaced: int = 0  # existing rows the planned run would overwrite
     # Stage-relevant subset of Estimate.warnings (append-only): what generate/
     # grade relay pre-gate without cross-stage noise.
@@ -1015,6 +1025,20 @@ def estimate_study(
         exec_models = {prep.native_routes.get(c.model, c.model) for c in conditions if c.calls > 0}
         concurrency = max(1, len(exec_models))
         lat = median_latency_s(solutions_df if stage == "generate" else gradings_df)
+        # Pre-flight response-cache projection: of the remaining calls, how many
+        # already sit in inspect's local response cache ($0). Only when caching is
+        # on (else the probe is a no-op); the inspect-importing probe is reached
+        # lazily, so a no-cache estimate stays engine-free and light.
+        cache_hits = cache_misses = 0
+        real_remaining = delta["usd"]
+        if prep.config.cache:
+            from itemeval._cacheprobe import probe_stage
+
+            probe = probe_stage(prep, stage, force=force)
+            cache_hits, cache_misses = probe.cache_hits, probe.cache_misses
+            probed = cache_hits + cache_misses
+            if probed > 0:
+                real_remaining = delta["usd"] * cache_misses / probed
         return StageEstimate(
             hints=stage_hints(stage),
             stage=stage,
@@ -1042,6 +1066,9 @@ def estimate_study(
             expected_remaining_usd=delta["exp"],
             calibration=calibration,
             native_route_savings_usd=delta["route_savings"],
+            cache_hits=cache_hits,
+            cache_misses=cache_misses,
+            real_remaining_usd=real_remaining,
         )
 
     gen_cal = _calibration(

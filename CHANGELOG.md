@@ -7,6 +7,35 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Pre-flight response-cache projection** (the `estimate`/`generate`/`grade`
+  pre-gate line gains a `cache: N of M remaining calls already in the local
+  response cache ($0) → ~$X real of $Y projected` clause). A re-run's true cost was
+  invisible up front: a call missing from the *store* may still replay from
+  inspect's **local response cache** at $0 — inspect writes that cache inside
+  `Model.generate`, right after the API returns, *before* the sample reaches the
+  `.eval`/store, so a crash leaves a window where the response cache has a call the
+  store doesn't. (Recovery re-runs are the key case, alongside `--force` and
+  `replications` bumps; an ordinary first-run/resume correctly shows nothing
+  cached.) itemeval now **probes that cache before the gate**: it reconstructs the
+  identical `CacheEntry` inspect builds (same rendered messages, `GenerateConfig`,
+  resolved model → `base_url`, epoch) and checks whether its key file exists —
+  *reusing inspect's own `CacheEntry`/`cache_path`* rather than re-deriving the
+  md5 (a round-trip guard test pins the reconstruction to the installed inspect, so
+  an inspect cache-key change goes red instead of silently mis-counting). Both
+  stages are probed (a materializing rubric's judge calls are conservatively
+  counted fresh — never a false $0). New append-only `StageEstimate` fields
+  `cache_hits` / `cache_misses` / `real_remaining_usd` (the latter prices only the
+  fresh remainder). **The money gate is unchanged** — it keeps comparing the
+  ceiling `remaining_usd` (UX-PATTERNS Law 2); `real_remaining_usd` is
+  informational, beside the expected-cost figure. Read-only and lazy: the probe
+  resolves models / imports inspect only when `config.cache` is on **and** the
+  response cache is non-empty, so an ordinary cold-cache estimate stays
+  engine-free and untouched, and any probe failure (e.g. a model that can't be
+  resolved without a key) silently yields no projection rather than breaking the
+  estimate. No new knob, no new dependency.
+
+Closes: cache-projection
+
 - **Truncation as a first-class signal** (`truncated` status channel + export
   column + a `truncated-completions` hint). A solver that stops on a length cap
   (`max_tokens`, or the model's own `model_length`) returns a **truncated-but-
