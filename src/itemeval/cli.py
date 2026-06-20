@@ -835,6 +835,36 @@ def _cmd_harvest(args) -> int:
     return 0
 
 
+def _cmd_preflight(args) -> int:
+    from itemeval._preflight import preflight_study
+
+    # Read-only over the store; tolerate a drifted sample pin like estimate/status.
+    cfg, prep = _load(args, allow_spec_drift=True)
+    report = preflight_study(prep)
+    if args.json:
+        print(report.model_dump_json(indent=2))
+        return 1 if report.has_dead else 0
+    _print_datasets(prep)
+    _print_model_sample(prep)
+    # Law 1: a network side effect (a ~1-token call per distinct model) + sub-cent
+    # spend, announced in one quotable line (Law 8) with the counts.
+    print(
+        f"preflight: probed {len(report.models)} distinct model(s) over the provider "
+        f"network (~1 token each) — {report.ok} ok · {report.dead} dead · "
+        f"{report.unverified} unverified"
+    )
+    for m in report.models:
+        if m.status != "ok":
+            print(f"  {m.status}: {m.id} — {m.detail}")
+    if report.has_dead:
+        print(
+            "fix the roster (edit solvers.models / graders, or the sample where: "
+            "filter) and re-run, then generate/grade",
+            file=sys.stderr,
+        )
+    return 1 if report.has_dead else 0
+
+
 def _cmd_init(args) -> int:
     import yaml
 
@@ -1003,6 +1033,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p = add("status", _cmd_status, "expanded grid + completion matrix; no model API calls")
     add_policy(p)
     add_no_harvest(p)
+    p.add_argument("--json", action="store_true")
+
+    p = add(
+        "preflight",
+        _cmd_preflight,
+        "probe each distinct model with a ~1-token call; report roster health "
+        "(exit 1 if any model is dead) before a paid run",
+    )
+    add_policy(p)
     p.add_argument("--json", action="store_true")
 
     p = add(

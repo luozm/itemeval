@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal
 import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
+from itemeval._classify import labeled
 from itemeval._endpoints import cache_provider_of, model_args_for
 from itemeval._hints import (
     Hint,
@@ -237,13 +238,15 @@ def run_condition_evals(
 
 
 def eval_error_message(log: "EvalLog | None", fatal: "str | None") -> str:
-    """Why a planned condition produced no usable rows (status mapping)."""
+    """Why a planned condition produced no usable rows (status mapping), prefixed
+    with its terminal/transient classification so the summary line says whether to
+    fix the roster or just re-run (preflight-check)."""
     if fatal is not None:
-        return fatal
+        return labeled(fatal)
     if log is None:
         return "no log returned for condition"
     detail = f" — {log.error.message}" if log.error else ""
-    return f"eval status: {log.status}{detail}"
+    return labeled(f"eval status: {log.status}{detail}")
 
 
 def matches_filter(cond_id: str, slug: str, filters: "list[str] | None") -> bool:
@@ -749,7 +752,7 @@ def run_generate(
                 errors=0,
                 usd=None,
                 log_file=None,
-                message=f"{type(e).__name__}: {e}",
+                message=labeled(f"{type(e).__name__}: {e}", exc=e),
             )
             continue
         planned.append((cond, items, exec_model, task))

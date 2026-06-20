@@ -88,11 +88,45 @@ condition as `status="error"` with the exception message, and **continues to the
 next condition**. No rows are written for that condition. The CLI prints:
 
 ```
-[2/4] gpt-5-mini_builtin-standard_default  ERROR: PrerequisiteError: ...
+[2/4] gpt-5-mini_builtin-standard_default  ERROR: terminal: PrerequisiteError: ...
 ```
+
+The message is prefixed with its **classification** — `terminal:` (the model is
+dead/EOL or your key can't reach it — fix the roster) or `transient:` (a timeout,
+rate limit, or 5xx — re-running the same command may succeed; see
+[Retry and resume](#retry-and-resume--re-run-the-same-command)) — so a glance at
+the summary tells you whether to edit the config or just retry. An unclassifiable
+failure keeps its raw message, unprefixed.
 
 The command's exit code is **1** if any condition errored. Other conditions in
 the same run still complete and persist normally.
+
+## Pre-flight model check (`itemeval preflight`)
+
+A dead model otherwise isn't discovered until it fails mid-paid-run. Run
+`itemeval preflight CONFIG` **before** a paid stage to probe each distinct model
+in the grid with one ~1-token call and see roster health up front:
+
+```
+preflight: probed 40 distinct model(s) over the provider network (~1 token each) — 39 ok · 1 dead · 0 unverified
+  dead: openrouter/some/eol-model — BadRequestError: 404 model not found
+```
+
+Each model is **ok**, **dead** (a *terminal* failure — fix the roster), or
+**unverified** (a *transient* failure the probe can't confirm, e.g. a rate limit —
+never reported dead, since deleting a model that was merely throttled is the worse
+mistake). The same **terminal-vs-transient** distinction labels in-run condition
+errors (above). `preflight` exits **1** when any model is dead, so
+
+```
+itemeval preflight cfg.yaml && itemeval generate cfg.yaml
+```
+
+stops before spend if the roster is broken. It is a deliberately-invoked command
+(invoking it is your consent to its sub-cent spend) — *not* run automatically
+inside `generate`/`grade`. `--json` carries `ok`/`dead`/`unverified` counts and a
+per-model `{id, status, detail, http_status}` array. `mockllm/*` ids probe ok with
+no network. Full reference: [CLI#preflight](CLI.md#preflight--probe-roster-health-before-a-paid-run).
 
 ## Setup errors (before any model call)
 

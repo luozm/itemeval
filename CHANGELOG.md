@@ -7,6 +7,35 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Pre-flight model check** (`itemeval preflight CONFIG`): probe every distinct
+  model in the grid with one ~1-token call and report roster health
+  (`39 ok · 1 dead · 0 unverified`) **before** committing to a paid run, so a dead
+  model (a `404` EOL, bad auth) is caught at sub-cent cost instead of failing
+  mid-paid-run and flooding the log. It ships as a **separate staged command**
+  (like `estimate`) rather than auto-running inside `generate`/`grade`: invoking
+  it is the consent to its tiny spend, so the probe never spends model money the
+  user did not ask for (the money gate stays the only *surprising* spend) and adds
+  no per-run latency. The probe calls inspect's published `Model.generate`
+  directly (`max_tokens=1`, `max_retries=0`) — wrapping, not forking — and writes
+  no `.eval` log. Exit `1` when any model is **dead** (so `preflight && generate`
+  short-circuits for agents/CI), else `0`; `--json` carries `ok`/`dead`/
+  `unverified` counts and a per-model `{id, status, detail, http_status}` array.
+  Mock (`mockllm/*`) ids probe ok with no network. New public `preflight_study(
+  prep) -> PreflightReport` (Python surface; never prompts). It is built on, and
+  ships, a reusable **terminal-vs-transient error classifier** (`_classify`): a
+  pure function that labels a model-call failure `terminal` (dead/EOL/auth — fix
+  the roster) vs `transient` (timeout/rate-limit/5xx — retryable) vs `unknown`,
+  biased conservatively so a merely rate-limited model is never reported dead. The
+  same classifier now prefixes each errored condition's one-line summary message
+  in `generate`/`grade` (`terminal: 404 model not found` vs `transient: timeout`),
+  so a run's failures say whether to edit the roster or just re-run. The shipped
+  `request-timeout` feature's deferred "don't retry a terminal timeout" refinement
+  will consume this classifier; suppressing inspect's per-sample retry on a
+  terminal error is itself out of scope here (it needs an inspect retry hook). No
+  new config knob, no new exit code, no new dependency.
+
+Closes: preflight-check
+
 - **Per-attempt request timeout** (`solvers.attempt_timeout` /
   `graders.<name>.attempt_timeout`): bound how long one model attempt may stall
   before it is abandoned and retried. Neither itemeval nor inspect set any request

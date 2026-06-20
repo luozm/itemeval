@@ -32,6 +32,7 @@ see `CLAUDE.md` in the repo.)
 ```
 itemeval init DIR [--with-templates]            # scaffold config.yaml (no API calls)
 itemeval estimate CONFIG [--refresh-pricing] [--json]   # projected $; NO model calls
+itemeval preflight CONFIG [--json]              # probe roster: ~1 token/model; exit 1 if any dead
 itemeval generate CONFIG [--yes] [--json] [--force] [--condition F]...  # stage 1 (paid)
 itemeval grade    CONFIG [--yes] [--json] [--force] [--grader N] [--rubric N] [--condition F]...  # stage 2 (paid if judge)
 itemeval export   CONFIG [--json]               # tables + ledger (no API calls)
@@ -41,6 +42,13 @@ itemeval harvest  CONFIG [--json]               # recover a crashed run's logs i
 
 - `estimate`, `status`, `export`, `harvest` never call a model API and are always
   safe. First-ever run downloads the dataset from the HF Hub (free).
+- `preflight` is the one cheap roster check that *does* call the API — one
+  ~1-token call per distinct model (sub-cent), surfacing dead models (404 EOL,
+  bad auth) before they fail mid-paid-run. Chain it: `itemeval preflight cfg &&
+  itemeval estimate cfg --json` — it **exits 1 when any model is dead**, so a
+  broken roster short-circuits before you spend. It is *not* run automatically;
+  invoke it yourself when sampling a fresh roster. See
+  [CLI#preflight](CLI.md#preflight--probe-roster-health-before-a-paid-run).
 - **After a hard kill** (SIGKILL/OOM/force-kill — not a clean Ctrl-C), the store
   can be empty even though most of the run finished, because durable parquet is
   written only after the stage returns cleanly. `status`/`export`/`generate`/
@@ -127,6 +135,7 @@ itemeval init my_study && cd my_study
 # 3. Validate without spending
 itemeval status   config.yaml --json   # config parses; grid is what you expect
 itemeval estimate config.yaml --refresh-pricing --json   # projected $; check warnings
+itemeval preflight config.yaml --json  # roster alive? (~1 token/model; exit 1 if any dead)
 
 # 4. Dev run (cheap), then inspect
 itemeval generate config.yaml --yes

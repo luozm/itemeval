@@ -1,6 +1,8 @@
 # Implementation plan — preflight-check (pre-flight model probe + terminal/transient classifier)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-20 against
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/preflight-check`
+(CHANGELOG `Closes: preflight-check`). This file is the design record; the
+"working brief" framing below is past tense. Written 2026-06-20 against
 inspect_ai 0.3.x (pinned in `uv.lock`) — re-verify the `[verify]` facts below if
 that moved. This file is the working brief for a fresh implementation session: it
 carries all context that session needs. Read these first, in order:

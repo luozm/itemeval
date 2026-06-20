@@ -14,6 +14,7 @@ PROMISED = [
     "export_study",
     "harvest_study",
     "load_config",
+    "preflight_study",
     "prepare_study",
     "run_generate",
     "run_grade",

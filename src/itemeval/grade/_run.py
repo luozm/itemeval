@@ -28,6 +28,7 @@ from itemeval.budget._pricing import (
     provider_of,
 )
 from itemeval.budget._routing import NativeRoute
+from itemeval._classify import labeled
 from itemeval._mockmodels import resolve_model
 from itemeval._identity import invocation_handle, resolve_identity
 from itemeval._experiments import update_experiment_index
@@ -624,7 +625,7 @@ def run_grade(
                 errors=0,
                 usd=None,
                 log_file=None,
-                message=f"{type(e).__name__}: {e}",
+                message=labeled(f"{type(e).__name__}: {e}", exc=e),
             )
             continue
         planned.append((cond, pending, exec_grader, task))

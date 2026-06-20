@@ -2,19 +2,19 @@
 
 ```
 itemeval init DIR [options]
-itemeval {estimate,generate,grade,export,status,rebless,harvest} CONFIG [options]
+itemeval {estimate,preflight,generate,grade,export,status,rebless,harvest} CONFIG [options]
 ```
 
 `init` scaffolds a new study into `DIR`; every other command takes the config
 YAML path as its argument. `itemeval` is installed as a console script;
 `python -m itemeval.cli` is equivalent.
 
-The config-taking commands (`estimate|generate|grade|export|status|rebless|harvest`)
+The config-taking commands (`estimate|preflight|generate|grade|export|status|rebless|harvest`)
 accept `-C/--base-dir DIR` to set the **work directory** that anchors outputs (the
 `studies/` tree). It defaults to the current directory; inputs (prompts/rubrics)
 always resolve relative to the config file, independent of `-C`.
 
-`estimate`, `generate`, `grade`, and `status` also accept
+`estimate`, `preflight`, `generate`, `grade`, and `status` also accept
 `--policy {dev,full-interactive,full-batch}`, overriding `budget.policy` for
 that invocation only (see
 [Budget-and-Costs#policies](Budget-and-Costs.md#policies)).
@@ -55,6 +55,35 @@ into a local cache first. Projections show the **full** policy-effective
 grid plus the **remaining** figure (completed cells subtracted — what the
 next run can actually spend; the money gate operates on it). See
 [Budget-and-Costs#estimation](Budget-and-Costs.md#estimation).
+
+## `preflight` — probe roster health before a paid run
+
+```
+itemeval preflight CONFIG [--policy POLICY] [--json]
+```
+
+Fires **one ~1-token call per distinct model** in the grid (solver models +
+judge models) and reports roster health, so a dead model — a `404` EOL, a model
+your key can't reach — is caught at sub-cent cost instead of failing mid-paid-run
+and flooding the log:
+
+```
+preflight: probed 40 distinct model(s) over the provider network (~1 token each) — 39 ok · 1 dead · 0 unverified
+  dead: openrouter/some/eol-model — BadRequestError: 404 model not found
+```
+
+Each model is labelled **ok**, **dead** (a *terminal* failure — fix the roster),
+or **unverified** (a *transient* failure like a timeout or rate limit — the probe
+can't confirm it, and deliberately never reports it dead). **Exit `1`** when any
+model is dead, else `0`, so `itemeval preflight cfg && itemeval generate cfg`
+short-circuits before spend. `--json` carries the `ok`/`dead`/`unverified` counts
+and a `models[]` array of `{id, status, detail, http_status}`. See
+[Error-Handling#preflight](Error-Handling.md#preflight).
+
+This is a **deliberately-invoked** command, like `estimate`: it is *not* run
+automatically inside `generate`/`grade` (invoking it is your consent to its tiny
+spend, and the money gate stays the only thing that spends without asking).
+`mockllm/*` models probe ok with no network call.
 
 ## `generate` — stage 1 (resumable)
 

@@ -135,25 +135,6 @@ upstream-rooted defect — tracked in KNOWN-ISSUES.)
 column); `stop_reason` is already on the solutions row (`generate/_run.py`). No
 new knob. ~60 lines + tests.
 
-### Pre-flight model check
-**Key:** `preflight-check`
-
-**Motivation.** A dead model (e.g. `404` EOL) isn't caught until it fails
-mid-paid-run, and per-condition failures flood the log. The user should see
-roster health *before* committing spend.
-
-**Design sketch.** Before the paid loop, fire one ~1-token call per distinct
-model and surface a roster summary (`39 ok / 1 dead: <model> 404 EOL`), letting
-the user fix the roster first. Don't retry **terminal** errors; collapse each
-condition's failure to one concise line. Builds the **terminal-vs-transient
-error classifier** — a shared primitive the now-shipped `request-timeout` will
-consume once this lands (it currently retries timed-out attempts unconditionally).
-
-**Implementation notes.** New pre-flight step before the money gate; the
-classifier in a small shared module; `ConditionRunReport.message` already exists
-for the concise per-condition line. Pairs with `cache-projection` as one
-"before you spend, here's what will happen" pre-flight report.
-
 ### Pre-flight cache projection
 **Key:** `cache-projection`
 

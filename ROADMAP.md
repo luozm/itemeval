@@ -65,7 +65,11 @@ experiment-scoped (`experiment_id` + `attempt` replace `run_id`, derived from a
 semantic config digest), so a recovery re-run of an unchanged config **converges**
 its provenance the way data already does instead of forking, with a per-experiment
 attempt rollup, a recovery-vs-new announcement, and `--new-run` to fork
-deliberately (a non-additive store rename — ships a clean-break `Study migration`).
+deliberately (a non-additive store rename — ships a clean-break `Study migration`);
+and `preflight-check` — an `itemeval preflight` command that probes each distinct
+model with a ~1-token call and reports roster health before a paid run, shipping
+the reusable terminal-vs-transient error classifier that `request-timeout`'s
+deferred "don't retry a terminal timeout" refinement will consume.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the
