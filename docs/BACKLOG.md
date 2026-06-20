@@ -117,6 +117,82 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
+### Crash-survivable progress (harvest `.eval` into the stores)
+**Key:** `recoverable-harvest`
+
+**Motivation.** Durable parquet is written **all-or-nothing after a clean
+`eval()` return**: `generate/_run.py` runs one `inspect_ai.eval()` over all
+conditions, then harvests per-condition from the **in-memory** logs — never the
+on-disk `.eval`, no `try/finally` salvage. A hard mid-run death (SIGKILL/OOM, or
+the force-kill of a stuck SSL read) writes **zero rows**; progress survives only
+in inspect's `.eval`, which our code never reads back. So every store surface
+(`status`/`export`/`report`) is blind to a killed run, and a persistently flaky
+study that never completes one clean `eval()` yields no reportable store at all —
+though ~all the data already exists in cache + `.eval`.
+
+**Design sketch.** inspect already writes `.eval` incrementally (it's the WAL);
+we just never project it back. Add a `_harvest.py` that reads stage `.eval` files
+from disk (`read_eval_log`/`list_eval_logs`) and runs the **existing** row
+builders into the stores — harvesting a stray `.eval` is self-describing
+(`log.eval.metadata["itemeval"]["condition_id"]`) and idempotent (content-key
+dedup). Trigger it on **every read** (`status`/`export`/`prepare`) and via an
+explicit `itemeval harvest` command, announced (a read command that writes — Law
+1), with `--no-harvest` to opt out. A live-during-run variant via inspect's hooks
+API is deferred to ship with the mid-run tracker (shared heartbeat hook).
+
+**Implementation notes.** Full brief in
+[docs/plans/recoverable-harvest.md](plans/recoverable-harvest.md): 2 workstreams
+(disk-harvest projection / classifier + integration), file:line grounded, no
+fundamental blockers. **Gates `recovery-run-identity`** — R's "recovery fills
+holes" assumes harvested rows, and R's per-experiment index consumes this
+feature's `.eval` lifecycle classifier (harvested/unharvested) rather than owning
+it.
+
+**Open questions.** Resolved-with-recommendation in the brief: ship W1+W2
+(read-triggered), defer the live hook to C; auto-harvest defaults on (announced)
+with `--no-harvest`. Confirm at the brief-review gate.
+
+### Recovery-aware run identity (experiment-scoped, with attempts)
+**Key:** `recovery-run-identity`
+
+**Motivation.** itemeval keeps two artifact classes under two identity rules:
+**data** (`solutions`/`gradings.parquet`) is content-keyed, so re-runs
+**converge** into one store; **provenance** (`run_id`, `manifests/*.json`, the
+`.eval` pile in the shared stage dir) is invocation-keyed, so re-runs **fork**.
+A *deliberately different* experiment should fork — that's the reproducibility
+guarantee. But a **recovery re-run** (same config, finishing error/interrupt
+holes) converges the data while forking the provenance anyway: a second
+`run_id`/manifest/`.eval` pile for what is *one experiment*, with nothing
+marking them as attempts of the same intent. Flaky endpoints make recovery the
+*common* path, so the fragmentation bites constantly — and a `solutions.run_id`
+column that mixes ids after recovery is hard to read.
+
+**Design sketch.** Make run identity **experiment-scoped with attempts**;
+default for an unchanged config = **recovery (converge + supersede)**, fresh
+provenance only for genuinely new/changed work. R's real job is to make
+*provenance* converge the way *data* already does: **rename** the `run_id`
+column to `experiment_id` (derived) + `attempt` (int), where
+`experiment_id = sha256(config_digest : study : stage)` and the digest is the
+**parsed/normalized** config — identity-bearing fields only, so comments,
+whitespace, and execution knobs (`max_concurrency`) never change identity (the
+existing raw-bytes `config_sha256` is redefined to this digest and reused for
+drift detection). Recovery is detected by the digest alone (an `experiment_id`
+that already has a manifest); grown items / roster drift under an unchanged
+config are a **soft warning, not a fork**. A persisted per-experiment index
+(`manifests/experiments/<id>.json`) holds the attempts + current result set;
+stale `.eval` is marked superseded (prune is opt-in). Foundational — gates the
+mid-run tracker, which must read run state as experiments+attempts.
+
+**Implementation notes.** Full brief in
+[docs/plans/recovery-run-identity.md](plans/recovery-run-identity.md): 3
+workstreams (identity / detection / convergence), file:line grounded, decisions
+locked. **Non-additive** schema change (a `run_id` rename) — ships a `Study
+migration` note + result-preserving clean-break tip per the pre-1.0 carve-out
+in `DEVELOPMENT.md`. Owns the `_identity.py` normalization helper that P0's
+lock-spec fix reuses (`normalized_spec()`). Optionally consumes **D**'s
+terminal-vs-transient classifier to *label* missing cells (not needed for the
+fork decision under Choice A).
+
 ### Custom scorer plugin point + more built-in verifiable scorers
 **Key:** `scorer-plugins`
 
