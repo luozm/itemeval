@@ -213,6 +213,59 @@ unless the scaffold/help tier proves insufficient.
 
 ## Tier 2 — measurement depth
 
+### Provider-aware reroute for soft failures
+**Key:** `output-validity-reroute`
+
+**Motivation.** OpenRouter load-balances each call across provider backends; a
+flaky one returns a **soft failure** — HTTP 200 with `finish_reason=error` (or an
+unmapped reason inspect flattens to `stop_reason="unknown"`) plus empty/truncated
+content. `allow_fallbacks` only fires on *hard* failures (5xx), inspect treats the
+200 as final (no retry), so the bad cell is stored and graded as a real (low/empty)
+score — a false floor at full cost. A real dev run hit this on multiple models
+(`glm-5.1`→GMICloud, `kimi-k2.6`→DigitalOcean, `qwen3.5`→Phala), each clean via a
+different backend; the study's stopgap is a hand-maintained
+`provider_routing: {ignore: [...]}` blocklist that a new item/model keeps
+defeating. This automates it: detect the soft failure, re-issue excluding the
+backend that produced it, capped, then leave an honest record.
+
+**Design sketch.** Builds directly on `provider-finish-capture` (the
+`served_provider` + `native_finish_reason` columns are the detection substrate)
+and on `solvers.provider_routing` (the verbatim OpenRouter object we already pass
+through). A new **opt-in** knob `solvers.max_reroutes: int | None` (default
+`None` = off — zero behavior change unless set): after `generate`'s main eval, any
+in-scope solution row that is a soft failure (no API error, but
+`native_finish_reason == "error"` or `stop_reason == "unknown"`) is re-issued with
+the failed `served_provider` added to `provider: {ignore: [...]}`, up to
+`max_reroutes` rounds (accumulating the bad backends). A recovered cell replaces
+the bad row; a cell still failing after the cap keeps its honest soft-failure row
+(no fake score) and is counted in the run summary + a hint. Re-issues are fresh
+(cache off) and announced (extra spend, Law 1).
+
+**Implementation notes.** Post-eval reroute loop in `generate/_run.py` (a Phase 4
+after persist; self-contained off the store so it also cleans up prior-run soft
+failures on resume): per still-bad condition, rebuild a task whose samples are the
+bad cells (each carrying its target epoch in metadata, run `epochs=1`, cache off),
+set the model via `model_args_for(provider_routing=merge_provider_ignore(...))`,
+run through the existing `run_condition_evals`, and persist with a reroute-aware
+extractor (epoch from metadata, not positional). Pieces: `soft_invalid_mask` in
+`store/_solutions.py` (beside `truncated_mask`); `merge_provider_ignore` in
+`_endpoints.py` (pure); `max_reroutes` on `SolverSpec` + `_NON_IDENTITY_SOLVERS`
+(operational retry policy, like `provider_routing`/`attempt_timeout` — non-identity
+so a recovery run converges and cleans up); `GenerateResult` fields
+(`rerouted`/`reroute_recovered`/`reroute_unresolved`) + a summary line + a
+`reroute-residue` hint. ~200 lines + tests (mask + merge units; a recovery
+integration via a seeded bad cell + normal mock; an unresolved-after-cap via a
+factory emitting `stop_reason="unknown"`).
+
+**Limits / out of scope.** Single-provider models can't be rerouted (no alternate
+backend — needs preflight detection + study substitution, see
+`preflight-endpoints`); reroute is skipped under native batch (a batch job can't
+re-issue mid-flight) and for wave/offset runs (those are fresh observations).
+Grade-side reroute (judge soft failures) and grade-time exclusion of the residue
+are separate follow-ups (the latter is the "extend the validity gate to
+error/empty at grade time" item). Truncation (a legit budget cut) and empty
+completions keep their own mechanisms (`truncation-signal` / `solvers.on_empty`).
+
 ### Grader replication + judge sampling configs
 **Key:** `judge-replication`
 
