@@ -4,7 +4,6 @@ import hashlib
 import json
 import math
 import os
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,11 +20,6 @@ def sha256_hex(data: bytes) -> str:
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def new_run_id(stage: str) -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"{stage}_{ts}_{uuid.uuid4().hex[:8]}"
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:

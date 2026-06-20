@@ -59,7 +59,7 @@ next run can actually spend; the money gate operates on it). See
 ## `generate` — stage 1 (resumable)
 
 ```
-itemeval generate CONFIG [-y/--yes] [--force] [--condition F]...
+itemeval generate CONFIG [-y/--yes] [--force] [--new-run] [--condition F]...
                   [--display {none,plain,rich,full}] [--json]
                   [--policy P] [--wave LABEL]
 ```
@@ -67,10 +67,17 @@ itemeval generate CONFIG [-y/--yes] [--force] [--condition F]...
 Flow: estimate → print projection → **gate** → run each generate condition
 serially → upsert solutions, log index, ledger → write manifest. Conditions
 already complete print `skipped: complete`. A condition whose eval fails is
-reported and the rest continue (final exit 1).
+reported and the rest continue (final exit 1). The summary names the run
+identity — `recovery: attempt N of experiment <id> …` when a re-run recovered
+an existing experiment, or `experiment: <id> · attempt 1 (new)` for a fresh one
+(see [Outputs#run-identity](Outputs-and-Schemas.md#run-identity)).
 
 - `-y/--yes` confirms the gate non-interactively (never overrides `max_usd`).
 - `--force` re-runs completed work (rows are replaced, not duplicated).
+- `--new-run` starts a **fresh experiment** instead of recovering the existing
+  one. An unchanged config otherwise recovers (same `experiment_id`, next
+  `attempt`, converging into the store); use this to fork a deliberately separate
+  run of an identical config.
 - `--condition F` (repeatable) selects conditions by exact id, id prefix, or
   slug — e.g. `--condition gpt-5-mini_minimal_default`.
 - `--display` passes through to inspect (default `none`; try `rich`
@@ -87,13 +94,13 @@ reported and the rest continue (final exit 1).
 ## `grade` — stage 2 (resumable, re-runnable)
 
 ```
-itemeval grade CONFIG [-y/--yes] [--force] [--condition F]...
+itemeval grade CONFIG [-y/--yes] [--force] [--new-run] [--condition F]...
                [--grader N]... [--rubric N]... [--display ...] [--json]
                [--policy P] [--wave LABEL]
 ```
 
-Same flow over grade conditions (including `--json` and `--wave`, as on
-`generate`). Verifiable conditions cost $0 and need no
+Same flow over grade conditions (including `--json`, `--wave`, `--new-run`, and
+the recovery/new identity line, as on `generate`). Verifiable conditions cost $0 and need no
 model. `--grader`/`--rubric` (repeatable) narrow to specific judges/rubrics —
 useful for adding a new grader over existing solutions. The summary line
 reports `parse_failures` (rows kept with `parse_ok=false`).

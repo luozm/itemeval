@@ -1,13 +1,25 @@
 # Implementation plan — recovery-run-identity (experiment-scoped run identity with attempts)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-19, **decisions
-locked 2026-06-19** (this rewrite supersedes the first draft — the three design
-questions are now settled; see *Locked decisions* below), **re-verified against
-the post-`recoverable-harvest` tree 2026-06-20** (see *Re-verification* below —
-the locked design holds; the mechanism gains the harvest/persist write-seam S
-introduced, and the inline file:line anchors are superseded by that section).
-Written against the current `main` (post-#18/#19) and inspect_ai as pinned in
-`uv.lock` — re-verify the pinned file:line facts if the tree moved. This file is the working brief for a fresh
+**Status: IMPLEMENTED 2026-06-20** (shipped on `feat/recovery-run-identity`;
+CHANGELOG `Closes: recovery-run-identity`). This file is the design record.
+Written 2026-06-19, **decisions locked 2026-06-19** (the three design questions
+settled; see *Locked decisions*), **re-verified against the post-`recoverable-
+harvest` tree 2026-06-20** (see *Re-verification* — the locked design held; the
+mechanism gained the harvest/persist write-seam S introduced).
+
+**Shipped vs deferred.** W1 (identity + semantic digest + the store/manifest/
+harvest/persist/export/card rename), W2 (Choice-A detection + `--new-run` + the
+recovery-vs-new announcement), and W3's **per-experiment index** (`manifests/
+experiments/<stage>.<id>.json` + the `status` rollup) all shipped, with the
+study-migration guard + briefing and `tests/test_identity.py`. Two deliberate
+trims from the plan: **(a)** the W3 opt-in `--prune-superseded` (physical prune of
+fully-superseded `.eval`) was **deferred** — marginal value for a single-user
+tool, the prune is the complex part (per-attempt cell-coverage), recorded in
+`docs/KNOWN-ISSUES.md`; **(b)** no coded **hint** was added — the recovery line is
+a loud Law 1/8 *announcement*, not a silent failure mode, so the hint framework
+(which is for silent gotchas) does not apply. The P0 spec-normalizer was **not**
+lifted into `_identity.py` (different scope; would churn shipped P0 code) — see
+*Re-verification*. This file is the working brief for a fresh
 implementation session and carries all the context that session needs (assume
 no conversation history — only this file and the repo). Read these first, in
 order:

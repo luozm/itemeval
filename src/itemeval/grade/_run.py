@@ -29,7 +29,9 @@ from itemeval.budget._pricing import (
 )
 from itemeval.budget._routing import NativeRoute
 from itemeval._mockmodels import resolve_model
-from itemeval._util import new_run_id, sha256_hex, utc_now_iso
+from itemeval._identity import invocation_handle, resolve_identity
+from itemeval._experiments import update_experiment_index
+from itemeval._util import sha256_hex, utc_now_iso
 from itemeval.design._grid import GradeCondition
 from itemeval.generate._run import (
     ConditionRunReport,
@@ -67,7 +69,10 @@ if TYPE_CHECKING:
 class GradeResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    run_id: str
+    # Run identity (recovery-run-identity), as on GenerateResult.
+    experiment_id: str
+    attempt: int
+    run_kind: str  # "recovery" | "new"
     study: str
     conditions: list[ConditionRunReport]
     rows_written: int
@@ -112,12 +117,13 @@ class GradeResult(BaseModel):
 
 
 def _base_row(
-    prep: "PreparedStudy", cond: GradeCondition, run_id: str, sol_row, now: str
+    prep: "PreparedStudy", cond: GradeCondition, experiment_id: str, attempt: int, sol_row, now: str
 ) -> "dict[str, Any]":
     wave_label = getattr(sol_row, "wave_label", None)
     return {
         "study": prep.config.study,
-        "run_id": run_id,
+        "experiment_id": experiment_id,
+        "attempt": attempt,
         "grade_condition_id": cond.id,
         "grade_condition_slug": cond.slug,
         "gen_condition_id": sol_row.condition_id,
@@ -137,7 +143,11 @@ def _base_row(
 
 
 def _verifiable_rows(
-    prep: "PreparedStudy", cond: GradeCondition, pending: "pd.DataFrame", run_id: str
+    prep: "PreparedStudy",
+    cond: GradeCondition,
+    pending: "pd.DataFrame",
+    experiment_id: str,
+    attempt: int,
 ) -> "list[dict]":
     scorer = VERIFIABLE_SCORERS[cond.scorer]
     now = utc_now_iso()
@@ -146,7 +156,7 @@ def _verifiable_rows(
         result = scorer(sol_row.solution, prep.items_by_id[sol_row.item_id])
         rows.append(
             {
-                **_base_row(prep, cond, run_id, sol_row, now),
+                **_base_row(prep, cond, experiment_id, attempt, sol_row, now),
                 "score": result.score,
                 "score_raw": result.score_raw,
                 "parse_ok": result.parse_ok,
@@ -164,7 +174,12 @@ def _verifiable_rows(
 
 
 def _judge_rows(
-    prep: "PreparedStudy", cond: GradeCondition, pending: "pd.DataFrame", log, run_id: str
+    prep: "PreparedStudy",
+    cond: GradeCondition,
+    pending: "pd.DataFrame",
+    log,
+    experiment_id: str,
+    attempt: int,
 ) -> "list[dict]":
     now = utc_now_iso()
     log_file = rel_to_study(prep.paths, log.location)
@@ -201,7 +216,7 @@ def _judge_rows(
             }
         rows.append(
             {
-                **_base_row(prep, cond, run_id, sol_row, now),
+                **_base_row(prep, cond, experiment_id, attempt, sol_row, now),
                 **parse_cols,
                 "judge_completion": completion,
                 "error": error,
@@ -221,7 +236,12 @@ def _judge_rows(
 
 
 def persist_grade_condition(
-    prep: "PreparedStudy", cond: GradeCondition, pending: "pd.DataFrame", log, run_id: str
+    prep: "PreparedStudy",
+    cond: GradeCondition,
+    pending: "pd.DataFrame",
+    log,
+    experiment_id: str,
+    attempt: int,
 ) -> "tuple[list[dict], int, float | None]":
     """Build judge gradings rows from one grade log and write them + the log
     index + ledger to the durable stores. The single home for the judge harvest
@@ -229,19 +249,31 @@ def persist_grade_condition(
     Returns ``(rows, rows_written, cond_usd)``. Verifiable conditions never go
     through here (no model call → no `.eval` to recover)."""
     exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
-    rows = _judge_rows(prep, cond, pending, log, run_id)
+    rows = _judge_rows(prep, cond, pending, log, experiment_id, attempt)
     n = _gradings.upsert_gradings(prep.paths, rows)
     usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
     cond_usd = sum(usd_vals) if usd_vals else None
     _logs.upsert_log_index(
         prep.paths,
-        [log_index_row(log, prep.paths, run_id, "grade", cond.id, cond.grader_model, cond_usd)],
+        [
+            log_index_row(
+                log,
+                prep.paths,
+                experiment_id,
+                attempt,
+                "grade",
+                cond.id,
+                cond.grader_model,
+                cond_usd,
+            )
+        ],
     )
     _ledger.upsert_ledger(
         prep.paths,
         [
             ledger_row(
-                run_id,
+                experiment_id,
+                attempt,
                 "grade",
                 cond.id,
                 cond.grader_model,
@@ -257,7 +289,8 @@ def persist_grade_condition(
 def _materialize_rubrics(
     prep: "PreparedStudy",
     selected: "list[GradeCondition]",
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     factory: ModelFactory,
     display: "str | None",
     batch: "bool | int | None",
@@ -312,7 +345,9 @@ def _materialize_rubrics(
             retry_on_error=1,
             tags=["itemeval", "materialize"],
             metadata={
-                "itemeval_run_id": run_id,
+                "itemeval_run_id": invocation_handle(experiment_id, attempt),
+                "itemeval_experiment_id": experiment_id,
+                "itemeval_attempt": attempt,
                 "itemeval_study": prep.config.study,
                 "itemeval_rubric": rubric_name,
             },
@@ -345,7 +380,8 @@ def _materialize_rubrics(
                     "input_tokens": usage.input_tokens if usage else None,
                     "output_tokens": usage.output_tokens if usage else None,
                     "error": error,
-                    "run_id": run_id,
+                    "experiment_id": experiment_id,
+                    "attempt": attempt,
                     "created_at": now,
                 }
             )
@@ -358,7 +394,8 @@ def _materialize_rubrics(
         _materialized.upsert_materialized(prep.paths, rows)
         ledger_rows.append(
             ledger_row(
-                run_id,
+                experiment_id,
+                attempt,
                 "grade",
                 f"materialize:{rubric_name}",
                 model,
@@ -375,7 +412,7 @@ def _materialize_rubrics(
 def run_grade(
     prep: "PreparedStudy",
     *,
-    run_id: "str | None" = None,
+    new_run: bool = False,
     force: bool = False,
     condition_filter: "list[str] | None" = None,
     graders: "list[str] | None" = None,
@@ -388,7 +425,7 @@ def run_grade(
     wave: "str | None" = None,
 ) -> GradeResult:
     enforce_budget_cap(prep, "grade", max_usd, force, wave=wave)
-    run_id = run_id or new_run_id("grade")
+    ident = resolve_identity(prep.config, prep.paths, "grade", new_run=new_run)
     prep.paths.ensure()
     solutions_df = _solutions.read_solutions(prep.paths)
     if solutions_df.empty:
@@ -454,7 +491,8 @@ def run_grade(
     manifest = build_manifest(
         prep,
         "grade",
-        run_id,
+        ident.experiment_id,
+        ident.attempt,
         [c.id for c in selected],
         estimate_usd,
         estimate_full_usd,
@@ -463,6 +501,7 @@ def run_grade(
         epoch_offset=wave_num * prep.plan.replications,
     )
     manifest_path = write_manifest(manifest, prep.paths)
+    update_experiment_index(prep.paths, manifest)  # attempt rollup (recovery-run-identity W3)
 
     reports_by_cond: dict[str, ConditionRunReport] = {}
     endpoints_effective: dict[str, Any] = {}
@@ -483,7 +522,7 @@ def run_grade(
     # before grading. Its spend rides the single grade money gate (estimated in
     # budget/_estimator.py); reuse from the artifact store is free.
     rubric_texts_by_rubric, mat_stats = _materialize_rubrics(
-        prep, selected, run_id, factory, display, prep.plan.batch
+        prep, selected, ident.experiment_id, ident.attempt, factory, display, prep.plan.batch
     )
     total_usd += float(mat_stats["usd"])
 
@@ -527,11 +566,21 @@ def run_grade(
             )
             continue
         if cond.kind == "verifiable":
-            rows = _verifiable_rows(prep, cond, pending, run_id)
+            rows = _verifiable_rows(prep, cond, pending, ident.experiment_id, ident.attempt)
             n = _gradings.upsert_gradings(prep.paths, rows)
             _ledger.upsert_ledger(
                 prep.paths,
-                [ledger_row(run_id, "grade", cond.id, "(verifiable)", rows, None)],
+                [
+                    ledger_row(
+                        ident.experiment_id,
+                        ident.attempt,
+                        "grade",
+                        cond.id,
+                        "(verifiable)",
+                        rows,
+                        None,
+                    )
+                ],
             )
             finalize(
                 cond, rows, n=n, items_run=len(pending), log_file=None, cond_usd=0.0, local_rows=0
@@ -583,7 +632,8 @@ def run_grade(
     log_by_cond, fatal = run_condition_evals(
         [task for _, _, _, task in planned],
         stage="grade",
-        run_id=run_id,
+        experiment_id=ident.experiment_id,
+        attempt=ident.attempt,
         study=prep.config.study,
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("grade")),
@@ -606,7 +656,9 @@ def run_grade(
                 message=eval_error_message(log, fatal),
             )
             continue
-        rows, n, cond_usd = persist_grade_condition(prep, cond, pending, log, run_id)
+        rows, n, cond_usd = persist_grade_condition(
+            prep, cond, pending, log, ident.experiment_id, ident.attempt
+        )
         local_rows = local_cache_rows(rows)
         judge_models.append(cond.grader_model)
         # Judge tasks always request cache_prompt="auto" (markers on), so an
@@ -659,7 +711,9 @@ def run_grade(
         if h is not None
     ]
     return GradeResult(
-        run_id=run_id,
+        experiment_id=ident.experiment_id,
+        attempt=ident.attempt,
+        run_kind=ident.run_kind,
         study=prep.config.study,
         conditions=reports,
         rows_written=rows_written,

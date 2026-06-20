@@ -103,13 +103,14 @@ def classify_logs(
     return harvested, unharvested
 
 
-def _wave_identity(prep: "PreparedStudy", run_id: str) -> "tuple[int, str | None, int]":
+def _wave_identity(prep: "PreparedStudy", handle: str) -> "tuple[int, str | None, int]":
     """`(wave, wave_label, epoch_offset)` for a harvested run, read from its
-    manifest `manifests/<run_id>.json` — written *before* the eval starts, so it
-    survives a hard kill. `rows_from_generate_log` needs these to key the recovered
-    rows into the right epoch block; `wave_label` lives only here (and on the rows),
-    so the manifest is the one source covering all three. Defaults to wave 0."""
-    path = prep.paths.manifests_dir / f"{run_id}.json"
+    manifest `manifests/<handle>.json` (the invocation handle = manifest basename)
+    — written *before* the eval starts, so it survives a hard kill.
+    `rows_from_generate_log` needs these to key the recovered rows into the right
+    epoch block; `wave_label` lives only here (and on the rows), so the manifest is
+    the one source covering all three. Defaults to wave 0."""
+    path = prep.paths.manifests_dir / f"{handle}.json"
     if not path.is_file():
         return 0, None, 0
     m = json.loads(path.read_text(encoding="utf-8"))
@@ -170,20 +171,32 @@ def harvest_stage(prep: "PreparedStudy", stage: str) -> HarvestReport:
             log = read_eval_log(info)
             log.location = _local_path(log.location)
             meta = log.eval.metadata or {}
-            run_id = meta.get("itemeval_run_id")
+            handle = meta.get("itemeval_run_id")  # invocation handle = manifest basename
+            experiment_id = meta.get("itemeval_experiment_id")
+            attempt = meta.get("itemeval_attempt")
             cid = (meta.get("itemeval") or {}).get("condition_id")
-            if cid is None or run_id is None or not log.samples:
-                continue  # not an itemeval log, or nothing flushed yet
+            if (
+                cid is None
+                or handle is None
+                or experiment_id is None
+                or attempt is None
+                or not log.samples
+            ):
+                # not an itemeval log, nothing flushed yet, or a pre-identity-rename
+                # log (no experiment_id/attempt metadata — migrate the study first).
+                continue
+            attempt = int(attempt)
             if stage == "generate":
                 cond = next((c for c in prep.grid.generate if c.id == cid), None)
                 if cond is None:
                     continue  # condition left the current grid (config changed)
-                wave, wave_label, epoch_offset = _wave_identity(prep, run_id)
+                wave, wave_label, epoch_offset = _wave_identity(prep, handle)
                 _, n, _ = persist_generate_condition(
                     prep,
                     cond,
                     log,
-                    run_id,
+                    experiment_id,
+                    attempt,
                     epoch_offset=epoch_offset,
                     wave=wave,
                     wave_label=wave_label,
@@ -196,7 +209,7 @@ def harvest_stage(prep: "PreparedStudy", stage: str) -> HarvestReport:
                 pending = _pending_for_log(prep, log)
                 if pending is None or pending.empty:
                     continue
-                _, n, _ = persist_grade_condition(prep, cond, pending, log, run_id)
+                _, n, _ = persist_grade_condition(prep, cond, pending, log, experiment_id, attempt)
                 report.grade_rows += n
         except Exception:
             # A half-written `.eval` (zip truncated by SIGKILL) can fail to read or

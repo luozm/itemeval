@@ -89,7 +89,8 @@ def test_study_paths(tmp_path):
 def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s"):
     return {
         "study": "t",
-        "run_id": "r",
+        "experiment_id": "r",
+        "attempt": 1,
         "condition_id": cond,
         "condition_slug": cond,
         "item_id": item,
@@ -160,7 +161,8 @@ def test_items_to_run_require_solution_reruns_empties():
 def _grading_row(grade_cond, gen_cond, item, epoch, error=None, parse_ok=True):
     return {
         "study": "t",
-        "run_id": "r",
+        "experiment_id": "r",
+        "attempt": 1,
         "grade_condition_id": grade_cond,
         "grade_condition_slug": grade_cond,
         "gen_condition_id": gen_cond,

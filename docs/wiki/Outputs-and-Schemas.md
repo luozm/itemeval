@@ -14,7 +14,8 @@ studies/<study>/
   ledger.parquet           # cost ledger (run x stage x condition x model)
   dataset_locks.json       # dataset revisions pinned at first run
   model_locks.json         # model sample draw pinned (only with solvers.sample)
-  manifests/<run_id>.json  # one reproducibility manifest per run
+  manifests/<experiment_id>.aN.json  # one reproducibility manifest per attempt
+  manifests/experiments/<stage>.<experiment_id>.json  # attempt rollup per experiment
   logs/generate/*.eval     # raw inspect logs (full transcripts; one per condition)
   logs/grade/*.eval
   export/gradings_long.parquet  # the analysis-ready long table
@@ -63,9 +64,12 @@ recorded in each run manifest and `STUDY_CARD.md`.
 
 ## `solutions.parquet` (key: condition_id, item_id, epoch)
 
-Provenance: `study, run_id, condition_id, condition_slug, item_id,
+Provenance: `study, experiment_id, attempt, condition_id, condition_slug, item_id,
 dataset_id, dataset_revision, epoch, model, prompt_name, prompt_hash,
-model_config_name`.
+model_config_name` (`experiment_id`/`attempt` are the run identity — see
+[Run identity](#run-identity) below; they are *not* part of the content key, so a
+recovery attempt overwrites the failed row at the same `condition_id, item_id,
+epoch`).
 Sampling params, requested **and** effective: `temperature_*, top_p_*,
 max_tokens_*, seed_requested, reasoning_effort[_effective],
 reasoning_tokens_requested` — provider-forced values show up as a
@@ -82,7 +86,7 @@ export carry the same two columns, inherited from the graded solution row.
 
 ## `gradings.parquet` (key: grade_condition_id, gen_condition_id, item_id, epoch)
 
-Provenance: `study, run_id, grade_condition_id/slug, gen_condition_id,
+Provenance: `study, experiment_id, attempt, grade_condition_id/slug, gen_condition_id,
 item_id, epoch, grade_kind` (judge|verifiable), `grader_name, grader_model,
 rubric_name, rubric_hash, scorer_name`.
 Result: `score, score_raw, parse_ok, parse_error, reasoning,
@@ -94,7 +98,7 @@ Written only when a [materializing rubric](Configuration.md#two-stage-materializ
 runs: `materialized_rubrics.parquet` (key: `materialize_id, item_id`) holds the
 frozen per-item rubrics — `materialize_id` (build-template hash + materializer
 model), `rubric_name, materializer_model, build_template_hash, rubric_text,
-rubric_hash`, `usd`, token columns, `error, run_id, created_at`. Reused across
+rubric_hash`, `usd`, token columns, `error, experiment_id, attempt, created_at`. Reused across
 graders/solutions/replications/resumes; an `error` row is retried next run.
 
 Invariant: `parse_ok=false` ⟺ `parse_error` set ⟺ `score` null (for rows
@@ -102,7 +106,7 @@ without a sample-level `error`). Parse failures are final; errors re-run.
 
 ## `export/gradings_long.parquet` — one row per grading event
 
-The left-join of gradings onto solutions: 47 columns, grouped as
+The left-join of gradings onto solutions: 49 columns, grouped as
 
 - **Design cell**: `study, item_id, dataset_id, dataset_revision, model,
   prompt_name, prompt_hash, model_config_name, replication,
@@ -113,13 +117,13 @@ The left-join of gradings onto solutions: 47 columns, grouped as
 - **Params**: `temperature_requested, temperature_effective, reasoning_effort`
 - **Cost**: `gen_*` and `grade_*` token counts, `gen_usd, grade_usd,
   gen_latency_s, grade_latency_s`
-- **Audit**: `gen_run_id, grade_run_id, gen_log_file, grade_log_file,
-  created_at`
+- **Audit**: `gen_experiment_id, gen_attempt, grade_experiment_id,
+  grade_attempt, gen_log_file, grade_log_file, created_at`
 
 Never aggregated; parse failures present with `parse_ok=false`. This is the
 input to IRT / mixed-model analysis.
 
-## `ledger.parquet` (key: run_id, stage, condition_id, model)
+## `ledger.parquet` (key: experiment_id, attempt, stage, condition_id, model)
 
 `provider` (the inspect prefix of `model` — which provider's billing the row
 belongs to), `calls`, token totals, `usd`, `priced` (was a price known),
@@ -128,9 +132,9 @@ row sums per stage (`internally reconciled`). Null `usd` on a row means "model
 unpriced"; `0.0` with empty tokens means the call was served by the response
 cache (free).
 
-## `manifests/<run_id>.json`
+## `manifests/<experiment_id>.aN.json`
 
-Per run: `run_id, stage, created_at`; `itemeval_version, python_version,
+Per attempt: `experiment_id, attempt, stage, created_at`; `itemeval_version, python_version,
 packages` (inspect-ai, pandas, pyarrow, pydantic, pyyaml, datasets);
 `config_path, config_sha256` + the full parsed config; per-dataset resolved
 revisions and an items content hash; solver/rubric templates each as
@@ -151,7 +155,32 @@ this run selected; and the estimate the run was approved under
 Because manifests are immutable, they double as an **endpoint drift**
 record: when past manifests show inconsistent `served_model` snapshots for a
 model id this run uses (or the last run is >30 days old), `generate`/`grade`
-print a best-effort warning — rows remain distinguishable by `run_id`.
+print a best-effort warning — rows remain distinguishable by `experiment_id`/`attempt`.
+
+## Run identity
+
+Every row and manifest carries `experiment_id` + `attempt` instead of a
+per-invocation run id. The `experiment_id` is `sha256(config_digest : study :
+stage)[:12]`, where `config_digest` is the **semantic** config — re-parsed
+through the schema, identity-bearing fields only — so comments, whitespace, key
+order, and pure execution/cost knobs (`output_dir`, `cache`, the `budget` block,
+`provider_routing`, `cache_prompt`) never change it. The consequences:
+
+- A re-run of an **unchanged config recovers the same experiment** (next
+  `attempt`) and **converges** into the existing store — completed cells are
+  never re-paid; `generate`/`grade` announce `recovery: attempt N of experiment
+  <id> — converging into existing results`.
+- A genuine **design edit forks** a new experiment (the digest changes);
+  `--new-run` forces a fresh one even from an identical config. Grown items or a
+  drifting roster under an unchanged config are a soft warning, not a fork.
+- The append-only `experiments/<stage>.<experiment_id>.json` index rolls up an
+  experiment's attempts and names the current one; `status` shows
+  `experiments: <id> (<stage>) — N attempts, current aN` whenever a run recovered.
+
+`experiment_id`, `attempt`, and `run_kind` (`recovery`/`new`) ride the
+`generate`/`grade` `--json` results; `status --json` carries an `experiments`
+array. Because the identity columns are **not** part of any content key, the
+rename never re-keyed conditions or rows.
 
 ## Snapshots
 

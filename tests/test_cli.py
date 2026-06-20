@@ -72,7 +72,9 @@ def test_display_defaults_to_live_and_forwards_override(
     def fake_run(prep, **kwargs):
         captured["display"] = kwargs.get("display", "MISSING")
         return result_cls(
-            run_id="r",
+            experiment_id="r",
+            attempt=1,
+            run_kind="new",
             study=prep.config.study,
             conditions=[],
             manifest_path="m",
@@ -137,7 +139,13 @@ def test_json_forces_display_none(tmp_path, offline_adapter, monkeypatch, stage)
     def fake_run(prep, **kwargs):
         captured["display"] = kwargs.get("display", "MISSING")
         return result_cls(
-            run_id="r", study=prep.config.study, conditions=[], manifest_path="m", **extra
+            experiment_id="r",
+            attempt=1,
+            run_kind="new",
+            study=prep.config.study,
+            conditions=[],
+            manifest_path="m",
+            **extra,
         )
 
     monkeypatch.setattr(run_mod, f"run_{stage}", fake_run)

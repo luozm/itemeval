@@ -13,7 +13,8 @@ PRICING = PricingTable(
 
 def _row(**over) -> dict:
     base = {
-        "run_id": "r",
+        "experiment_id": "r",
+        "attempt": 1,
         "stage": "generate",
         "condition_id": "c",
         "model": "openai/gpt-5",

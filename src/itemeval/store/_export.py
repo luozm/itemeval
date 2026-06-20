@@ -72,8 +72,12 @@ EXPORT_SCHEMA = pa.schema(
         pa.field("grade_total_tokens", pa.int64()),
         pa.field("grade_usd", pa.float64()),
         pa.field("grade_latency_s", pa.float64()),
-        pa.field("gen_run_id", pa.string()),
-        pa.field("grade_run_id", pa.string()),
+        # Run identity (recovery-run-identity): experiment_id + attempt per stage,
+        # replacing the old gen_run_id/grade_run_id columns.
+        pa.field("gen_experiment_id", pa.string()),
+        pa.field("gen_attempt", pa.int32()),
+        pa.field("grade_experiment_id", pa.string()),
+        pa.field("grade_attempt", pa.int32()),
         pa.field("gen_log_file", pa.string()),
         pa.field("grade_log_file", pa.string()),
         pa.field("created_at", pa.string()),
@@ -128,7 +132,8 @@ class ExportResult(BaseModel):
 _SOLUTION_COLS = {
     "condition_id": "gen_condition_id",
     "condition_slug": "gen_condition_slug",
-    "run_id": "gen_run_id",
+    "experiment_id": "gen_experiment_id",
+    "attempt": "gen_attempt",
     "input_tokens": "gen_input_tokens",
     "output_tokens": "gen_output_tokens",
     "total_tokens": "gen_total_tokens",
@@ -139,7 +144,8 @@ _SOLUTION_COLS = {
 }
 
 _GRADING_COLS = {
-    "run_id": "grade_run_id",
+    "experiment_id": "grade_experiment_id",
+    "attempt": "grade_attempt",
     "input_tokens": "grade_input_tokens",
     "output_tokens": "grade_output_tokens",
     "total_tokens": "grade_total_tokens",
@@ -175,12 +181,24 @@ def _write_snapshot(
     if snap_dir.exists():
         raise ConfigError(f"snapshot '{name}' exists — choose a new name")
 
+    from itemeval._identity import invocation_handle
+
     created_at = utc_now_iso()
     try:
         itemeval_version = version("itemeval")
     except PackageNotFoundError:
         itemeval_version = "unknown"
-    run_ids = sorted(set(long["gen_run_id"].dropna()) | set(long["grade_run_id"].dropna()))
+
+    def _handles(eid_col: str, att_col: str) -> "set[str]":
+        # Reconstruct each attempt's manifest basename (the invocation handle) from
+        # its (experiment_id, attempt) pair — the snapshot copies manifests by name.
+        pairs = long[[eid_col, att_col]].dropna()
+        return {invocation_handle(str(e), int(a)) for e, a in zip(pairs[eid_col], pairs[att_col])}
+
+    run_ids = sorted(
+        _handles("gen_experiment_id", "gen_attempt")
+        | _handles("grade_experiment_id", "grade_attempt")
+    )
     spend_usd = float(pd.to_numeric(ledger["usd"], errors="coerce").fillna(0.0).sum())
 
     tmp = paths.export_dir / "snapshots" / f".tmp-{name}"
@@ -285,7 +303,8 @@ def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> Exp
         "temperature_effective",
         "reasoning_effort",
         "solution",
-        "gen_run_id",
+        "gen_experiment_id",
+        "gen_attempt",
         "gen_input_tokens",
         "gen_output_tokens",
         "gen_total_tokens",

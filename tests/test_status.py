@@ -45,7 +45,8 @@ def _seed_one_empty_condition(prep):
             rows.append(
                 {
                     "study": prep.config.study,
-                    "run_id": "r",
+                    "experiment_id": "r",
+                    "attempt": 1,
                     "condition_id": cond.id,
                     "condition_slug": cond.slug,
                     "item_id": it.id,

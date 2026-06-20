@@ -145,3 +145,27 @@ missing cells, never re-touches good ones); the bug bites `--force`/replication
 re-touch. Flip side of the `reuse-savings` feature (which wants to *attribute*
 cache hits): fix sketch — on a cache-served row, preserve the prior row's usage
 rather than overwriting with zeros. Coordinate with `reuse-savings`.
+
+---
+
+## Superseded `.eval` logs are never pruned across recovery attempts
+**Found:** 2026-06-20
+
+**Symptom.** `recovery-run-identity` records every attempt of an experiment in a
+per-experiment index but never deletes the `.eval` logs a later attempt
+superseded, so `logs/<stage>/` grows unbounded across many recovery passes of a
+flaky study. Disk only — no correctness impact (the content-keyed stores are
+already converged; old logs are inert once harvested).
+
+**Where.** `src/itemeval/_experiments.py` (the index records attempts but no
+supersession dimension); the logs live in `logs/<stage>/`.
+
+**Status.** Deferred — the W3 plan's opt-in `--prune-superseded` was not built
+(marginal value for a single-user tool; the prune is the complex part, needing
+per-attempt cell-coverage analysis). Fix sketch: an opt-in `--prune-superseded`
+that, per attempt, computes whether a *later* attempt re-ran **all** of its cells
+(joinable from the stores' `experiment_id`/`attempt` columns + `recoverable-
+harvest`'s `classify_logs`), and deletes only the fully-superseded `.eval` —
+never a partially-superseded one (a prior attempt is the only log for the good
+cells it alone produced). A side effect → announce count + bytes (Law 1) and
+require the flag (consent).

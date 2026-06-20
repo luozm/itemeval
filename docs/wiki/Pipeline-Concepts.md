@@ -134,9 +134,12 @@ Two layers, both from inspect_ai:
 
 ## Reproducibility
 
-Every run writes `manifests/<run_id>.json`: config content hash, dataset ids
-+ resolved revisions, prompt/rubric content hashes, model ids, requested
-sampling params (effective per-condition values backfilled after the run),
-seeds, package versions, the full condition grid, and the estimate the run
+Every run writes `manifests/<experiment_id>.aN.json` (the run identity:
+`experiment_id` + `attempt`, so a recovery re-run of an unchanged config records
+a new attempt of the *same* experiment rather than a forked id — see
+[Outputs#run-identity](Outputs-and-Schemas.md#run-identity)): config content
+hash, dataset ids + resolved revisions, prompt/rubric content hashes, model ids,
+requested sampling params (effective per-condition values backfilled after the
+run), seeds, package versions, the full condition grid, and the estimate the run
 was approved under. Dataset revisions are pinned at first run in
 `dataset_locks.json`. Same manifest + cache ⇒ identical results.

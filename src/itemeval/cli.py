@@ -612,6 +612,15 @@ def _run_stage(args, stage, runner) -> int:
                         f"empty solutions: {result.empty_total} graded as-is "
                         f"[{breakdown}] — on_empty={result.on_empty}"
                     )
+        # Run identity (recovery-run-identity): a quotable provenance line —
+        # recovery converges into the existing experiment; --new-run forks.
+        if result.run_kind == "recovery":
+            print(
+                f"recovery: attempt {result.attempt} of experiment {result.experiment_id} "
+                "— converging into existing results"
+            )
+        else:
+            print(f"experiment: {result.experiment_id} · attempt {result.attempt} (new)")
         print(f"manifest: {result.manifest_path}")
         emit_hints(result.hints)
     return 1 if any(r.status == "error" for r in result.conditions) else 0
@@ -623,6 +632,7 @@ def _cmd_generate(args) -> int:
     def runner(prep, display, estimate_usd, estimate_full_usd):
         return run_generate(
             prep,
+            new_run=args.new_run,
             force=args.force,
             condition_filter=args.condition,
             display=display,
@@ -640,6 +650,7 @@ def _cmd_grade(args) -> int:
     def runner(prep, display, estimate_usd, estimate_full_usd):
         return run_grade(
             prep,
+            new_run=args.new_run,
             force=args.force,
             condition_filter=args.condition,
             graders=args.grader,
@@ -763,6 +774,15 @@ def _cmd_status(args) -> int:
     )
     latest = f" (latest: manifests/{report.manifests[-1]})" if report.manifests else ""
     print(f"manifests: {len(report.manifests)}{latest}")
+    # Experiment rollup (recovery-run-identity): surface only when a run recovered
+    # (any experiment has >1 attempt) — single-attempt studies stay noise-free.
+    recovered = [e for e in report.experiments if e.attempts > 1]
+    if recovered:
+        bits = ", ".join(
+            f"{e.experiment_id} ({e.stage}) — {e.attempts} attempts, current a{e.current_attempt}"
+            for e in recovered
+        )
+        print(f"experiments: {bits}")
     if len(report.waves) > 1:  # zero noise for single-wave studies
         bits = ", ".join(
             f"{w.wave}{f' ({w.label})' if w.label else ''} — gen {w.completed}/{w.expected}"
@@ -945,6 +965,12 @@ def _build_parser() -> argparse.ArgumentParser:
             help="emit the run result as JSON on stdout (silences live display)",
         )
         p.add_argument("--force", action="store_true", help="re-run even completed work")
+        p.add_argument(
+            "--new-run",
+            action="store_true",
+            help="start a fresh experiment instead of recovering the existing one "
+            "(an unchanged config otherwise recovers: same experiment_id, next attempt)",
+        )
         p.add_argument(
             "--condition",
             action="append",

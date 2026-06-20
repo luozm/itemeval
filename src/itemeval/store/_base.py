@@ -9,6 +9,30 @@ import pyarrow.parquet as pq
 
 from itemeval._errors import StoreError
 
+# Non-additive run-identity change (recovery-run-identity): an old store carries a
+# `run_id` column the current schema replaced with `experiment_id` + `attempt`.
+# We do not read old code; the safe, result-preserving migration is delete + re-run
+# (content keys are unchanged, so cached generations replay identical at ~$0). The
+# guard fails loudly with the briefing instead of crashing opaquely on the missing
+# column (DEVELOPMENT.md "Study-facing schema evolution", pre-1.0 clean-break gate).
+STUDY_MIGRATION_MSG = (
+    "{name} predates the run-identity change: it has a `run_id` column but no "
+    "`experiment_id`. itemeval now identifies runs by `experiment_id` + `attempt`. "
+    "Delete manifests/, logs/, and the parquet stores (solutions, gradings, ledger, "
+    "log_index, materialized_rubrics) under this study, then re-run — cached "
+    "generations replay at ~$0 and the content keys are unchanged, so results are "
+    "identical."
+)
+
+
+def assert_identity_current(df: pd.DataFrame, path: Path) -> pd.DataFrame:
+    """Raise the migration briefing if `df` is an old-schema store (has `run_id`,
+    lacks `experiment_id`); otherwise pass it through. Read-time guard, mirroring
+    the wave backfill's locus."""
+    if not df.empty and "run_id" in df.columns and "experiment_id" not in df.columns:
+        raise StoreError(STUDY_MIGRATION_MSG.format(name=path.name))
+    return df
+
 
 def read_parquet_or_empty(path: Path, schema: pa.Schema) -> pd.DataFrame:
     if path.is_file():

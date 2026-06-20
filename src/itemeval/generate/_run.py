@@ -15,11 +15,13 @@ from itemeval._hints import (
     detect_unpriced_models,
 )
 from itemeval._harvest import HarvestReport
+from itemeval._identity import resolve_identity
+from itemeval._experiments import update_experiment_index
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval._modelsample import ModelSampleResult
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
-from itemeval._util import estimate_tokens, new_run_id, utc_now_iso
+from itemeval._util import estimate_tokens, utc_now_iso
 from itemeval.budget._gate import GateResult
 from itemeval.budget._pricing import (
     BATCH_PROVIDERS,
@@ -109,7 +111,12 @@ class ConditionRunReport(BaseModel):
 class GenerateResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    run_id: str
+    # Run identity (recovery-run-identity): deterministic experiment_id + attempt
+    # replace the old per-invocation run_id; run_kind says whether this run
+    # recovered an existing experiment or started a new one.
+    experiment_id: str
+    attempt: int
+    run_kind: str  # "recovery" | "new"
     study: str
     conditions: list[ConditionRunReport]
     rows_written: int
@@ -175,7 +182,8 @@ def run_condition_evals(
     tasks: list,
     *,
     stage: str,
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     study: str,
     display: "str | None",
     log_dir: str,
@@ -195,6 +203,8 @@ def run_condition_evals(
     the per-sample semantics identical to the old per-condition loop."""
     if not tasks:
         return {}, None
+    from itemeval._identity import invocation_handle
+
     try:
         logs = inspect_ai.eval(
             tasks,
@@ -206,7 +216,15 @@ def run_condition_evals(
             fail_on_error=False,
             retry_on_error=1,
             tags=["itemeval", stage],
-            metadata={"itemeval_run_id": run_id, "itemeval_study": study},
+            # itemeval_run_id is the invocation handle (the manifest basename
+            # _harvest._wave_identity looks up); experiment_id/attempt let harvest
+            # recover the row columns directly without parsing the handle.
+            metadata={
+                "itemeval_run_id": invocation_handle(experiment_id, attempt),
+                "itemeval_experiment_id": experiment_id,
+                "itemeval_attempt": attempt,
+                "itemeval_study": study,
+            },
         )
     except Exception as e:  # whole-eval failure (rare): caller errors every cond
         return {}, f"{type(e).__name__}: {e}"
@@ -294,7 +312,8 @@ def usage_columns(usage: "ModelUsage | None") -> "dict[str, Any]":
 def log_index_row(
     log: "EvalLog",
     paths,
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     stage: str,
     condition_id: str,
     model: str,
@@ -304,7 +323,8 @@ def log_index_row(
     total = reduce(lambda a, b: a + b, stats_usage) if stats_usage else None
     return {
         "log_file": rel_to_study(paths, log.location),
-        "run_id": run_id,
+        "experiment_id": experiment_id,
+        "attempt": attempt,
         "stage": stage,
         "condition_id": condition_id,
         "task_name": log.eval.task,
@@ -323,7 +343,8 @@ def log_index_row(
 
 
 def ledger_row(
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     stage: str,
     condition_id: str,
     model: str,
@@ -340,7 +361,8 @@ def ledger_row(
     # `model` stays the sampled/scientific id; `provider` is the billing provider
     # — the native one under native batch routing (per-provider spend stays honest).
     return {
-        "run_id": run_id,
+        "experiment_id": experiment_id,
+        "attempt": attempt,
         "stage": stage,
         "condition_id": condition_id,
         "model": model,
@@ -428,7 +450,8 @@ def rows_from_generate_log(
     log: "EvalLog",
     cond: GenCondition,
     prep: "PreparedStudy",
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     epoch_offset: int = 0,
     wave: int = 0,
     wave_label: "str | None" = None,
@@ -451,7 +474,8 @@ def rows_from_generate_log(
         rows.append(
             {
                 "study": prep.config.study,
-                "run_id": run_id,
+                "experiment_id": experiment_id,
+                "attempt": attempt,
                 "condition_id": cond.id,
                 "condition_slug": cond.slug,
                 "item_id": item_id,
@@ -500,7 +524,8 @@ def persist_generate_condition(
     prep: "PreparedStudy",
     cond: GenCondition,
     log: "EvalLog",
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     *,
     epoch_offset: int = 0,
     wave: int = 0,
@@ -513,20 +538,32 @@ def persist_generate_condition(
     ``(rows, rows_written, cond_usd)``."""
     exec_model = prep.native_routes.get(cond.model, cond.model)
     rows = rows_from_generate_log(
-        log, cond, prep, run_id, epoch_offset=epoch_offset, wave=wave, wave_label=wave_label
+        log,
+        cond,
+        prep,
+        experiment_id,
+        attempt,
+        epoch_offset=epoch_offset,
+        wave=wave,
+        wave_label=wave_label,
     )
     n = _solutions.upsert_solutions(prep.paths, rows)
     usd_vals = [r["usd"] for r in rows if r["usd"] is not None]
     cond_usd = sum(usd_vals) if usd_vals else None
     _logs.upsert_log_index(
         prep.paths,
-        [log_index_row(log, prep.paths, run_id, "generate", cond.id, cond.model, cond_usd)],
+        [
+            log_index_row(
+                log, prep.paths, experiment_id, attempt, "generate", cond.id, cond.model, cond_usd
+            )
+        ],
     )
     _ledger.upsert_ledger(
         prep.paths,
         [
             ledger_row(
-                run_id,
+                experiment_id,
+                attempt,
                 "generate",
                 cond.id,
                 cond.model,
@@ -543,7 +580,7 @@ def persist_generate_condition(
 def run_generate(
     prep: "PreparedStudy",
     *,
-    run_id: "str | None" = None,
+    new_run: bool = False,
     force: bool = False,
     condition_filter: "list[str] | None" = None,
     display: "str | None" = None,
@@ -556,7 +593,10 @@ def run_generate(
     from itemeval._driftcheck import endpoint_drift_warnings, generate_drift_warnings
 
     enforce_budget_cap(prep, "generate", max_usd, force, wave=wave)
-    run_id = run_id or new_run_id("generate")
+    # Recovery-aware identity: a re-run of an unchanged config recovers the same
+    # experiment_id (attempt N+1, converging into existing results); --new-run
+    # salts a fresh experiment.
+    ident = resolve_identity(prep.config, prep.paths, "generate", new_run=new_run)
     prep.paths.ensure()
     upsert_items(prep.paths, prep.datasets)
 
@@ -583,7 +623,8 @@ def run_generate(
     manifest = build_manifest(
         prep,
         "generate",
-        run_id,
+        ident.experiment_id,
+        ident.attempt,
         [c.id for c in selected],
         estimate_usd,
         estimate_full_usd,
@@ -592,6 +633,7 @@ def run_generate(
         epoch_offset=epoch_offset,
     )
     manifest_path = write_manifest(manifest, prep.paths)
+    update_experiment_index(prep.paths, manifest)  # attempt rollup (recovery-run-identity W3)
 
     reports_by_cond: dict[str, ConditionRunReport] = {}
     rows_written = 0
@@ -716,7 +758,8 @@ def run_generate(
     log_by_cond, fatal = run_condition_evals(
         [task for _, _, _, task in planned],
         stage="generate",
-        run_id=run_id,
+        experiment_id=ident.experiment_id,
+        attempt=ident.attempt,
         study=prep.config.study,
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("generate")),
@@ -741,7 +784,14 @@ def run_generate(
             continue
 
         rows, n, cond_usd = persist_generate_condition(
-            prep, cond, log, run_id, epoch_offset=epoch_offset, wave=wave_num, wave_label=wave
+            prep,
+            cond,
+            log,
+            ident.experiment_id,
+            ident.attempt,
+            epoch_offset=epoch_offset,
+            wave=wave_num,
+            wave_label=wave,
         )
         run_models.append(cond.model)
         endpoints_effective[cond.id] = endpoint_info(log, cond.model, exec_model)
@@ -838,7 +888,9 @@ def run_generate(
             f"model(s) — would have errored (HTTP 400) otherwise: {parts}"
         )
     return GenerateResult(
-        run_id=run_id,
+        experiment_id=ident.experiment_id,
+        attempt=ident.attempt,
+        run_kind=ident.run_kind,
         study=prep.config.study,
         conditions=reports,
         rows_written=rows_written,

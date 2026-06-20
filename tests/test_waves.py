@@ -217,5 +217,7 @@ def test_manifest_and_ledger_record_offset(tmp_path, offline_adapter):
     from itemeval.store._ledger import read_ledger
 
     ledger = read_ledger(prep.paths)
-    wave_rows = ledger[ledger["run_id"] == result.run_id]
+    wave_rows = ledger[
+        (ledger["experiment_id"] == result.experiment_id) & (ledger["attempt"] == result.attempt)
+    ]
     assert (wave_rows["epoch_offset"] == 2).all()

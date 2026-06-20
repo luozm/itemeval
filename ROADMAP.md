@@ -56,11 +56,16 @@ conditions concurrently in one eval (was one model at a time), plus a coarse
 pre-flight wall-clock ETA and a cost-lever status line; and
 `sample-output-modality` — an opt-in `where.output_text_only` that drops
 image/audio generators (which pass the runnable-text gate by also emitting text)
-from a sampled `pricing-table` roster; and `recoverable-harvest` — a crashed run's
+from a sampled `pricing-table` roster; `recoverable-harvest` — a crashed run's
 `.eval` is projected back into the stores (`itemeval harvest`, plus auto-harvest on
 read/resume), so a hard-killed flaky run is no longer invisible to
 `status`/`export` and resume never re-pays the recovered cells (the root of the
-run-visibility cluster; gates `recovery-run-identity`).
+run-visibility cluster); and `recovery-run-identity` — run identity is now
+experiment-scoped (`experiment_id` + `attempt` replace `run_id`, derived from a
+semantic config digest), so a recovery re-run of an unchanged config **converges**
+its provenance the way data already does instead of forking, with a per-experiment
+attempt rollup, a recovery-vs-new announcement, and `--new-run` to fork
+deliberately (a non-additive store rename — ships a clean-break `Study migration`).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

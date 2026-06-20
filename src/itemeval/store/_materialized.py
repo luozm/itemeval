@@ -28,7 +28,10 @@ MATERIALIZED_SCHEMA = pa.schema(
         pa.field("input_tokens", pa.int64()),
         pa.field("output_tokens", pa.int64()),
         pa.field("error", pa.string()),  # non-null = the call failed; the row stays pending
-        pa.field("run_id", pa.string(), nullable=False),
+        pa.field(
+            "experiment_id", pa.string(), nullable=False
+        ),  # run identity (recovery-run-identity)
+        pa.field("attempt", pa.int32(), nullable=False),
         pa.field("created_at", pa.string(), nullable=False),
     ]
 )

@@ -118,10 +118,11 @@ def test_rows_from_errored_empty_sample(study):
     )
     log = SimpleNamespace(samples=[sample], location="logs/errored.eval")
 
-    rows = rows_from_generate_log(log, cond, prep, run_id="r1")
+    rows = rows_from_generate_log(log, cond, prep, "exp1", 1)
 
     assert len(rows) == 1
     row = rows[0]
+    assert row["experiment_id"] == "exp1" and row["attempt"] == 1
     assert row["error"] == "provider errored"
     assert row["solution"] is None
     assert row["stop_reason"] is None
