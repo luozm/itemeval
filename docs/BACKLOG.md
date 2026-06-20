@@ -488,6 +488,54 @@ denominator is declared (a `mapping`-level `max_points: <col>` vs. an export
 option). Modeling (variance components, IRT) stays in the user's stats stack —
 this only widens the table.
 
+### Capture serving provider + native finish_reason in the stores/export
+**Key:** `provider-finish-capture`
+
+**Motivation.** OpenRouter load-balances each call across provider backends, and a
+flaky backend can return **HTTP 200 with `finish_reason=error`** (or another
+non-enum reason) **plus empty/truncated content** — a "soft failure". inspect's
+`as_stop_reason` flattens that raw reason to `stop_reason="unknown"`, so the only
+record of *which backend served the call* and *what it really said* is buried in
+the `.eval` log (`ModelEvent.call.response["provider"]` and
+`choices[0].native_finish_reason`). A real dev run had to hand-extract these from
+every `.eval` to diagnose silent empties/false-floors. Surfacing them as store +
+export columns makes diagnosis (and the planned validity-gate/reroute work)
+trivial, and **discharges the KNOWN-ISSUES "unmapped finish-reasons collapse to
+`unknown`" defect** (its fix sketch is exactly this wrapper workaround).
+
+**Design sketch.** Capture two raw provenance columns per model call:
+- `served_provider` — the OpenRouter-routed backend that actually answered
+  (`response["provider"]`, e.g. `"GMICloud"`, `"Fireworks"`). Named distinctly
+  from the `model` namespace and the ledger's billing `provider` (both overloaded
+  already).
+- `native_finish_reason` — the raw provider `finish_reason` before inspect's
+  flatten (`choices[0].native_finish_reason`), recovering what `stop_reason`
+  collapses to `unknown`.
+
+Both land on `solutions.parquet` (the solver call) and `gradings.parquet` (the
+judge call), and flow to the export as `gen_*` / `grade_*` prefixed columns.
+Pure diagnostics — **no run-time surface** (no hint, no status line, no result
+field, no gate); a study reads them straight from the export. None when the
+response did not carry the field (mock models, providers that don't return it,
+cache hits).
+
+**Implementation notes.** A pure `served_provider_finish(sample)` helper in
+`generate/_run.py` (beside `endpoint_info`, which already walks `sample.events`
+for the condition-level upstream) returning `(provider, native_finish_reason)`;
+called in `rows_from_generate_log` and (imported, like `sum_usage`) in
+`grade/_run.py:_judge_rows`. Two nullable string fields on `SOLUTIONS_SCHEMA` /
+`GRADINGS_SCHEMA` with a read-time backfill mirroring `_backfill_wave`
+(additive-by-construction; an older store reads the columns as null). Export:
+add to `_SOLUTION_COLS` / `_GRADING_COLS` + `EXPORT_SCHEMA`. ~80 lines + tests
+(a pure extractor test over fabricated events, an older-schema fixture guard, an
+export-columns assertion). Inspect boundary: the `.call.response` read stays in
+the orchestrator modules (`generate/_run`, `grade/_run`).
+
+**Open questions.** Whether to also fold `served_provider` into the
+condition-level manifest `upstream` rollup (already exists in `endpoint_info`) —
+no, keep per-row distinct. Whether non-judge grade rows (verifiable/skip) should
+carry the columns — no, they make no model call (null by `_coerce_to_schema`).
+
 ---
 
 ## Tier 3 — scale and breadth
