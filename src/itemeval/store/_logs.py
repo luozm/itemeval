@@ -11,7 +11,8 @@ LOG_INDEX_KEY = ["log_file"]
 LOG_INDEX_SCHEMA = pa.schema(
     [
         pa.field("log_file", pa.string(), nullable=False),
-        pa.field("run_id", pa.string()),
+        pa.field("experiment_id", pa.string()),  # run identity (recovery-run-identity)
+        pa.field("attempt", pa.int32()),
         pa.field("stage", pa.string()),
         pa.field("condition_id", pa.string()),
         pa.field("task_name", pa.string()),

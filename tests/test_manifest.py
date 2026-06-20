@@ -5,8 +5,9 @@ from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 
 def test_build_manifest_contents(study):
     cfg, prep = study
-    manifest = build_manifest(prep, "generate", "run123", ["c1"], 0.5)
-    assert manifest.run_id == "run123"
+    manifest = build_manifest(prep, "generate", "exp123", 1, ["c1"], 0.5)
+    assert manifest.experiment_id == "exp123"
+    assert manifest.attempt == 1
     assert manifest.stage == "generate"
     assert manifest.study == "tstudy"
     assert manifest.itemeval_version != "unknown"
@@ -32,13 +33,13 @@ def test_build_manifest_contents(study):
 
 def test_write_and_finalize_manifest(study):
     _, prep = study
-    manifest = build_manifest(prep, "grade", "run456", [], None)
+    manifest = build_manifest(prep, "grade", "exp456", 2, [], None)
     path = write_manifest(manifest, prep.paths)
-    assert path.name == "run456.json"
+    assert path.name == "exp456.a2.json"  # filename is the invocation handle
     data = json.loads(path.read_text())
     assert data["stage"] == "grade"
 
     finalize_manifest(path, {"c1": {"temperature": 0.3}})
     data = json.loads(path.read_text())
     assert data["sampling_effective"] == {"c1": {"temperature": 0.3}}
-    assert data["run_id"] == "run456"  # rest of the manifest untouched
+    assert data["experiment_id"] == "exp456" and data["attempt"] == 2  # rest untouched

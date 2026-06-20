@@ -145,12 +145,24 @@ def build_study_card(
     )
 
     # 2. Execution — one row per run; the reproducibility gold is served_model.
-    ledger = ledger_df if not ledger_df.empty else pd.DataFrame(columns=["run_id", "calls", "usd"])
+    from itemeval._identity import invocation_handle
+
+    ledger = (
+        ledger_df
+        if not ledger_df.empty
+        else pd.DataFrame(columns=["experiment_id", "attempt", "calls", "usd"])
+    )
     exec_rows = []
     served: "dict[str, dict]" = {}
     for m in manifests:
-        rid = m.get("run_id", "")
-        lrows = ledger[ledger["run_id"] == rid] if not ledger.empty else ledger
+        eid = m.get("experiment_id", "")
+        att = m.get("attempt")
+        rid = invocation_handle(eid, att) if att is not None else eid
+        lrows = (
+            ledger[(ledger["experiment_id"] == eid) & (ledger["attempt"] == att)]
+            if not ledger.empty
+            else ledger
+        )
         calls = int(pd.to_numeric(lrows["calls"], errors="coerce").fillna(0).sum())
         usd = float(pd.to_numeric(lrows["usd"], errors="coerce").fillna(0.0).sum())
         exec_rows.append(
@@ -170,7 +182,7 @@ def build_study_card(
         [cond_id, info.get("provider", ""), info.get("served_model") or "(unknown)"]
         for cond_id, info in sorted(served.items())
     ]
-    execution = _table(["run_id", "stage", "date", "calls", "spend", "policy"], exec_rows)
+    execution = _table(["run", "stage", "date", "calls", "spend", "policy"], exec_rows)
     if served_rows:
         execution += "\n\nResolved endpoints (which provider snapshot actually answered):\n\n"
         execution += _table(["condition", "provider", "served_model"], served_rows)

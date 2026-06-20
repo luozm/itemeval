@@ -450,7 +450,7 @@ def test_prepare_surfaces_sample_end_to_end(tmp_path, offline_adapter):
     assert prep.paths.model_locks.is_file()  # pinned on first prepare
     assert {c.model for c in prep.grid.generate} == set(drawn)  # grid uses the draw
 
-    manifest = build_manifest(prep, "generate", "r1", [], None)
+    manifest = build_manifest(prep, "generate", "r1", 1, [], None)
     assert manifest.models == drawn
     assert manifest.model_sample["source"] == "explicit" and manifest.model_sample["n"] == 2
     assert "sample" in manifest.sampling_requested  # requested spec echoed

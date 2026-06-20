@@ -6,11 +6,14 @@ import pyarrow as pa
 from itemeval.store._base import read_parquet_or_empty, upsert_parquet
 from itemeval.store._layout import StudyPaths
 
-LEDGER_KEY = ["run_id", "stage", "condition_id", "model"]
+LEDGER_KEY = ["experiment_id", "attempt", "stage", "condition_id", "model"]
 
 LEDGER_SCHEMA = pa.schema(
     [
-        pa.field("run_id", pa.string(), nullable=False),
+        # Run identity (recovery-run-identity): per-attempt key so one attempt's
+        # costs never overwrite a prior attempt's for the same condition+model.
+        pa.field("experiment_id", pa.string(), nullable=False),
+        pa.field("attempt", pa.int32(), nullable=False),
         pa.field("stage", pa.string(), nullable=False),
         pa.field("condition_id", pa.string(), nullable=False),
         pa.field("model", pa.string(), nullable=False),

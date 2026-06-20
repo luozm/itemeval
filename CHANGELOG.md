@@ -277,6 +277,51 @@ Closes: expected-cost
 Closes: native-batch-routing
 
 ### Changed
+- **Recovery-aware run identity: `experiment_id` + `attempt` replace `run_id`.**
+  itemeval kept two artifact classes under two identity rules: **data**
+  (solutions/gradings) is content-keyed, so re-runs **converge** into one store;
+  **provenance** (the per-invocation `run_id`, its manifest, its `.eval` pile)
+  was invocation-keyed, so re-runs **forked** — a second `run_id`/manifest for
+  what is *one experiment*, with nothing marking them as attempts of the same
+  intent and a `solutions.run_id` column that mixed ids after recovery. Flaky
+  endpoints make recovery the *common* path, so the fragmentation bit constantly.
+  Run identity is now **experiment-scoped with attempts**: `run_id` is replaced
+  by a deterministic `experiment_id` (`sha256(config_digest : study : stage)[:12]`)
+  plus an `attempt` integer, across the solutions / gradings / ledger / log_index
+  / materialized-rubrics stores, the manifests, and the long export (the export's
+  `gen_run_id`/`grade_run_id` columns become `gen_experiment_id`+`gen_attempt` /
+  `grade_experiment_id`+`grade_attempt`). The `config_digest` is the **semantic**
+  config — re-parsed through the pydantic model, identity-bearing fields only — so
+  comments, whitespace, key order, and pure execution/cost knobs (`output_dir`,
+  `cache`, the whole `budget` block, `provider_routing`, `cache_prompt`) never
+  change identity; `config_sha256` is redefined to this digest. A re-run of an
+  **unchanged config recovers the same `experiment_id`** (next attempt, converging
+  into existing results — recovery never re-pays a completed cell); a real design
+  edit forks a new experiment; `--new-run` on `generate`/`grade` forces a fresh
+  one. Grown items / roster drift under an unchanged config stay a **soft warning,
+  not a fork**. `generate`/`grade` announce the decision (`recovery: attempt 3 of
+  experiment a7b3c9d2 — converging into existing results`, or `experiment: … ·
+  attempt 1 (new)`) and surface append-only `experiment_id`/`attempt`/`run_kind`
+  on `GenerateResult`/`GradeResult` (`--json`). A persisted **per-experiment
+  index** (`manifests/experiments/<stage>.<experiment_id>.json`) rolls up an
+  experiment's attempts + the current one; `status` surfaces it
+  (`experiments: a7b3c9d2 (generate) — 3 attempts, current a3`) and gains an
+  append-only `experiments` array. Builds on `recoverable-harvest` (a recovered
+  `.eval` is projected back through the same row builders, byte-identical to a
+  live row) and gates the future mid-run tracker, which reads run state as
+  experiments-and-attempts. No new dependency.
+
+  **Study migration.** This is a non-additive rename of a study-facing column
+  across five parquet stores + the manifests + the export. itemeval does not read
+  old-schema stores: a command meeting one (a store with `run_id` and no
+  `experiment_id`) fails loudly with a briefing rather than crashing opaquely.
+  The safe, **result-preserving** migration is a clean break — delete
+  `manifests/`, `logs/`, and the parquet stores under the study, then re-run:
+  content keys are unchanged and cached generations replay at ~$0, so results are
+  identical. (Per the pre-1.0 carve-out in `DEVELOPMENT.md`.)
+
+Closes: recovery-run-identity
+
 - **Conditions now run concurrently within a stage.** `generate` and `grade`
   previously called `inspect_ai.eval()` once per condition in a serial loop, so
   model #2 waited for model #1 to finish. Each stage now builds every

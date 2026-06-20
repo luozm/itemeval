@@ -198,7 +198,7 @@ Prefer the parquet stores over stdout:
 | Solutions | `solutions.parquet` | per (condition × item × epoch): `solution, stop_reason, error`, tokens, `usd` |
 | Gradings | `gradings.parquet` | per grading event incl. `parse_error`, `judge_completion` |
 | Cost ledger | `ledger.parquet` / `export/ledger.csv` | spend by run × stage × condition × model |
-| Manifests | `manifests/<run_id>.json` | full reproducibility record per run |
+| Manifests | `manifests/<experiment_id>.aN.json` | full reproducibility record per attempt (re-runs of an unchanged config recover the same `experiment_id`, next `attempt`; `--new-run` forks) |
 | Raw transcripts | `logs/<stage>/*.eval` | inspect_ai logs, one per condition (open with `inspect view`) |
 
 Or stay in Python — one public function per command, same semantics, pydantic

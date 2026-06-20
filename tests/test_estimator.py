@@ -138,7 +138,8 @@ def test_grade_estimate_scopes_remaining_to_current_grid(study):
         [
             {
                 "study": prep.config.study,
-                "run_id": "old",
+                "experiment_id": "old",
+                "attempt": 1,
                 "condition_id": "orphan-roster-cond",  # not in the current grid
                 "condition_slug": "orphan",
                 "item_id": it.id,

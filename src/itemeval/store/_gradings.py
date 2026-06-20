@@ -3,7 +3,7 @@
 import pandas as pd
 import pyarrow as pa
 
-from itemeval.store._base import read_parquet_or_empty, upsert_parquet
+from itemeval.store._base import assert_identity_current, read_parquet_or_empty, upsert_parquet
 from itemeval.store._layout import StudyPaths
 from itemeval.store._solutions import empty_solution_mask
 
@@ -12,7 +12,8 @@ GRADING_KEY = ["grade_condition_id", "gen_condition_id", "item_id", "epoch"]
 GRADINGS_SCHEMA = pa.schema(
     [
         pa.field("study", pa.string(), nullable=False),
-        pa.field("run_id", pa.string(), nullable=False),
+        pa.field("experiment_id", pa.string(), nullable=False),  # run identity (see _solutions)
+        pa.field("attempt", pa.int32(), nullable=False),
         pa.field("grade_condition_id", pa.string(), nullable=False),
         pa.field("grade_condition_slug", pa.string(), nullable=False),
         pa.field("gen_condition_id", pa.string(), nullable=False),
@@ -51,7 +52,10 @@ GRADINGS_SCHEMA = pa.schema(
 def read_gradings(paths: StudyPaths) -> pd.DataFrame:
     from itemeval.store._solutions import _backfill_wave
 
-    return _backfill_wave(read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA))
+    df = assert_identity_current(
+        read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA), paths.gradings
+    )
+    return _backfill_wave(df)
 
 
 def upsert_gradings(paths: StudyPaths, rows: "list[dict]") -> int:

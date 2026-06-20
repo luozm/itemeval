@@ -5,7 +5,6 @@ from itemeval._util import (
     canonical_json,
     drop_none,
     estimate_tokens,
-    new_run_id,
     sha256_hex,
 )
 
@@ -31,12 +30,6 @@ def test_estimate_tokens():
 
 def test_drop_none():
     assert drop_none({"a": 1, "b": None, "c": 0}) == {"a": 1, "c": 0}
-
-
-def test_new_run_id_shape():
-    rid = new_run_id("generate")
-    assert rid.startswith("generate_")
-    assert len(rid.split("_")) == 3
 
 
 def test_atomic_write_bytes(tmp_path: Path):

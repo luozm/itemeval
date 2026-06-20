@@ -48,6 +48,18 @@ class SnapshotStatus(BaseModel):
     rows: int
 
 
+class ExperimentStatus(BaseModel):
+    """One experiment's attempt rollup (recovery-run-identity W3): how many times
+    this stage's experiment was run and which attempt is current."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_id: str
+    stage: str
+    attempts: int
+    current_attempt: int
+
+
 class WaveStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -77,6 +89,9 @@ class StatusReport(BaseModel):
     spend_generate_usd: float
     spend_grade_usd: float
     manifests: list[str]  # sorted filenames
+    # Per-experiment attempt rollup (recovery-run-identity); one entry per
+    # (stage, experiment_id), so a recovered run shows >1 attempt.
+    experiments: list[ExperimentStatus] = []
     snapshots: list[SnapshotStatus] = []  # frozen export snapshots, sorted by name
     waves: list[WaveStatus] = []  # per-wave completion; single entry when no waves used
     # Crash recovery (recoverable-harvest): rows the CLI auto-harvested from a prior
@@ -202,6 +217,18 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         else []
     )
 
+    from itemeval._experiments import read_experiments
+
+    experiments = [
+        ExperimentStatus(
+            experiment_id=idx.experiment_id,
+            stage=idx.stage,
+            attempts=len(idx.attempts),
+            current_attempt=idx.current_attempt,
+        )
+        for idx in read_experiments(prep.paths)
+    ]
+
     waves: list[WaveStatus] = []
     if not solutions.empty and "wave" in solutions.columns:
         # expected comes from the current grid, so exclude rows stranded under
@@ -272,6 +299,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
         spend_generate_usd=spend_gen,
         spend_grade_usd=spend_grade,
         manifests=manifests,
+        experiments=experiments,
         snapshots=snapshots,
         waves=waves,
     )

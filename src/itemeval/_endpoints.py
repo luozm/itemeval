@@ -95,8 +95,9 @@ def model_args_for(
 
     With cache scheduling active, direct `openai/*` models get OpenAI's keyed
     caching (names kept verbatim): a `prompt_cache_key` stable across runs and
-    phases of the same study+condition — deliberately excluding run_id/wave,
-    so a pilot warms the full run — plus `prompt_cache_retention: "24h"`,
+    phases of the same study+condition — deliberately excluding the run identity
+    (experiment_id/attempt) and wave, so a pilot warms the full run — plus
+    `prompt_cache_retention: "24h"`,
     which is surcharge-free on OpenAI pricing (checked 2026-06-12).
     Granularity is per-condition, not per-cache-group: model_args are
     per-Model and per-sample keys aren't reachable through GenerateConfig;

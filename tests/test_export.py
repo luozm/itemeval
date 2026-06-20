@@ -36,7 +36,9 @@ def test_export_schema_and_mirrors(study):
 
     parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
     assert list(parquet.columns) == list(EXPORT_SCHEMA.names)
-    assert len(parquet.columns) == 47  # 45 + wave/wave_label
+    assert (
+        len(parquet.columns) == 49
+    )  # 45 + wave/wave_label + experiment_id/attempt per stage (−2 run_id)
     assert len(parquet) == 8
 
     # One row per grading event, never aggregated; full provenance joined in.
@@ -64,7 +66,8 @@ def test_export_detects_ledger_mismatch(study):
         prep.paths,
         [
             {
-                "run_id": "phantom",
+                "experiment_id": "phantom",
+                "attempt": 1,
                 "stage": "generate",
                 "condition_id": "x",
                 "model": "m",

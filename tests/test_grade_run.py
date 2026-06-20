@@ -112,7 +112,8 @@ def _seed_solutions(prep, blank_item="1"):
                 rows.append(
                     {
                         "study": prep.config.study,
-                        "run_id": "r",
+                        "experiment_id": "r",
+                        "attempt": 1,
                         "condition_id": cond.id,
                         "condition_slug": cond.slug,
                         "item_id": it.id,
@@ -224,7 +225,8 @@ def _seed_orphan_roster(prep, condition_id="orphan-roster-cond"):
         [
             {
                 "study": prep.config.study,
-                "run_id": "old",
+                "experiment_id": "old",
+                "attempt": 1,
                 "condition_id": condition_id,
                 "condition_slug": "orphan",
                 "item_id": it.id,

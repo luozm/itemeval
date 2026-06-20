@@ -3,7 +3,7 @@
 import pandas as pd
 import pyarrow as pa
 
-from itemeval.store._base import read_parquet_or_empty, upsert_parquet
+from itemeval.store._base import assert_identity_current, read_parquet_or_empty, upsert_parquet
 from itemeval.store._layout import StudyPaths
 
 SOLUTION_KEY = ["condition_id", "item_id", "epoch"]
@@ -11,7 +11,11 @@ SOLUTION_KEY = ["condition_id", "item_id", "epoch"]
 SOLUTIONS_SCHEMA = pa.schema(
     [
         pa.field("study", pa.string(), nullable=False),
-        pa.field("run_id", pa.string(), nullable=False),
+        # Run identity (recovery-run-identity): experiment_id groups attempts of one
+        # experiment, attempt distinguishes recovery passes. Not part of any content
+        # key — a recovered cell overwrites the failed row at the same (cond,item,epoch).
+        pa.field("experiment_id", pa.string(), nullable=False),
+        pa.field("attempt", pa.int32(), nullable=False),
         pa.field("condition_id", pa.string(), nullable=False),
         pa.field("condition_slug", pa.string(), nullable=False),
         pa.field("item_id", pa.string(), nullable=False),
@@ -65,7 +69,10 @@ def _backfill_wave(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def read_solutions(paths: StudyPaths) -> pd.DataFrame:
-    return _backfill_wave(read_parquet_or_empty(paths.solutions, SOLUTIONS_SCHEMA))
+    df = assert_identity_current(
+        read_parquet_or_empty(paths.solutions, SOLUTIONS_SCHEMA), paths.solutions
+    )
+    return _backfill_wave(df)
 
 
 def upsert_solutions(paths: StudyPaths, rows: "list[dict]") -> int:

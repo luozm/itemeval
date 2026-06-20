@@ -155,7 +155,7 @@ def endpoint_drift_warnings(
             warnings.append(
                 f"{model} previously answered as {entries[-2][1]} and now-latest "
                 f"{entries[-1][1]} across past runs ({', '.join(served)}); provider "
-                "may serve a newer snapshot — rows are distinguishable by run_id"
+                "may serve a newer snapshot — rows are distinguishable by experiment_id/attempt"
             )
         hosts_seen = sorted(upstreams.get(model) or [])
         hosts = sorted({u for _, u in hosts_seen})
@@ -175,6 +175,6 @@ def endpoint_drift_warnings(
         if age_days is not None and age_days > gap_days:
             warnings.append(
                 f"last run was {age_days:.0f} days ago (>{gap_days}d): the provider may "
-                "now serve a newer snapshot — rows are distinguishable by run_id"
+                "now serve a newer snapshot — rows are distinguishable by experiment_id/attempt"
             )
     return warnings

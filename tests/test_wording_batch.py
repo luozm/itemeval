@@ -28,7 +28,9 @@ def test_batch_line_printed_when_batch_providers_ran(
 
     def fake_run(prep, **kwargs):
         return run_mod.GenerateResult(
-            run_id="r",
+            experiment_id="r",
+            attempt=1,
+            run_kind="new",
             study=prep.config.study,
             conditions=[],
             rows_written=0,

@@ -53,7 +53,11 @@ class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     manifest_version: int = MANIFEST_VERSION
-    run_id: str
+    # Run identity (recovery-run-identity): the deterministic experiment_id +
+    # attempt that replace the old per-invocation run_id. The manifest *filename*
+    # is the invocation handle f"{experiment_id}.a{attempt}".
+    experiment_id: str
+    attempt: int
     stage: Literal["generate", "grade"]
     study: str
     created_at: str
@@ -123,7 +127,8 @@ def _template_manifest(t, base: Path) -> "TemplateManifest":
 def build_manifest(
     prep: "PreparedStudy",
     stage: str,
-    run_id: str,
+    experiment_id: str,
+    attempt: int,
     conditions_run: "list[str]",
     estimate_usd: "float | None",
     estimate_full_usd: "float | None" = None,
@@ -140,7 +145,8 @@ def build_manifest(
     sampling = cfg.solvers.model_dump(mode="json")
     sampling.pop("models", None)
     return Manifest(
-        run_id=run_id,
+        experiment_id=experiment_id,
+        attempt=attempt,
         stage=stage,  # type: ignore[arg-type]
         study=cfg.study,
         created_at=utc_now_iso(),
@@ -197,7 +203,11 @@ def build_manifest(
 
 
 def write_manifest(manifest: Manifest, paths: "StudyPaths") -> Path:
-    path = paths.manifests_dir / f"{manifest.run_id}.json"
+    from itemeval._identity import invocation_handle
+
+    path = (
+        paths.manifests_dir / f"{invocation_handle(manifest.experiment_id, manifest.attempt)}.json"
+    )
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2, ensure_ascii=False)
     atomic_write_bytes(path, (payload + "\n").encode("utf-8"))
     return path

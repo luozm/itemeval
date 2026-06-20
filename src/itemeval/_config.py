@@ -21,7 +21,6 @@ from pydantic import (
 )
 
 from itemeval._errors import ConfigError
-from itemeval._util import sha256_hex
 
 NAME_RE = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 STUDY_RE = r"^[a-z0-9][a-z0-9_-]{0,63}$"
@@ -482,7 +481,12 @@ def load_config(path: "str | Path", *, work_dir: "str | Path | None" = None) -> 
     cfg._config_dir = p.parent
     cfg._work_dir = Path(work_dir).expanduser().resolve() if work_dir is not None else Path.cwd()
     cfg._config_path = p
-    cfg._config_sha256 = sha256_hex(raw)
+    # Semantic digest (identity-bearing fields, normalized through the model),
+    # not raw bytes — so comments/whitespace/key-order and execution knobs don't
+    # change identity. Lazy import avoids an _identity <-> _config cycle.
+    from itemeval._identity import normalized_config_digest
+
+    cfg._config_sha256 = normalized_config_digest(cfg)
     return cfg
 
 
