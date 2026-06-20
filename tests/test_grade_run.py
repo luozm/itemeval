@@ -174,6 +174,122 @@ def test_grade_policy_grades_empty_solutions(study):
     assert set(df["item_id"]) == {"1", "2"}
 
 
+def _prep_with_max_solution_chars(study, max_chars):
+    import yaml
+
+    from itemeval import ExperimentConfig
+    from itemeval._prepare import prepare_study
+
+    cfg, _ = study
+    data = yaml.safe_load(cfg.config_path.read_text())
+    data["graders"]["judge"]["max_solution_chars"] = max_chars
+    cfg2 = ExperimentConfig.model_validate(data)
+    cfg2._config_dir = cfg.config_dir
+    cfg2._work_dir = cfg.work_dir
+    return prepare_study(cfg2)
+
+
+def _seed_solutions_with_long(prep, long_item="1", long_chars=5000):
+    """Seed the solutions store: `long_item`'s completions are an over-long loop
+    output (no error), the rest are ordinary short answers."""
+    from itemeval.store._solutions import upsert_solutions
+
+    rows = []
+    for cond in prep.grid.generate:
+        for it in prep.items_effective:
+            for epoch in (1, 2):
+                long = it.id == long_item
+                rows.append(
+                    {
+                        "study": prep.config.study,
+                        "experiment_id": "r",
+                        "attempt": 1,
+                        "condition_id": cond.id,
+                        "condition_slug": cond.slug,
+                        "item_id": it.id,
+                        "dataset_id": "d",
+                        "dataset_revision": "v",
+                        "epoch": epoch,
+                        "model": cond.model,
+                        "prompt_name": cond.prompt_name,
+                        "prompt_hash": "h",
+                        "model_config_name": cond.model_config_name,
+                        "solution": ("loop " * long_chars) if long else "ANSWER: 4",
+                        "stop_reason": "stop",
+                        "error": None,
+                        "log_file": "lf",
+                        "created_at": "t0",
+                    }
+                )
+    upsert_solutions(prep.paths, rows)
+
+
+def _forbidden_judge_factory(model, stage, model_args=None):
+    raise AssertionError("oversized solution must not be sent to the judge")
+
+
+def test_grade_oversized_scored_zero_not_judged(study):
+    """A solution over max_solution_chars is scored 0 without a judge call."""
+    prep = _prep_with_max_solution_chars(study, 1000)
+    _seed_solutions_with_long(prep, long_item="1", long_chars=5000)
+
+    # The 4 oversized rows (item 1 x 2 gen conds x 2 epochs) never reach the
+    # judge; the 4 short rows (item 2) do. A judge that raises if called proves
+    # the oversized rows skipped it — so route every solution through the real
+    # mock judge first, then assert the oversized ones were not judged.
+    result = run_grade(prep)
+    assert result.oversized_skipped == 4
+    assert result.rows_written == 8  # 4 skipped (scored 0) + 4 judged
+    df = read_gradings(prep.paths)
+    over = df[df["item_id"] == "1"]
+    assert len(over) == 4
+    assert (over["score"] == 0.0).all()
+    assert (~over["parse_ok"]).all()
+    assert (over["parse_error"] == "oversized_skip").all()
+    assert over["judge_completion"].isna().all()
+    assert (over["usd"] == 0.0).all()
+    # Oversized skips are not parse failures (they are a deliberate score-0 skip).
+    assert result.parse_failures == 0
+    # The short solutions were judged normally.
+    short = df[df["item_id"] == "2"]
+    assert short["judge_completion"].notna().all()
+    assert short["parse_ok"].all()
+
+
+def test_grade_oversized_never_calls_judge(study):
+    """When *every* pending solution is oversized, the judge is never resolved."""
+    prep = _prep_with_max_solution_chars(study, 1000)
+    # Make both items oversized so no judge eval is needed at all.
+    _seed_solutions_with_long(prep, long_item="1", long_chars=5000)
+    from itemeval.store._solutions import read_solutions, upsert_solutions
+
+    df = read_solutions(prep.paths)
+    rows = df.to_dict("records")
+    for r in rows:
+        r["solution"] = "loop " * 5000  # all oversized
+    upsert_solutions(prep.paths, rows)
+
+    result = run_grade(prep, model_factory=_forbidden_judge_factory)
+    assert result.oversized_skipped == 8
+    assert result.rows_written == 8
+    g = read_gradings(prep.paths)
+    assert (g["score"] == 0.0).all()
+    assert (g["parse_error"] == "oversized_skip").all()
+
+
+def test_grade_no_threshold_unchanged(study):
+    """None threshold (default) leaves behavior unchanged — the long solution is
+    judged like any other (no skip, no score-0 marker)."""
+    _, prep = study  # default config: graders.judge.max_solution_chars unset
+    _seed_solutions_with_long(prep, long_item="1", long_chars=5000)
+    result = run_grade(prep)
+    assert result.oversized_skipped == 0
+    assert result.rows_written == 8
+    df = read_gradings(prep.paths)
+    assert df["judge_completion"].notna().all()  # all judged, none skipped
+    assert (df["parse_error"] != "oversized_skip").all()
+
+
 def test_grade_grader_rubric_filters(study):
     _, prep = study
     run_generate(prep)

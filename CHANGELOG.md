@@ -7,6 +7,23 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Grade-time skip for over-long solutions** (`oversized-solution-skip`): a new
+  per-grader knob `graders.<name>.max_solution_chars` (int, default `None` = off)
+  makes `grade` auto-score 0 — **without a judge call** — any stored solution whose
+  visible text exceeds the threshold. Motivation: weak models emit
+  repetition-loop outputs (real cases: 128k–376k chars) that are not valid proofs;
+  paying the judge to grade them is waste, and they score 0 anyway. Skipped rows
+  are written with `score=0`, `parse_ok=False`, `parse_error="oversized_skip"`,
+  `judge_completion=None` (mirroring the empty-solution skip — recorded, not
+  graded, never a parse failure), and the count surfaces in the run summary
+  (`oversized solutions: N scored 0 without grading (over max_solution_chars)`)
+  and the new `GradeResult.oversized_skipped` field (`--json` parity). Empty
+  handling applies first, so a solution is never counted as both empty and
+  oversized. Identity treatment matches `solvers.on_empty`: the knob enters the
+  `experiment_id` digest (it changes what gets graded) but never a grade
+  condition id. `None` threshold is a pure no-op — no behavior change unless set.
+
+  Closes: oversized-solution-skip
 - **Live-run heartbeat + `--json` liveness** (`live-tracker`): a `generate`/`grade`
   stage no longer goes dark when inspect's live display is silenced. Under `--json`
   (which forces `display=none`), `--display none`, or any non-TTY run, the stage now

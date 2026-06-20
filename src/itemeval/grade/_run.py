@@ -59,7 +59,7 @@ from itemeval.grade._parse import parse_judge_output
 from itemeval.grade._verifiable import VERIFIABLE_SCORERS
 from itemeval.store import _gradings, _ledger, _logs, _materialized, _solutions
 from itemeval.store._base import rel_to_study
-from itemeval.store._solutions import empty_solution_mask
+from itemeval.store._solutions import empty_solution_mask, oversized_solution_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -84,6 +84,10 @@ class GradeResult(BaseModel):
     empty_total: int = 0  # scoped empty (no-error) solutions
     empty_skipped: int = 0  # of those, how many were excluded from grading
     empty_stop_reasons: "dict[str, int]" = Field(default_factory=dict)
+    # Over-long solutions excluded from the judge and scored 0 (graders'
+    # max_solution_chars policy). 0 unless a grader set the threshold. A grading
+    # event count: one per (over-long solution x judge condition that skipped it).
+    oversized_skipped: int = 0
     # Two-stage rubric materialization (0 unless a `rubrics:` materialize ran):
     materialized_rubrics: int = 0  # rubrics materialized this run (fresh model calls)
     materialized_reused: int = 0  # reused from the frozen artifact store ($0)
@@ -162,6 +166,39 @@ def _verifiable_rows(
                 "score_raw": result.score_raw,
                 "parse_ok": result.parse_ok,
                 "parse_error": result.parse_error,
+                "reasoning": None,
+                "judge_completion": None,
+                "error": None,
+                **usage_columns(None),
+                "usd": 0.0,
+                "latency_s": None,
+                "log_file": None,
+            }
+        )
+    return rows
+
+
+def _oversized_rows(
+    prep: "PreparedStudy",
+    cond: GradeCondition,
+    oversized: "pd.DataFrame",
+    experiment_id: str,
+    attempt: int,
+) -> "list[dict]":
+    """Skip rows for over-long solutions: score 0, no judge call (mirrors the
+    empty-skip path's "recorded, not graded"). parse_ok=False marks them final
+    (re-run is pointless — the solution is what it is); parse_error names the
+    reason so the skip is legible in the store, not silently a zero."""
+    now = utc_now_iso()
+    rows = []
+    for sol_row in oversized.itertuples():
+        rows.append(
+            {
+                **_base_row(prep, cond, experiment_id, attempt, sol_row, now),
+                "score": 0.0,
+                "score_raw": None,
+                "parse_ok": False,
+                "parse_error": "oversized_skip",
                 "reasoning": None,
                 "judge_completion": None,
                 "error": None,
@@ -508,6 +545,7 @@ def run_grade(
     endpoints_effective: dict[str, Any] = {}
     rows_written = 0
     parse_failures = 0
+    oversized_skipped = 0  # over-long solutions scored 0 without a judge call
     total_usd = 0.0
     judge_models: list[str] = []  # grader models of judge conditions that ran
     unpinned_cached: list[str] = []  # openrouter/anthropic judges cached without routing
@@ -533,7 +571,15 @@ def run_grade(
         nonlocal rows_written, total_usd, parse_failures
         rows_written += n
         total_usd += cond_usd or 0.0
-        parse_failures += sum(1 for r in rows if not r["parse_ok"] and r["error"] is None)
+        # Oversized-skip rows carry parse_ok=False by design (a final, ungraded
+        # score-0 marker) — they are a skip, not a judge parse failure, so they
+        # are excluded from the parse-failure tally (the empty-skip path likewise
+        # never produces a parse failure).
+        parse_failures += sum(
+            1
+            for r in rows
+            if not r["parse_ok"] and r["error"] is None and r["parse_error"] != "oversized_skip"
+        )
         reports_by_cond[cond.id] = ConditionRunReport(
             condition_id=cond.id,
             slug=cond.slug,
@@ -548,8 +594,10 @@ def run_grade(
         )
 
     # Phase 1: verifiable conditions score in-process now (no model call); judge
-    # conditions get a task with its own model for the shared parallel eval.
-    planned: list[tuple[GradeCondition, Any, str, Any]] = []
+    # conditions get a task with its own model for the shared parallel eval. The
+    # 5th tuple slot carries any oversized-skip rows already written for the
+    # condition, so Phase 3 folds them into its report's row count.
+    planned: list[tuple[GradeCondition, Any, str, Any, list[dict]]] = []
     for cond in selected:
         pending = _gradings.pending_solutions(
             scoped, gradings_df, cond.id, force, include_empty=include_empty
@@ -585,6 +633,51 @@ def run_grade(
             )
             finalize(
                 cond, rows, n=n, items_run=len(pending), log_file=None, cond_usd=0.0, local_rows=0
+            )
+            continue
+        # Oversized skip (graders.<name>.max_solution_chars): over-long solutions
+        # are scored 0 without a judge call (mirrors the empty-skip path — recorded,
+        # not sent to the judge). Excluded from `pending` so the judge batch never
+        # sees them. Applied after empty handling (empty rows are already out of
+        # `pending` under skip/rerun), so a solution is never both empty and
+        # oversized. None threshold = no rows match = today's behavior.
+        max_chars = prep.config.grader_spec(cond.grader_name).max_solution_chars
+        oversized_rows: list[dict] = []
+        if max_chars is not None and not pending.empty:
+            over_mask = oversized_solution_mask(pending, max_chars)
+            oversized = pending[over_mask]
+            if not oversized.empty:
+                oversized_rows = _oversized_rows(
+                    prep, cond, oversized, ident.experiment_id, ident.attempt
+                )
+                n_over = _gradings.upsert_gradings(prep.paths, oversized_rows)
+                _ledger.upsert_ledger(
+                    prep.paths,
+                    [
+                        ledger_row(
+                            ident.experiment_id,
+                            ident.attempt,
+                            "grade",
+                            cond.id,
+                            "(oversized-skip)",
+                            oversized_rows,
+                            None,
+                        )
+                    ],
+                )
+                oversized_skipped += n_over
+                pending = pending[~over_mask]
+        if pending.empty:
+            # Every pending solution for this condition was oversized: the work is
+            # done (skip rows written), no judge eval needed.
+            finalize(
+                cond,
+                oversized_rows,
+                n=len(oversized_rows),
+                items_run=len(oversized_rows),
+                log_file=None,
+                cond_usd=0.0,
+                local_rows=0,
             )
             continue
         # Judge: native batch routing on the grader id (sampled id stays
@@ -628,22 +721,22 @@ def run_grade(
                 message=labeled(f"{type(e).__name__}: {e}", exc=e),
             )
             continue
-        planned.append((cond, pending, exec_grader, task))
+        planned.append((cond, pending, exec_grader, task, oversized_rows))
 
     # Phase 2: one eval over all judge tasks — graders run concurrently.
     log_by_cond, fatal = run_condition_evals(
-        [task for _, _, _, task in planned],
+        [task for _, _, _, task, _ in planned],
         stage="grade",
         experiment_id=ident.experiment_id,
         attempt=ident.attempt,
         study=prep.config.study,
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("grade")),
-        max_tasks=max_tasks_for([ex for _, _, ex, _ in planned]),
+        max_tasks=max_tasks_for([ex for _, _, ex, _, _ in planned]),
     )
 
     # Phase 3: harvest each judge condition from its log (mapped by metadata).
-    for cond, pending, exec_grader, _task in planned:
+    for cond, pending, exec_grader, _task, oversized_rows in planned:
         log = log_by_cond.get(cond.id)
         if fatal is not None or log is None or log.status != "success":
             reports_by_cond[cond.id] = ConditionRunReport(
@@ -661,7 +754,14 @@ def run_grade(
         rows, n, cond_usd = persist_grade_condition(
             prep, cond, pending, log, ident.experiment_id, ident.attempt
         )
+        # local_cache_rows over the *judged* rows only — an oversized-skip row has
+        # no usage object (like a cache hit) but never touched the cache, so it
+        # must not inflate the local-cache count.
         local_rows = local_cache_rows(rows)
+        # Fold the condition's already-written oversized-skip rows into its report
+        # so rows_written / the report row count cover skips + judged rows.
+        rows = [*oversized_rows, *rows]
+        n += len(oversized_rows)
         judge_models.append(cond.grader_model)
         # Judge tasks always request cache_prompt="auto" (markers on), so an
         # unpinned openrouter/anthropic judge is a cached-but-routable run —
@@ -726,6 +826,7 @@ def run_grade(
         empty_total=empty_total,
         empty_skipped=empty_skipped,
         empty_stop_reasons=empty_stop_reasons,
+        oversized_skipped=oversized_skipped,
         materialized_rubrics=int(mat_stats["materialized"]),
         materialized_reused=int(mat_stats["reused"]),
         materialize_usd=float(mat_stats["usd"]),

@@ -328,6 +328,14 @@ class GraderSpec(BaseModel):
     # solvers.attempt_timeout. Pass-through; never enters the grade condition id
     # or the experiment_id digest (popped in _identity._NON_IDENTITY_GRADER).
     attempt_timeout: int | None = Field(default=None, ge=1)
+    # Grade-time skip for over-long ("degenerate"/"loop") solutions: a stored
+    # solution whose visible text exceeds this many characters is NOT sent to the
+    # judge — it is recorded as score 0 (parse_ok=False, oversized_skip flag) and
+    # the count is surfaced in the run summary. None (default) = off, no behavior
+    # change. Saves paying the judge to grade repetition-loop junk that scores 0
+    # anyway. Like solvers.on_empty (and unlike provider_routing/attempt_timeout):
+    # it enters the experiment_id digest but never the grade condition id.
+    max_solution_chars: int | None = Field(default=None, ge=1)
 
 
 class MaterializeSpec(BaseModel):

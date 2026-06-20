@@ -645,6 +645,14 @@ def _run_stage(args, stage, runner) -> int:
                         f"empty solutions: {result.empty_total} graded as-is "
                         f"[{breakdown}] — on_empty={result.on_empty}"
                     )
+            if result.oversized_skipped:
+                # Self-contained fact: over-long solutions auto-scored 0 without a
+                # judge call (graders.<name>.max_solution_chars). No silent side
+                # effect — the skip is always announced.
+                print(
+                    f"oversized solutions: {result.oversized_skipped} scored 0 "
+                    "without grading (over max_solution_chars)"
+                )
         # Run identity (recovery-run-identity): a quotable provenance line —
         # recovery converges into the existing experiment; --new-run forks.
         if result.run_kind == "recovery":

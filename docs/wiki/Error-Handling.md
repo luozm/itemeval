@@ -115,6 +115,34 @@ the affected cells, replaying the rest from the response cache at $0 — or keep
 truncated rows and exclude them in analysis. There is no `on_truncated` knob: the
 signal is surfaced; what to do with it is yours.
 
+## Oversized solutions
+
+Weak models sometimes fall into a **repetition loop** and emit an enormous,
+degenerate output — 100k+ characters of the same phrase — that is not a valid
+answer. Sending it to the LLM judge is pure waste: the input is huge (expensive),
+and the output scores 0 anyway.
+
+The per-grader knob **`graders.<name>.max_solution_chars`** (default `null` =
+off) skips it. When set, `grade` checks each stored solution's visible text
+length **before** calling the judge: any solution over the threshold is **not
+judged** — it is recorded as a grading row with `score=0`, `parse_ok=false`,
+`parse_error="oversized_skip"`, and `judge_completion=null`. This mirrors the
+empty-solution skip ([above](#empty-completions)): the row is *recorded, not
+graded*, and is **not** a parse failure. Empty handling runs first, so a blank
+completion is counted as empty (not oversized) and never both.
+
+Where it shows up:
+
+- **`grade` summary** — `oversized solutions: N scored 0 without grading (over
+  max_solution_chars)`, with `GradeResult.oversized_skipped` carrying the count
+  in `--json`.
+
+The threshold is a **design declaration** (it changes what gets graded), so it
+enters the experiment_id digest like `solvers.on_empty` — but never a grade
+condition id. Choose it well above a legitimate long proof (a realistic loop is
+100k+ chars; a real proof is rarely past a few tens of thousands). `null` leaves
+every solution graded as before.
+
 ## Eval-level (whole-condition) failures
 
 If an entire `inspect_ai.eval(...)` raises — a misconfigured task, an

@@ -69,6 +69,7 @@ graders:                       # resolves facets.grader names
     split_rubric: false        # rubric head as system msg + solution as user msg (provider cache breakpoint); changes condition ids
     provider_routing: null     # optional; same OpenRouter routing object as solvers.provider_routing, for this judge's calls
     attempt_timeout: null      # optional; seconds. Same as solvers.attempt_timeout, for this judge's calls
+    max_solution_chars: null   # optional; skip the judge for over-long solutions — a stored solution whose visible text exceeds this many chars is scored 0 (parse_ok=false, oversized_skip) without a judge call. default null = off. See Error-Handling#oversized-solutions
 
 crossing: full                 # only "full" in v0.1
 

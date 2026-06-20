@@ -91,6 +91,22 @@ def empty_solution_mask(df: pd.DataFrame) -> pd.Series:
     return df["error"].isna() & blank
 
 
+def oversized_solution_mask(df: pd.DataFrame, max_chars: int) -> pd.Series:
+    """No-error, non-empty rows whose visible solution text exceeds `max_chars`.
+
+    These are over-long ("degenerate"/loop) outputs — a weak model repeating
+    itself for 100k+ chars is not a valid proof, so paying a judge to grade it
+    is waste. The grade flow excludes them from the judge batch and scores them 0
+    (the `max_solution_chars` grader policy). Disjoint from `empty_solution_mask`
+    by construction (a blank completion has length 0), so empty handling applies
+    first and a solution is never counted as both.
+    """
+    if df.empty:
+        return pd.Series([], dtype=bool, index=df.index)
+    lengths = df["solution"].fillna("").astype(str).str.len()
+    return df["error"].isna() & (lengths > max_chars) & ~empty_solution_mask(df)
+
+
 # inspect StopReason values that mean "output cut for length" (truncation-signal):
 # the requested max_tokens budget, or the model's own context limit. content_filter
 # is a refusal (not a length cut) and "unknown" conflates unmapped reasons (A2) —
