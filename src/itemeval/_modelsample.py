@@ -13,9 +13,14 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from itemeval._config import PRICING_TABLE_UNIVERSE, ExperimentConfig, ModelSample
+from itemeval._config import (
+    PRICING_TABLE_UNIVERSE,
+    ExperimentConfig,
+    ModelSample,
+    ModelUniverseFilter,
+)
 from itemeval._errors import ConfigError
 from itemeval._util import atomic_write_bytes, canonical_json, sha256_hex, utc_now_iso
 from itemeval.budget._pricing import PricingTable
@@ -40,6 +45,45 @@ class ModelSampleResult(BaseModel):
     models: list[str]  # the drawn ids, sorted
     pinned_now: bool = False  # this run wrote model_locks.json
     universe_drift: bool = False  # universe changed since the pin (frozen draw stands)
+
+
+class _LockSpec(BaseModel):
+    """Canonical, normalized form of the pinned `sample` spec used for lock
+    comparison. Both the freshly-computed spec and the one read back from
+    `model_locks.json` are passed through this, so an additive field absent from
+    an *older* lock (a later top-level knob; a new optional `where` sub-field)
+    defaults in and compares equal by construction — only a real change to a
+    shared field still mismatches. This is what prevents the lock-spec brick:
+    raw-dict inequality used to hard-fail (and brick every command, read-only
+    included) the moment a package update grew the spec.
+
+    Mirrors the identity-bearing fields of `ModelSample` (+ the resolved
+    `source`); keep it in sync as fields are added — a field missing *here* is
+    exactly how the historical brick happened. `extra="ignore"` so a *newer*
+    lock's unknown field never bricks an older reader either.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    source: str
+    n: int
+    seed: int
+    stratify_by: str | None = None
+    allocation: str = "proportional"
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    where: ModelUniverseFilter | None = None
+
+
+def _normalized_spec(raw: "dict | None") -> "dict | None":
+    """A stored spec re-parsed through the current schema (None if malformed or
+    absent — treated as a mismatch, the original raw-compare behavior)."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return _LockSpec.model_validate(raw).model_dump()
+    except ValidationError:
+        return None
 
 
 def stratum(model: str) -> str:
@@ -390,20 +434,22 @@ def resolve_model_sample(
             f"universe available to draw{tail}"
         )
     universe_hash = sha256_hex(canonical_json(universe).encode("utf-8"))[:12]
-    spec = {
-        "source": source,
-        "n": sample.n,
-        "seed": sample.seed,
-        "stratify_by": sample.stratify_by,
-        "allocation": sample.allocation,
-        "include": sorted(sample.include),
-        "exclude": sorted(sample.exclude),
-        "where": sample.where.model_dump() if sample.where is not None else None,
-    }
+    # Built (and compared) through _LockSpec so additive fields normalize — see
+    # _LockSpec for why a raw dict here would re-introduce the lock-spec brick.
+    spec = _LockSpec(
+        source=source,
+        n=sample.n,
+        seed=sample.seed,
+        stratify_by=sample.stratify_by,
+        allocation=sample.allocation,
+        include=sorted(sample.include),
+        exclude=sorted(sample.exclude),
+        where=sample.where,
+    ).model_dump()
 
     lock = read_model_lock(locks_path)
     if lock is not None:
-        if lock.get("sample") != spec:
+        if _normalized_spec(lock.get("sample")) != spec:
             raise ConfigError(
                 f"solvers.sample spec changed since {locks_path.name} was written "
                 f"(was {lock.get('sample')}, now {spec}) — clear {locks_path.name} to "

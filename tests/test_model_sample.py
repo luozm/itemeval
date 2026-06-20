@@ -202,6 +202,37 @@ def test_lock_lifecycle_reuse_drift_and_spec_change(tmp_path):
         resolve_model_sample(_cfg({"n": 3, "seed": 5, "universe": "pricing-table"}), ROSTER, lock)
 
 
+def test_additive_lock_fields_do_not_brick_reuse(tmp_path):
+    """A lock written by an older itemeval — before today's additive sample/where
+    fields existed — must still match the current spec and reuse the frozen draw,
+    not hard-fail. Reproduces the lock-spec brick: a package update added
+    where.output_text_only (default None, #18), absent from a pre-update lock, and
+    raw-dict spec inequality bricked *every* command (`spec changed … clear
+    model_locks.json`) though nothing in the study changed. The fix compares specs
+    normalized through the current schema, so an absent additive field defaults
+    compatibly while a real change still mismatches."""
+    import json
+
+    lock = tmp_path / "model_locks.json"
+    spec = {"n": 2, "seed": 5, "universe": "pricing-table", "where": {"provider": ["anthropic"]}}
+    res1 = resolve_model_sample(_cfg(spec), ROSTER, lock)
+    assert res1.pinned_now
+
+    # Rewrite the lock as an older version wrote it: drop the additive keys that
+    # did not exist yet — where.output_text_only / released_after (later releases)
+    # and the top-level allocation / include / exclude knobs.
+    data = json.loads(lock.read_text())
+    for k in ("output_text_only", "released_after"):
+        data["sample"]["where"].pop(k, None)
+    for k in ("allocation", "include", "exclude"):
+        data["sample"].pop(k, None)
+    lock.write_text(json.dumps(data))
+
+    res2 = resolve_model_sample(_cfg(spec), ROSTER, lock)  # must reuse, not brick
+    assert not res2.pinned_now
+    assert res2.models == res1.models
+
+
 def test_file_universe(tmp_path):
     ids_file = tmp_path / "models.txt"
     ids_file.write_text("# my shortlist\nm/a\n\nm/b\nm/c\n")

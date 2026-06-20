@@ -241,6 +241,19 @@ Closes: native-batch-routing
 Closes: parallel-conditions
 
 ### Fixed
+- **A pinned `solvers.sample` study no longer bricks after a package update that
+  grows the sample spec.** The model-sample lock (`model_locks.json`) compared its
+  stored spec against the current one by raw-dict equality, so an itemeval update
+  that added an *additive* `solvers.sample` field — e.g. `where.output_text_only`
+  (default `None`), or the `allocation` / `include` / `exclude` knobs — made a
+  pre-update lock mismatch, and **every** command (estimate / generate / grade /
+  export / status) exited with `solvers.sample spec changed … clear
+  model_locks.json` though nothing in the study changed. Clearing the lock was the
+  wrong remedy — it would re-draw a *different* panel over the pinned one. The two
+  specs are now compared **normalized through the current schema**, so an absent
+  additive field defaults in and compares equal, while a genuine change (n / seed
+  / stratify_by / where / …) still fails loudly as before. The written lock format
+  is unchanged.
 - **Non-reproducible routing aliases are no longer drawable in a `pricing-table`
   sample.** OpenRouter lists `-latest` / `:latest` and `~`-prefixed *variant
   routes* (e.g. `openrouter/~anthropic/claude-opus-latest`) that resolve to a
