@@ -84,3 +84,64 @@ contract. Fix sketch: route the ETA line and a coarse progress heartbeat to
 Agent-Guide carve-out can relax back to "`--json` everywhere is safe." Confirm no
 agent harness parses stderr as part of the structured contract before moving the
 ETA there.
+
+---
+
+## Cost estimate can read a worst-case ceiling as the expected cost
+**Found:** 2026-06-20
+
+**Symptom.** Two ways the pre-flight estimate misleads: (1) cost calibration is
+keyed by `model` alone, so changing `reasoning_effort` (or another
+`model_config`) borrows the **stale mean** from a different-effort prior run; (2)
+the never-truncate **ceiling** (full `max_tokens` → ~80× a typical answer) and
+the cold-start `expected == ceiling` case are not labeled — a worst-case ceiling
+is shown as if it were a real expected cost.
+
+**Where.** `src/itemeval/budget/_estimator.py` — the `_stats_by(sol_ok,
+"model", …)` keying (~`:523`), the ceiling (~`:622`); a `detect_estimate_is_ceiling`
+helper exists but is not surfaced.
+
+**Status.** Deferred. Fix sketch: re-key calibration by `(model, model_config)`;
+surface `detect_estimate_is_ceiling` so a ceiling/cold-start estimate is labeled,
+not presented as expected. The re-key overlaps the `per-model-config` BACKLOG
+feature — do it there if that lands first, else here.
+
+---
+
+## Unmapped provider finish-reasons collapse to `"unknown"`
+**Found:** 2026-06-20
+
+**Symptom.** inspect's `as_stop_reason()` collapses any provider finish-reason it
+doesn't recognize to `"unknown"`, and the OpenAI-compat provider passes
+`choice.finish_reason` straight through. So a meaningful reason (a content
+filter, a provider-specific truncation) is flattened and indistinguishable —
+weakening the `truncation-signal` story for non-standard providers.
+
+**Where.** Root = upstream inspect (`inspect_ai/.../_model_output.py:411`,
+`as_stop_reason`); our surface = the `stop_reason` read in
+`src/itemeval/generate/_run.py`.
+
+**Status.** Deferred — root is upstream. Wrapper workaround: read OpenRouter's
+`native_finish_reason` off the model event to recover the real reason where the
+provider supplies it. Complements `truncation-signal` (the mapped `max_tokens`
+case); could file an inspect issue for the general mapping.
+
+---
+
+## Cache-served re-run overwrites a cell's real token usage with zeros
+**Found:** 2026-06-20
+
+**Symptom.** A row answered from inspect's local response cache records `usd=0`
+with empty usage. Re-running an **already-good** cell (`--force`, or a
+`replications` bump that replays epochs 1..R1 from cache) then upserts that
+zero-usage row over the original, and content-key last-write-wins **overwrites
+the cell's real token counts with zeros** — the store silently loses the usage.
+
+**Where.** `src/itemeval/generate/_run.py` (the cache-hit usage path, ~`:104`,
+~`:247`); the overwrite is the content-key dedup in `store/_base.py:44`.
+
+**Status.** Deferred. `recoverable-harvest` recovery is **safe** (it only fills
+missing cells, never re-touches good ones); the bug bites `--force`/replication
+re-touch. Flip side of the `reuse-savings` feature (which wants to *attribute*
+cache hits): fix sketch — on a cache-served row, preserve the prior row's usage
+rather than overwriting with zeros. Coordinate with `reuse-savings`.
