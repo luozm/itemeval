@@ -13,5 +13,6 @@ Read `git status` + `git diff`, then check:
 4. **SSOT formats.** Version lives only in `pyproject.toml`; README carries one `**Status: vX.Y.Z.**` line tracking the latest *released* CHANGELOG heading; non-runnable example YAML starts with `# sketch`.
 5. **Public surface.** If `itemeval.__all__` or the CLI subcommands changed, is `tests/test_public_api_snapshot.py` updated deliberately (the pre-1.0 SemVer tripwire)?
 6. **KNOWN-ISSUES disjointness.** If this change fixes a bug that was listed in @docs/KNOWN-ISSUES.md, is that entry **removed** in the same change (alongside its CHANGELOG `Fixed` entry)? A fixed bug must have *left* the tracker — the bug mirror of the BACKLOG-disjointness rule.
+7. **Study-facing schema.** If the change touches a persisted study-facing schema — a parquet store, `model_locks.json` / `dataset_locks.json`, `manifests/`, or the condition-id hash inputs (see @DEVELOPMENT.md "Study-facing schema evolution") — is it either *additive-with-default* **and** covered by an older-fixture guard test, **or** *non-additive* **and** carrying a `Study migration` note in the CHANGELOG entry plus a safe reconcile path (never an opaque "delete the file and re-draw")?
 
 For each ✗, give the exact file + line to fix. End with the one-line bottom line: ready to commit, or not.

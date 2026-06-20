@@ -96,6 +96,55 @@ too.) Dependabot bumps `uv.lock` only and leaves
 All other dependencies ride the weekly grouped PR; merge it when convenient
 (at least quarterly), same review flow as above with less scrutiny.
 
+## Study-facing schema evolution
+
+The upgrade pipeline above guards *inspect's* changes to our surface; this guards
+*our own* changes to it. Consuming studies pin against a **machine surface** —
+persisted schemas they compare or replay across versions — so a change we ship
+can brick a study that changed nothing. (Real failure: an additive
+`solvers.sample` field made every command exit 2 on a pre-existing
+`model_locks.json`, read-only commands included.)
+
+**The surface** (persisted, study-facing, back-compat-sensitive):
+
+- parquet stores — `solutions`, `gradings`, `materialized_rubrics`, `items`,
+  `ledger`, `log_index`;
+- pins — `model_locks.json` (sample spec + universe hash), `dataset_locks.json`;
+- `manifests/*.json`;
+- the **condition-id hash inputs** (a change here re-keys conditions).
+
+**Invariant — additive optional fields stay compatible by *read-time
+normalization*, never by raw comparison of a growing schema.** The stores already
+do this: `store/_solutions._backfill_wave` defaults the wave columns on read for
+stores written before they existed. Every surface follows it — e.g. a lock/spec
+check normalizes **both** sides through the *current* pydantic model before
+equality, so a field added with a default is equal-by-construction to a pin that
+predates it, while a real value change still mismatches. A bare `dict != dict` on
+a schema that can grow is the bug.
+
+**Gate — touching any surface above requires one of:**
+
+1. *additive with a default*, **and** a guard test proves it — freeze an
+   older-schema fixture, assert it still loads / compares as compatible (panel or
+   rows preserved); **or**
+2. *non-additive* (remove / rename / semantic, or it re-keys condition ids),
+   **and** the CHANGELOG entry carries a **`Study migration`** note (what changed ·
+   whether results/draw are affected · the exact action a study takes) **and** the
+   tool offers a safe reconcile — re-bless a pin without re-drawing, backfill a
+   store on read. The tool **points at the briefing**; it never fails opaquely
+   with "delete the file and re-draw" (which can silently change a pinned result).
+
+**Policy (all surfaces above).** itemeval does **not** promise a pre-existing pin
+or store runs transparently across versions — no migration shims that execute old
+code. It promises instead that additive changes are compatible *by construction*,
+and that breaking ones ship a study-agent briefing.
+
+**Enforcement.** Read-time normalization + the guard tests are the durable
+CI-side automation (`tests/`, run under `make test`). The judgment gate is item 7
+of the `same-change` skill, audited before each commit — a non-additive change
+with no `Study migration` note fails it. Such a change is also the load-bearing
+release trigger (*When to release*, item 1).
+
 ## Versioning discipline
 
 **Semantic versioning**, version lives in one place: `pyproject.toml`
