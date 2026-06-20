@@ -7,6 +7,24 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Serving provider + native finish_reason captured in the stores/export**
+  (`provider-finish-capture`): every solver and judge call now records two raw
+  provenance columns — `served_provider` (the OpenRouter backend that actually
+  answered, e.g. `GMICloud`/`Fireworks`) and `native_finish_reason` (the provider
+  `finish_reason` *before* inspect flattens it into `stop_reason`) — on
+  `solutions.parquet` and `gradings.parquet`, flowing to the export as
+  `gen_served_provider` / `gen_native_finish_reason` (solver) and
+  `grade_served_provider` / `grade_native_finish_reason` (judge). Motivation:
+  OpenRouter load-balances each call across backends, and a flaky one returns a
+  "soft failure" — HTTP 200 with `finish_reason=error` and empty/truncated content
+  — that inspect's `stop_reason` flattens to `unknown`, hiding both the cause and
+  the backend. These columns make that diagnosable straight from the export
+  instead of by hand-reading every `.eval`. Pure provenance: no new knob, hint,
+  gate, status line, or result field; null when the provider/cache/mock did not
+  return the fields. Additive-with-default on both stores (an older store reads the
+  columns as null).
+
+  Closes: provider-finish-capture
 - **Grade-time skip for over-long solutions** (`oversized-solution-skip`): a new
   per-grader knob `graders.<name>.max_solution_chars` (int, default `None` = off)
   makes `grade` auto-score 0 — **without a judge call** — any stored solution whose
@@ -490,6 +508,15 @@ Closes: recovery-run-identity
 Closes: parallel-conditions
 
 ### Fixed
+- **Unmapped provider finish-reasons are no longer indistinguishable.** inspect's
+  `as_stop_reason` collapses any provider `finish_reason` it doesn't recognize
+  (including `error`) to `stop_reason="unknown"`, so a provider soft failure was
+  indistinguishable from a genuinely unmapped stop. The new
+  `native_finish_reason` column (see `provider-finish-capture` under Added)
+  recovers the raw reason where the provider supplies it. The upstream flatten
+  itself is unchanged (root is inspect); this captures the raw value as a wrapper
+  column. Closes the KNOWN-ISSUES "unmapped provider finish-reasons collapse to
+  `unknown`" defect.
 - **The live-run heartbeat no longer prints its closing line twice.** When the
   final sample's `SampleEnd` emitted an unthrottled heartbeat, `tracking()`'s
   closing force-emit repeated the identical terminal line (e.g. `… · 6/6 (100%)`

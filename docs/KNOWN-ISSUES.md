@@ -84,26 +84,6 @@ feature — do it there if that lands first, else here.
 
 ---
 
-## Unmapped provider finish-reasons collapse to `"unknown"`
-**Found:** 2026-06-20
-
-**Symptom.** inspect's `as_stop_reason()` collapses any provider finish-reason it
-doesn't recognize to `"unknown"`, and the OpenAI-compat provider passes
-`choice.finish_reason` straight through. So a meaningful reason (a content
-filter, a provider-specific truncation) is flattened and indistinguishable —
-weakening the `truncation-signal` story for non-standard providers.
-
-**Where.** Root = upstream inspect (`inspect_ai/.../_model_output.py:411`,
-`as_stop_reason`); our surface = the `stop_reason` read in
-`src/itemeval/generate/_run.py`.
-
-**Status.** Deferred — root is upstream. Wrapper workaround: read OpenRouter's
-`native_finish_reason` off the model event to recover the real reason where the
-provider supplies it. Complements `truncation-signal` (the mapped `max_tokens`
-case); could file an inspect issue for the general mapping.
-
----
-
 ## Cache-served re-run overwrites a cell's real token usage with zeros
 **Found:** 2026-06-20
 

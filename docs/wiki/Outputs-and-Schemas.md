@@ -76,6 +76,12 @@ reasoning_tokens_requested` — provider-forced values show up as a
 requested/effective mismatch.
 Result: `solution, stop_reason, error` (errored rows are kept and re-run next
 time).
+Raw call provenance: `served_provider` (the OpenRouter backend that actually
+answered, e.g. `GMICloud`/`Fireworks`) and `native_finish_reason` (the provider
+`finish_reason` *before* inspect flattens it into `stop_reason` — `error` and
+unmapped reasons collapse to `unknown`). Null for mock models, cache replays, and
+providers that don't return the fields. See
+[Error-Handling#serving-provider-and-native-finish-reason](Error-Handling.md#serving-provider-and-native-finish-reason).
 Cost: `input_tokens, output_tokens, total_tokens, cache_read_tokens,
 cache_write_tokens, reasoning_tokens, usd, latency_s`.
 Audit: `log_file, sample_uuid, created_at`.
@@ -91,6 +97,8 @@ item_id, epoch, grade_kind` (judge|verifiable), `grader_name, grader_model,
 rubric_name, rubric_hash, scorer_name`.
 Result: `score, score_raw, parse_ok, parse_error, reasoning,
 judge_completion, error`.
+Raw judge-call provenance: `served_provider, native_finish_reason` (as in
+solutions; null for verifiable/skip rows, which make no model call).
 Cost/audit: token columns, `usd` (0.0 for verifiable), `latency_s`,
 `log_file`, `created_at`.
 
@@ -106,7 +114,7 @@ without a sample-level `error`). Parse failures are final; errors re-run.
 
 ## `export/gradings_long.parquet` — one row per grading event
 
-The left-join of gradings onto solutions: 50 columns, grouped as
+The left-join of gradings onto solutions: 54 columns, grouped as
 
 - **Design cell**: `study, item_id, dataset_id, dataset_revision, model,
   prompt_name, prompt_hash, model_config_name, replication,
@@ -123,6 +131,13 @@ The left-join of gradings onto solutions: 50 columns, grouped as
   gen_latency_s, grade_latency_s`
 - **Audit**: `gen_experiment_id, gen_attempt, grade_experiment_id,
   grade_attempt, gen_log_file, grade_log_file, created_at`
+- **Raw call provenance**: `gen_served_provider, gen_native_finish_reason`
+  (solver call), `grade_served_provider, grade_native_finish_reason` (judge call)
+  — the OpenRouter backend that served the call and its raw `finish_reason` before
+  inspect's `stop_reason` flatten. Diagnose a provider soft failure (HTTP 200 +
+  `finish_reason=error` + empty content) without opening the `.eval`. Null when
+  the provider/cache/mock did not return them. See
+  [Error-Handling#serving-provider-and-native-finish-reason](Error-Handling.md#serving-provider-and-native-finish-reason).
 
 Never aggregated; parse failures present with `parse_ok=false`. This is the
 input to IRT / mixed-model analysis.

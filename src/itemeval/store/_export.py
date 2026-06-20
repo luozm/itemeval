@@ -84,6 +84,16 @@ EXPORT_SCHEMA = pa.schema(
         pa.field("grade_attempt", pa.int32()),
         pa.field("gen_log_file", pa.string()),
         pa.field("grade_log_file", pa.string()),
+        # Raw call provenance (provider-finish-capture): the OpenRouter backend
+        # that served the call and its raw finish_reason before inspect's
+        # stop_reason flatten ('error'/unmapped -> 'unknown'), for the solver
+        # (gen_*) and judge (grade_*) calls. Null when the provider/cache/mock did
+        # not return them. Diagnose a soft failure (200 + error + empty content)
+        # without opening the .eval.
+        pa.field("gen_served_provider", pa.string()),
+        pa.field("gen_native_finish_reason", pa.string()),
+        pa.field("grade_served_provider", pa.string()),
+        pa.field("grade_native_finish_reason", pa.string()),
         pa.field("created_at", pa.string()),
         # Wave provenance (default 0/null; analysis: df.groupby("wave")).
         pa.field("wave", pa.int32()),
@@ -145,6 +155,8 @@ _SOLUTION_COLS = {
     "usd": "gen_usd",
     "latency_s": "gen_latency_s",
     "log_file": "gen_log_file",
+    "served_provider": "gen_served_provider",
+    "native_finish_reason": "gen_native_finish_reason",
 }
 
 _GRADING_COLS = {
@@ -156,6 +168,8 @@ _GRADING_COLS = {
     "usd": "grade_usd",
     "latency_s": "grade_latency_s",
     "log_file": "grade_log_file",
+    "served_provider": "grade_served_provider",
+    "native_finish_reason": "grade_native_finish_reason",
 }
 
 
@@ -320,6 +334,8 @@ def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> Exp
         "gen_usd",
         "gen_latency_s",
         "gen_log_file",
+        "gen_served_provider",
+        "gen_native_finish_reason",
     ]
     grad = gradings.rename(columns=_GRADING_COLS)
     long = grad.merge(

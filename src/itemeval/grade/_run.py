@@ -49,6 +49,7 @@ from itemeval.generate._run import (
     max_tasks_for,
     resolve_display,
     run_condition_evals,
+    served_provider_finish,
     sum_usage,
     usage_columns,
     usd_for_usage,
@@ -252,11 +253,14 @@ def _judge_rows(
                 "parse_error": None,
                 "reasoning": None,
             }
+        served_provider, native_finish_reason = served_provider_finish(sample)
         rows.append(
             {
                 **_base_row(prep, cond, experiment_id, attempt, sol_row, now),
                 **parse_cols,
                 "judge_completion": completion,
+                "served_provider": served_provider,
+                "native_finish_reason": native_finish_reason,
                 "error": error,
                 **usage_columns(usage),
                 "usd": usd_for_usage(

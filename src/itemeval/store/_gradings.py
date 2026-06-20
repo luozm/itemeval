@@ -31,6 +31,12 @@ GRADINGS_SCHEMA = pa.schema(
         pa.field("parse_error", pa.string()),
         pa.field("reasoning", pa.string()),
         pa.field("judge_completion", pa.string()),
+        # Raw judge-call provenance (provider-finish-capture): the OpenRouter
+        # backend that served the judge call and its raw finish_reason before
+        # inspect's stop_reason flatten. Null for verifiable/skip rows (no model
+        # call), mock models, and cache replays. Same columns as solutions.
+        pa.field("served_provider", pa.string()),
+        pa.field("native_finish_reason", pa.string()),
         pa.field("error", pa.string()),
         pa.field("input_tokens", pa.int64()),
         pa.field("output_tokens", pa.int64()),
@@ -50,12 +56,12 @@ GRADINGS_SCHEMA = pa.schema(
 
 
 def read_gradings(paths: StudyPaths) -> pd.DataFrame:
-    from itemeval.store._solutions import _backfill_wave
+    from itemeval.store._solutions import _backfill_provenance, _backfill_wave
 
     df = assert_identity_current(
         read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA), paths.gradings
     )
-    return _backfill_wave(df)
+    return _backfill_provenance(_backfill_wave(df))
 
 
 def upsert_gradings(paths: StudyPaths, rows: "list[dict]") -> int:

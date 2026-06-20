@@ -143,6 +143,41 @@ condition id. Choose it well above a legitimate long proof (a realistic loop is
 100k+ chars; a real proof is rarely past a few tens of thousands). `null` leaves
 every solution graded as before.
 
+## Serving provider and native finish reason
+
+When you route through OpenRouter (`openrouter/…` models), each call is
+load-balanced across provider **backends**, and a flaky backend can return a
+**soft failure**: HTTP 200 with `finish_reason=error` (or another non-standard
+reason) and empty/truncated content. inspect's `stop_reason` flattens any reason
+it doesn't recognize — `error` included — to **`unknown`**, so the stored
+`stop_reason` alone can't tell a soft failure apart from a genuinely unmapped
+stop, and it never records *which* backend served the call.
+
+itemeval captures two raw-provenance columns on every solver and judge call:
+
+- **`served_provider`** — the backend that actually answered (OpenRouter's
+  routed `provider`, e.g. `GMICloud`, `Fireworks`, `Anthropic`).
+- **`native_finish_reason`** — the provider's raw `finish_reason` *before* the
+  flatten, recovering what `stop_reason` collapses to `unknown`.
+
+Where they show up:
+
+- **`solutions.parquet` / `gradings.parquet`** — `served_provider,
+  native_finish_reason` per row.
+- **export** — `gen_served_provider, gen_native_finish_reason` (solver call) and
+  `grade_served_provider, grade_native_finish_reason` (judge call) in
+  `gradings_long.parquet`.
+
+Both are **null** when the response didn't carry them — mock models, cache
+replays, and providers that don't return the fields. They are pure diagnostics:
+no hint, gate, or status line, and they never change a score, a content key, or
+`stop_reason`/`truncated`. Use them to spot a misbehaving backend — e.g.
+`df[df.gen_native_finish_reason == "error"].gen_served_provider.value_counts()`
+— and exclude or re-route those cells in your analysis. To steer OpenRouter away
+from a bad backend on the next run, see
+[`provider_routing`](Configuration.md#field-notes) (`{ignore: [...]}` /
+`{order: [...]}`).
+
 ## Eval-level (whole-condition) failures
 
 If an entire `inspect_ai.eval(...)` raises — a misconfigured task, an

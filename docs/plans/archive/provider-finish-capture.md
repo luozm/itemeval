@@ -1,9 +1,10 @@
 # Implementation plan — provider-finish-capture (serving provider + native finish_reason in the stores/export)
 
-**Status: NOT STARTED.** Written 2026-06-20 against inspect_ai 0.3.x (pinned in
-`uv.lock`) — re-verify the `[verify]` facts below if that moved. This file is the
-working brief for a fresh implementation session: it carries all context that
-session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/provider-finish-capture`
+(CHANGELOG `Closes: provider-finish-capture`); this file is now the design record.
+Written 2026-06-20 against inspect_ai 0.3.x (pinned in `uv.lock`) — re-verify the
+`[verify]` facts below if that moved. It carried all context the implementing
+session needed. Read these first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. Relevant here: Law 6 (a

@@ -83,7 +83,12 @@ closing the "`--json` goes dark" gap so a long or backgrounded paid run shows it
 alive (liveness rides stderr; stdout stays pure JSON); and `oversized-solution-skip`
 — a per-grader `max_solution_chars` knob that auto-scores 0 (without a judge call)
 any stored solution whose visible text exceeds the threshold, so a weak model's
-repetition-loop output is no longer paid to the judge to grade as the zero it is.
+repetition-loop output is no longer paid to the judge to grade as the zero it is;
+and `provider-finish-capture` — raw `served_provider` + `native_finish_reason`
+columns on the solver and judge calls (and the export), so an OpenRouter soft
+failure (HTTP 200 + `finish_reason=error` + empty content) and the backend that
+served it are diagnosable straight from the export instead of by hand-reading the
+`.eval` (also discharges the unmapped-finish-reason known issue).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

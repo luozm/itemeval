@@ -470,6 +470,41 @@ def endpoint_info(log: "EvalLog", model: str, exec_model: "str | None" = None) -
     return info
 
 
+def served_provider_finish(sample: "EvalSample") -> "tuple[str | None, str | None]":
+    """The OpenRouter serving backend and the raw provider `finish_reason` for a
+    sample's model call(s), read off the recorded HTTP response on each ModelEvent
+    (provider-finish-capture).
+
+    inspect's `as_stop_reason` flattens the provider finish_reason into the stored
+    `stop_reason` ('error' and any unmapped value collapse to 'unknown'); the raw
+    value survives only in the .eval log at `choices[0].native_finish_reason`.
+    Capturing both makes a provider soft failure (HTTP 200 + finish_reason=error +
+    empty content) and the backend that served it legible in the store — the same
+    `response["provider"]` field `endpoint_info` rolls up per condition.
+
+    Returns the last non-empty value seen across the sample's events (the final
+    call wins on a multi-call/retry sample). `(None, None)` when no recorded
+    response carried the fields — mock models, cache replays, or providers that do
+    not return them. Duck-typed reads so non-model events are skipped safely.
+    """
+    served_provider: "str | None" = None
+    native_finish: "str | None" = None
+    for ev in getattr(sample, "events", None) or []:
+        call = getattr(ev, "call", None)
+        resp = getattr(call, "response", None)
+        if not isinstance(resp, dict):
+            continue
+        p = resp.get("provider")
+        if isinstance(p, str) and p:
+            served_provider = p
+        choices = resp.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            nfr = choices[0].get("native_finish_reason")
+            if isinstance(nfr, str) and nfr:
+                native_finish = nfr
+    return served_provider, native_finish
+
+
 def rows_from_generate_log(
     log: "EvalLog",
     cond: GenCondition,
@@ -495,6 +530,7 @@ def rows_from_generate_log(
             else None
         )
         eff = extract_effective_params(sample, p)
+        served_provider, native_finish_reason = served_provider_finish(sample)
         rows.append(
             {
                 "study": prep.config.study,
@@ -526,6 +562,8 @@ def rows_from_generate_log(
                 "stop_reason": (
                     sample.output.stop_reason if (sample.output and sample.output.choices) else None
                 ),
+                "served_provider": served_provider,
+                "native_finish_reason": native_finish_reason,
                 "error": error,
                 **usage_columns(usage),
                 "usd": usd_for_usage(

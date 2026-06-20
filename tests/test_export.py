@@ -37,9 +37,19 @@ def test_export_schema_and_mirrors(study):
     parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
     assert list(parquet.columns) == list(EXPORT_SCHEMA.names)
     assert (
-        len(parquet.columns) == 50
-    )  # 45 + wave/wave_label + experiment_id/attempt per stage (−2 run_id) + truncated
+        len(parquet.columns) == 54
+    )  # 50 + served_provider/native_finish_reason per stage (provider-finish-capture)
     assert len(parquet) == 8
+
+    # provider-finish-capture: the four raw-provenance columns exist; a mock run
+    # has no serving provider / native finish_reason, so all are null.
+    for c in (
+        "gen_served_provider",
+        "gen_native_finish_reason",
+        "grade_served_provider",
+        "grade_native_finish_reason",
+    ):
+        assert c in parquet.columns and parquet[c].isna().all()
 
     # One row per grading event, never aggregated; full provenance joined in.
     assert parquet["score"].notna().all()
@@ -58,6 +68,30 @@ def test_export_schema_and_mirrors(study):
 
     ledger_csv = pd.read_csv(prep.paths.export_dir / "ledger.csv")
     assert set(ledger_csv["stage"]) == {"generate", "grade"}
+
+
+def test_export_carries_served_provider_and_finish(study):
+    """provider-finish-capture: a served_provider / native_finish_reason value
+    stored on a solution (judge) row reaches the export's gen_* (grade_*) column."""
+    from itemeval.store._gradings import read_gradings, upsert_gradings
+    from itemeval.store._solutions import read_solutions, upsert_solutions
+
+    cfg, prep = study
+    run_generate(prep)
+    run_grade(prep)
+
+    sol = read_solutions(prep.paths).iloc[0].to_dict()
+    sol["served_provider"], sol["native_finish_reason"] = "Fireworks", "stop"
+    upsert_solutions(prep.paths, [sol])
+    grad = read_gradings(prep.paths).iloc[0].to_dict()
+    grad["served_provider"], grad["native_finish_reason"] = "Anthropic", "stop"
+    upsert_gradings(prep.paths, [grad])
+
+    export_study(cfg)
+    parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
+    assert (parquet["gen_served_provider"] == "Fireworks").any()
+    assert (parquet["gen_native_finish_reason"] == "stop").any()
+    assert (parquet["grade_served_provider"] == "Anthropic").any()
 
 
 def test_export_detects_ledger_mismatch(study):

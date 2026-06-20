@@ -6,9 +6,10 @@ import pytest
 
 from itemeval._errors import StoreError
 from itemeval.store._base import read_parquet_or_empty, upsert_parquet
-from itemeval.store._gradings import GRADINGS_SCHEMA, pending_solutions
+from itemeval.store._gradings import GRADING_KEY, GRADINGS_SCHEMA, pending_solutions
 from itemeval.store._layout import StudyPaths
 from itemeval.store._solutions import (
+    SOLUTION_KEY,
     SOLUTIONS_SCHEMA,
     empty_solution_mask,
     items_to_run,
@@ -170,6 +171,111 @@ def test_truncated_mask():
     # disjoint from empty: the empty max_tokens row is in empty, not truncated
     assert empty_solution_mask(df).tolist() == [False, False, True, False, False, False]
     assert truncated_mask(_sol_df([]).iloc[0:0]).tolist() == []
+
+
+class _FakeCall:
+    def __init__(self, response):
+        self.response = response
+
+
+class _FakeEvent:
+    def __init__(self, response=None):
+        if response is not None:
+            self.call = _FakeCall(response)
+
+
+class _FakeSample:
+    def __init__(self, events):
+        self.events = events
+
+
+def test_served_provider_finish_extracts_from_events():
+    from itemeval.generate._run import served_provider_finish
+
+    # A model event carrying both fields → both extracted.
+    s = _FakeSample(
+        [_FakeEvent({"provider": "GMICloud", "choices": [{"native_finish_reason": "error"}]})]
+    )
+    assert served_provider_finish(s) == ("GMICloud", "error")
+
+    # Last non-empty value wins across events (final call on a retry sample).
+    s2 = _FakeSample(
+        [
+            _FakeEvent({"provider": "GMICloud", "choices": [{"native_finish_reason": "error"}]}),
+            _FakeEvent({"provider": "Fireworks", "choices": [{"native_finish_reason": "stop"}]}),
+        ]
+    )
+    assert served_provider_finish(s2) == ("Fireworks", "stop")
+
+    # Non-model events (no .call) and missing fields are skipped safely.
+    s3 = _FakeSample([_FakeEvent(), _FakeEvent({"choices": [{}]})])
+    assert served_provider_finish(s3) == (None, None)
+    assert served_provider_finish(_FakeSample([])) == (None, None)
+    assert served_provider_finish(_FakeSample(None)) == (None, None)
+
+
+def test_read_backfills_provenance_columns_on_old_store(tmp_path):
+    """provider-finish-capture: a store written before served_provider /
+    native_finish_reason existed still reads back, with the columns defaulted to
+    null (the additive-by-construction invariant — DEVELOPMENT.md schema gate)."""
+    from itemeval.store._gradings import read_gradings
+    from itemeval.store._solutions import PROVENANCE_COLS, read_solutions, upsert_solutions
+
+    paths = StudyPaths(tmp_path / "study")
+    paths.ensure()
+
+    # Write an "old" solutions parquet whose schema lacks the provenance columns.
+    old_sol_schema = pa.schema([f for f in SOLUTIONS_SCHEMA if f.name not in PROVENANCE_COLS])
+    old_sol = pd.DataFrame([_sol_row("c1", "1", 1)])
+    old_sol = old_sol[[n for n in old_sol_schema.names if n in old_sol.columns]]
+    for col in old_sol_schema.names:
+        if col not in old_sol.columns:
+            old_sol[col] = None
+    upsert_parquet(
+        paths.solutions, old_sol[list(old_sol_schema.names)], SOLUTION_KEY, old_sol_schema
+    )
+    assert all(c not in pd.read_parquet(paths.solutions).columns for c in PROVENANCE_COLS)
+
+    sol = read_solutions(paths)
+    for c in PROVENANCE_COLS:
+        assert c in sol.columns and sol[c].isna().all()
+    # A fresh upsert then carries the columns for real.
+    upsert_solutions(
+        paths,
+        [
+            {
+                **_sol_row("c1", "1", 1),
+                "served_provider": "Fireworks",
+                "native_finish_reason": "stop",
+            }
+        ],
+    )
+    sol2 = read_solutions(paths)
+    assert sol2["served_provider"].iloc[0] == "Fireworks"
+
+    # Same guard for gradings.
+    old_grad_schema = pa.schema([f for f in GRADINGS_SCHEMA if f.name not in PROVENANCE_COLS])
+    grad_row = {n: None for n in old_grad_schema.names}
+    grad_row.update(
+        {
+            "study": "t",
+            "experiment_id": "r",
+            "attempt": 1,
+            "grade_condition_id": "g1",
+            "grade_condition_slug": "g1",
+            "gen_condition_id": "c1",
+            "item_id": "1",
+            "epoch": 1,
+            "grade_kind": "judge",
+            "parse_ok": True,
+            "created_at": "t0",
+        }
+    )
+    upsert_parquet(paths.gradings, [grad_row], GRADING_KEY, old_grad_schema)
+    assert all(c not in pd.read_parquet(paths.gradings).columns for c in PROVENANCE_COLS)
+    grad = read_gradings(paths)
+    for c in PROVENANCE_COLS:
+        assert c in grad.columns and grad[c].isna().all()
 
 
 def test_items_to_run_require_solution_reruns_empties():

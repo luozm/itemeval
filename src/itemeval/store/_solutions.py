@@ -38,6 +38,13 @@ SOLUTIONS_SCHEMA = pa.schema(
         pa.field("reasoning_tokens_requested", pa.int64()),
         pa.field("solution", pa.string()),
         pa.field("stop_reason", pa.string()),
+        # Raw call provenance (provider-finish-capture): the OpenRouter backend
+        # that actually served this call, and its raw finish_reason *before*
+        # inspect flattens it into stop_reason ('error' and unmapped reasons
+        # collapse to 'unknown'). Null for mock models, cache replays, and
+        # providers that don't return the fields.
+        pa.field("served_provider", pa.string()),
+        pa.field("native_finish_reason", pa.string()),
         pa.field("error", pa.string()),
         pa.field("input_tokens", pa.int64()),
         pa.field("output_tokens", pa.int64()),
@@ -68,11 +75,27 @@ def _backfill_wave(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Raw-call-provenance columns (provider-finish-capture) added after some stores
+# were written. Both the solutions and gradings stores carry them, so the
+# read-time backfill is shared (gradings imports this). Mirrors _backfill_wave's
+# locus: default them to None on read so an older store still loads — the
+# additive-by-construction invariant (DEVELOPMENT.md "Study-facing schema
+# evolution"), never a raw comparison of a growing schema.
+PROVENANCE_COLS = ("served_provider", "native_finish_reason")
+
+
+def _backfill_provenance(df: pd.DataFrame) -> pd.DataFrame:
+    """Old stores predate the served_provider / native_finish_reason columns;
+    default them on read (no rewrite)."""
+    missing = {c: None for c in PROVENANCE_COLS if c not in df.columns}
+    return df.assign(**missing) if missing else df
+
+
 def read_solutions(paths: StudyPaths) -> pd.DataFrame:
     df = assert_identity_current(
         read_parquet_or_empty(paths.solutions, SOLUTIONS_SCHEMA), paths.solutions
     )
-    return _backfill_wave(df)
+    return _backfill_provenance(_backfill_wave(df))
 
 
 def upsert_solutions(paths: StudyPaths, rows: "list[dict]") -> int:
