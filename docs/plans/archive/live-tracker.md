@@ -1,9 +1,14 @@
 # Implementation plan — live-tracker (live stderr heartbeat + `--json`-dark fix)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written against inspect_ai 0.3.239
-(pinned in `uv.lock`) — re-verify the `.venv` facts below if that moved. This file
-is the working brief for the implementation session: it carries all context that
-session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/live-tracker` (CHANGELOG
+`Closes: live-tracker`). Both workstreams landed as one commit: the `SampleEnd`/
+`SampleStart` heartbeat hook (`_tracker.py` + `run_condition_evals` wiring) and the
+`--json` pre-flight ETA on stderr (closing the `--json`-dark KNOWN-ISSUE). The
+banner pre-latch + a fresh-process guard test keep `--json` stdout one clean JSON
+doc; the gate is `resolve_display == "none"`. The deferred "live store during the
+run" (S's L3) was **dropped**, not built (see Out of scope). Written against
+inspect_ai 0.3.239 (pinned in `uv.lock`). This file is the design record; below was
+the working brief. Read these first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. The load-bearing law here is
