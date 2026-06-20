@@ -88,7 +88,12 @@ and `provider-finish-capture` — raw `served_provider` + `native_finish_reason`
 columns on the solver and judge calls (and the export), so an OpenRouter soft
 failure (HTTP 200 + `finish_reason=error` + empty content) and the backend that
 served it are diagnosable straight from the export instead of by hand-reading the
-`.eval` (also discharges the unmapped-finish-reason known issue).
+`.eval` (also discharges the unmapped-finish-reason known issue); and
+`output-validity-reroute` — an opt-in `solvers.max_reroutes` that automatically
+re-issues a soft-failed `generate` cell on a different backend (the failed one
+added to `provider:{ignore:[…]}`), capped, replacing the bad row when a good draw
+lands and leaving an honest residue when it doesn't — turning the manual
+provider-blocklist stopgap into automatic, model-agnostic recovery.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

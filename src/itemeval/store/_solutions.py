@@ -152,6 +152,25 @@ def truncated_mask(df: pd.DataFrame) -> pd.Series:
     return df["error"].isna() & is_length_cap & ~empty_solution_mask(df)
 
 
+def soft_invalid_mask(df: pd.DataFrame) -> pd.Series:
+    """No-error rows the provider itself marked as failed (output-validity-reroute):
+    `native_finish_reason == "error"`, or the flattened `stop_reason == "unknown"`
+    (inspect collapses `error` and any unmapped reason to `unknown`).
+
+    These are "soft failures" — HTTP 200 with a failure finish_reason, usually with
+    empty or truncated content — distinct from an API error (already retried by
+    inspect) and from a clean truncation/empty (handled by truncation-signal /
+    on_empty). `unknown` is deliberately broad (it also catches benign unmapped
+    reasons); that is acceptable because the reroute that consumes this mask is
+    opt-in and capped. Re-verify the reason set against inspect's StopReason on a
+    bump.
+    """
+    if df.empty:
+        return pd.Series([], dtype=bool, index=df.index)
+    nfr = df["native_finish_reason"].fillna("") if "native_finish_reason" in df.columns else ""
+    return df["error"].isna() & ((nfr == "error") | (df["stop_reason"] == "unknown"))
+
+
 def epochs_to_run(
     df: pd.DataFrame,
     condition_id: str,

@@ -78,6 +78,23 @@ def min_cacheable_prefix(model: str) -> "int | None":
     return entry(model) if callable(entry) else entry
 
 
+def merge_provider_ignore(
+    provider_routing: "dict[str, Any] | None", ignore_providers: "set[str] | list[str]"
+) -> "dict[str, Any] | None":
+    """`provider_routing` with `ignore_providers` unioned into its `ignore` list
+    (output-validity-reroute). The verbatim OpenRouter routing object is otherwise
+    untouched — we only ever *append* to `ignore`, never reorder or drop a key, so
+    a study's pinned `order`/`allow_fallbacks` survive. Returns the input unchanged
+    when there is nothing to ignore (so a no-op reroute round leaves routing as-is).
+    """
+    if not ignore_providers:
+        return provider_routing
+    routing = dict(provider_routing or {})
+    existing = routing.get("ignore") or []
+    routing["ignore"] = sorted({*existing, *ignore_providers})
+    return routing
+
+
 def model_args_for(
     model: str,
     *,

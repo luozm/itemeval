@@ -165,3 +165,87 @@ def test_generate_one_condition_failure_isolated(study):
     df = read_solutions(prep.paths)
     assert set(df["model"]) == {"mockllm/solver-a"}
     assert len(df) == 4
+
+
+def _corrupt_to_soft_failure(prep, *, n=1):
+    """Overwrite the first `n` stored solution rows into soft failures (HTTP 200 +
+    finish=error, blank text) — the output-validity-reroute detection target."""
+    from itemeval.store._solutions import read_solutions, upsert_solutions
+
+    df = read_solutions(prep.paths)
+    rows = []
+    for i in range(n):
+        bad = df.iloc[i].to_dict()
+        bad["solution"] = ""
+        bad["native_finish_reason"] = "error"
+        bad["served_provider"] = "BadCo"
+        rows.append(bad)
+    upsert_solutions(prep.paths, rows)
+    return rows
+
+
+def test_reroute_recovers_soft_failure(study):
+    """A soft-failed cell is re-issued and recovered by the reroute (the main eval
+    skips it as 'done'; Phase 4 re-runs it on a fresh backend)."""
+    _, prep = study
+    run_generate(prep)  # 8 good rows
+    bad = _corrupt_to_soft_failure(prep)[0]
+
+    prep.config.solvers.max_reroutes = 2
+    result = run_generate(prep)  # default mock recovers on re-issue
+
+    assert result.reroute_recovered == 1
+    assert result.reroute_unresolved == 0
+    assert result.rerouted >= 1
+    df = read_solutions(prep.paths)
+    cell = df[
+        (df["condition_id"] == bad["condition_id"])
+        & (df["item_id"] == bad["item_id"])
+        & (df["epoch"] == bad["epoch"])
+    ]
+    assert len(cell) == 1  # overwritten in place at the original epoch, not duplicated
+    assert cell["native_finish_reason"].isna().all()  # recovered: no soft-failure marker
+    assert (cell["solution"].str.len() > 0).all()
+
+
+def test_reroute_off_by_default(study):
+    """max_reroutes=None (default) leaves a soft-failed cell untouched."""
+    _, prep = study
+    run_generate(prep)
+    bad = _corrupt_to_soft_failure(prep)[0]
+
+    result = run_generate(prep)  # max_reroutes unset
+
+    assert result.rerouted == 0 and result.reroute_recovered == 0
+    df = read_solutions(prep.paths)
+    cell = df[
+        (df["condition_id"] == bad["condition_id"])
+        & (df["item_id"] == bad["item_id"])
+        & (df["epoch"] == bad["epoch"])
+    ]
+    assert cell["native_finish_reason"].iloc[0] == "error"  # untouched
+
+
+def test_reroute_unresolved_after_cap(study):
+    """A backend that keeps soft-failing exhausts the cap and leaves an honest
+    residue — the loop is bounded (no infinite retry)."""
+    from inspect_ai.model import ModelOutput, get_model
+
+    _, prep = study
+    prep.config.solvers.max_reroutes = 2
+
+    def unknown_fn(input, tools, tool_choice, config):
+        # HTTP-200 soft failure: inspect flattens the provider reason to "unknown".
+        return ModelOutput.from_content(model="mockllm/m", content="x", stop_reason="unknown")
+
+    def unknown_factory(model, stage, model_args=None):
+        return get_model(model, custom_outputs=unknown_fn)
+
+    result = run_generate(prep, model_factory=unknown_factory)
+
+    # 2 conds x 2 items x 2 epochs = 8 cells, all soft-invalid; 2 reroute rounds
+    # re-issue all 8 each round (16) and none recover.
+    assert result.reroute_unresolved == 8
+    assert result.rerouted == 16  # bounded by the cap: 8 cells x 2 rounds
+    assert result.reroute_recovered == 0
+    assert any(h.code == "reroute-residue" for h in result.hints)

@@ -118,3 +118,65 @@ def build_generate_task(
             }
         },
     )
+
+
+def build_reroute_task(
+    cells: "list[tuple[Item, int]]",
+    cond: GenCondition,
+    template: Template,
+    study: str,
+    origins: "dict[str, DatasetOrigin]",
+    max_tokens_override: "int | None" = None,
+    attempt_timeout: "int | None" = None,
+) -> Task:
+    """A one-shot generate task re-issuing specific (item, target_epoch) cells on a
+    fresh backend (output-validity-reroute). One sample per cell with `epochs=1`,
+    each carrying `reroute_epoch` in metadata so the harvest writes the *original*
+    epoch — overwriting the soft-failed row in place rather than at a positional
+    epoch. Cache is OFF: inspect's response-cache key does not vary on the
+    `provider` routing object, so a cached bad response would otherwise replay
+    instead of hitting a different backend. The model (with the failed provider
+    excluded) is set by the caller via `task.model`."""
+    samples = [
+        Sample(
+            input=render_generate_input(item, cond, template),
+            target=item.target,
+            id=f"{item.id}#e{epoch}",  # unique per cell (an item may have >1 bad epoch)
+            metadata={
+                "item_id": item.id,
+                "reroute_epoch": epoch,
+                "dataset_id": origins[item.id].dataset_id,
+                "dataset_revision": origins[item.id].revision,
+                "condition_id": cond.id,
+            },
+        )
+        for item, epoch in cells
+    ]
+    p = cond.gen_params
+    config = GenerateConfig(
+        temperature=p.temperature,
+        top_p=p.top_p,
+        max_tokens=p.max_tokens if max_tokens_override is None else max_tokens_override,
+        seed=p.seed,
+        reasoning_effort=p.reasoning_effort,
+        reasoning_tokens=p.reasoning_tokens,
+        cache_prompt=None,
+        batch=None,
+        attempt_timeout=attempt_timeout,
+    )
+    return Task(
+        dataset=MemoryDataset(samples, name=f"{study}:{cond.id}:reroute"),
+        solver=generate(cache=False),
+        scorer=None,
+        config=config,
+        epochs=Epochs(1),
+        name=f"reroute_{cond.slug}",
+        metadata={
+            "itemeval": {
+                "stage": "generate",
+                "study": study,
+                "condition_id": cond.id,
+                "epoch_offset": 0,
+            }
+        },
+    )

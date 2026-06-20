@@ -617,6 +617,14 @@ def _run_stage(args, stage, runner) -> int:
         _print_wave_summary(result, prep)
         if stage == "generate":
             print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
+            if result.rerouted:
+                # Law 1: the reroute re-issued paid calls; self-contained line with
+                # counts (advice lives in the reroute-residue hint).
+                print(
+                    f"reroute: {result.rerouted} cell(s) re-issued · "
+                    f"{result.reroute_recovered} recovered · "
+                    f"{result.reroute_unresolved} still invalid"
+                )
         else:
             if result.materialized_rubrics or result.materialized_reused:
                 # Law 8: one self-contained line with numbers — what the

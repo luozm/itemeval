@@ -1,7 +1,27 @@
 """Endpoint request shaping (W1): model_args_for, routing warnings, runner wiring."""
 
 from itemeval._config import ExperimentConfig
-from itemeval._endpoints import cache_provider_of, model_args_for, routing_warnings
+from itemeval._endpoints import (
+    cache_provider_of,
+    merge_provider_ignore,
+    model_args_for,
+    routing_warnings,
+)
+
+
+def test_merge_provider_ignore():
+    # No base routing: a bare {ignore: [...]} object is created.
+    assert merge_provider_ignore(None, {"GMICloud"}) == {"ignore": ["GMICloud"]}
+    # Nothing to ignore: the base is returned unchanged (no-op round).
+    assert merge_provider_ignore(None, set()) is None
+    base = {"order": ["anthropic"], "allow_fallbacks": False}
+    assert merge_provider_ignore(base, []) is base
+    # Existing ignore is unioned + sorted; other keys preserved; base untouched.
+    base2 = {"order": ["x"], "ignore": ["Phala"]}
+    out = merge_provider_ignore(base2, {"GMICloud", "Phala"})
+    assert out == {"order": ["x"], "ignore": ["GMICloud", "Phala"]}
+    assert base2["ignore"] == ["Phala"]  # input not mutated
+
 
 ROUTING = {"order": ["anthropic"], "allow_fallbacks": False}
 

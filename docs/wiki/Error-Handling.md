@@ -178,6 +178,45 @@ from a bad backend on the next run, see
 [`provider_routing`](Configuration.md#field-notes) (`{ignore: [...]}` /
 `{order: [...]}`).
 
+## Soft failures and reroute
+
+A manual `provider_routing: {ignore: [...]}` blocklist (above) is whack-a-mole — a
+new item or model surfaces a backend the list doesn't have. The opt-in knob
+**`solvers.max_reroutes`** (default `null` = off) automates it: after a `generate`
+run, any **soft-failed** cell (no API error, but `native_finish_reason == "error"`
+or `stop_reason == "unknown"`) is **re-issued on a different backend** — the one
+that failed added to `provider: {ignore: [...]}` — up to `max_reroutes` rounds,
+accumulating the bad backends across rounds.
+
+- A **recovered** cell replaces the bad row **in place** (same `condition_id,
+  item_id, epoch`); the re-issue is a fresh call (the response cache is bypassed,
+  since its key doesn't vary on routing).
+- A cell **still soft-failed after the cap** keeps its honest soft-failure row (no
+  fake score) and is reported by the `reroute-residue` hint.
+
+Where it shows up:
+
+- **`generate` summary** — `reroute: N cell(s) re-issued · M recovered · K still
+  invalid`, with `GenerateResult.rerouted` / `reroute_recovered` /
+  `reroute_unresolved` in `--json`.
+
+Notes and limits:
+
+- **Spend.** A reroute re-issues paid calls *beyond* the pre-flight estimate —
+  bounded by `max_reroutes` × the soft-failure count (a minority), folded into the
+  reported spend. The pre-flight money gate stays the only gate.
+- **Detection runs the whole in-scope store**, so a resume also cleans up soft
+  failures from a prior run (re-issuing only the still-bad cells, never touching
+  good ones). `max_reroutes` is an operational knob — it never changes condition
+  ids, so toggling it on a re-run converges into the same experiment.
+- **Single-provider models can't be rerouted** (no alternate backend) — they show
+  up in the unresolved count; substitute the model (a deeper preflight can flag
+  these before a paid run). Reroute is also **skipped** under a batch plan (a batch
+  job can't re-issue mid-flight) and for `--wave`/offset runs (fresh observations).
+- This targets the **provider soft failure** only — a legitimate
+  [truncation](#truncation) (a budget cut) or an [empty completion](#empty-completions)
+  keeps its own handling and is never rerouted.
+
 ## Eval-level (whole-condition) failures
 
 If an entire `inspect_ai.eval(...)` raises — a misconfigured task, an

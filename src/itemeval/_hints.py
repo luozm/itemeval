@@ -206,6 +206,28 @@ def detect_truncated_completions(truncated_total: int) -> "Hint | None":
     )
 
 
+def detect_reroute_residue(
+    unresolved: int, max_reroutes: int, ignored_providers: "list[str]"
+) -> "Hint | None":
+    """Cells still soft-failed after the reroute cap (output-validity-reroute) — they
+    carry an honest soft-failure row (native_finish_reason=error / stop_reason=
+    unknown), not a fake score. The user excludes them or pins provider_routing; a
+    single-provider model cannot be rerouted at all."""
+    if unresolved <= 0:
+        return None
+    excl = f" (excluded: {', '.join(ignored_providers)})" if ignored_providers else ""
+    return Hint(
+        code="reroute-residue",
+        message=(
+            f"{unresolved} cell(s) still soft-failed after {max_reroutes} reroute(s)"
+            f"{excl} — they carry an honest soft-failure row, not a score; exclude "
+            "them in analysis, pin solvers.provider_routing, or (single-provider "
+            "models) substitute the model"
+        ),
+        learn_more="Error-Handling#soft-failures-and-reroute",
+    )
+
+
 def detect_empty_materialized_rubrics(empty: int, model: "str | None") -> "Hint | None":
     """A materializing rubric produced no text for some items — they were graded
     against a blank {rubric} (the materializer ran but returned nothing)."""

@@ -47,6 +47,7 @@ solvers:
   split_prompt: false          # render prompt as system(template head)+user(item) for provider cache breakpoints; changes condition ids
   provider_routing: null       # optional OpenRouter routing object, sent verbatim with every openrouter/* request (pins the upstream); inert+warns if no openrouter/* model
   attempt_timeout: null        # optional; seconds. Per-attempt request timeout passed to inspect: a stalled attempt is abandoned and retried (via OpenRouter, possibly onto a healthier upstream). default null = unbounded (today's behavior). Leave unset for batch runs — it would bound the long batch poll too. Execution knob; never changes condition ids.
+  max_reroutes: null           # optional; int. Auto-retry a soft failure (HTTP 200 + native_finish_reason=error / stop_reason=unknown) on a different OpenRouter backend, excluding the one that failed, up to N rounds. default null = off. Spends beyond the estimate (bounded by N × soft-failure cells, announced). Skipped under batch and wave runs. See Error-Handling#soft-failures-and-reroute. Operational knob; never changes condition ids.
 
 facets:
   prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]

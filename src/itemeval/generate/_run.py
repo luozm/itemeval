@@ -8,11 +8,12 @@ import inspect_ai
 from pydantic import BaseModel, ConfigDict, Field
 
 from itemeval._classify import labeled
-from itemeval._endpoints import cache_provider_of, model_args_for
+from itemeval._endpoints import cache_provider_of, merge_provider_ignore, model_args_for
 from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
     detect_openrouter_unpinned_cache,
+    detect_reroute_residue,
     detect_truncated_completions,
     detect_unpriced_models,
 )
@@ -42,12 +43,13 @@ from itemeval.generate._params import (
     extract_effective_params,
     fit_max_tokens,
 )
-from itemeval.generate._task import build_generate_task
+from itemeval.generate._task import build_generate_task, build_reroute_task
 from itemeval.store import _ledger, _logs, _solutions
 from itemeval.store._base import rel_to_study
 from itemeval.store._items import upsert_items
 
 if TYPE_CHECKING:
+    import pandas as pd
     from inspect_ai.log import EvalLog, EvalSample
     from inspect_ai.model import Model, ModelUsage
 
@@ -127,6 +129,13 @@ class GenerateResult(BaseModel):
     # Non-empty completions cut at a length cap this run (truncation-signal);
     # counted in rows_written, surfaced for the truncated-completions hint + JSON.
     truncated_total: int = 0
+    # Provider-aware reroute of soft failures (output-validity-reroute); all 0
+    # unless solvers.max_reroutes is set. rerouted = cells re-issued (cumulative
+    # across rounds), reroute_recovered = now valid, reroute_unresolved = still soft
+    # after the cap. The reroute spend is folded into total_usd.
+    rerouted: int = 0
+    reroute_recovered: int = 0
+    reroute_unresolved: int = 0
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
@@ -520,8 +529,16 @@ def rows_from_generate_log(
     log_file = rel_to_study(prep.paths, log.location)
     p = cond.gen_params
     for sample in log.samples or []:
-        item_id = str(sample.id)
+        meta = sample.metadata or {}
+        # Reroute samples (output-validity-reroute) carry a unique sample id but the
+        # real item_id + target epoch in metadata; normal samples set item_id in
+        # metadata too (task builder), so reading it here is equivalent.
+        item_id = str(meta.get("item_id") or sample.id)
         origin = prep.origins[item_id]
+        reroute_epoch = meta.get("reroute_epoch")
+        epoch = (
+            int(reroute_epoch) if reroute_epoch is not None else int(sample.epoch) + epoch_offset
+        )
         usage = sum_usage(sample)
         error = sample.error.message if sample.error else None
         solution = (
@@ -541,7 +558,7 @@ def rows_from_generate_log(
                 "item_id": item_id,
                 "dataset_id": origin.dataset_id,
                 "dataset_revision": origin.revision,
-                "epoch": int(sample.epoch) + epoch_offset,
+                "epoch": epoch,
                 "wave": wave,
                 "wave_label": wave_label,
                 "model": cond.model,
@@ -637,6 +654,139 @@ def persist_generate_condition(
         ],
     )
     return rows, n, cond_usd
+
+
+def _reroute_soft_failures(
+    prep: "PreparedStudy",
+    selected: "list[GenCondition]",
+    ident: Any,
+    factory: "ModelFactory",
+    item_ids: "list[str]",
+    epoch_block: "tuple[int, int]",
+    endpoint_windows: "dict[str, int]",
+    display: "str | None",
+    max_reroutes: int,
+) -> "tuple[int, int, int, float, list[str]]":
+    """Phase 4 (output-validity-reroute): re-issue in-scope soft-failed cells on a
+    different backend, up to `max_reroutes` rounds. Self-contained off the store —
+    so a resume also cleans up prior-run soft failures — and idempotent (a clean
+    store is a no-op). Per round: read the store, find soft-invalid cells in the
+    selected conditions × scope items × `epoch_block`, and for each such condition
+    re-issue its bad cells with the failed `served_provider`(s) added to
+    `provider:{ignore:[...]}` (accumulated across rounds). A recovered draw
+    overwrites the bad row in place (same epoch via `reroute_epoch`); the loop stops
+    early once no soft failures remain. Returns
+    `(rerouted, recovered, unresolved, usd, ignored_providers)`."""
+    selected_by_id = {c.id: c for c in selected}
+    item_by_id = {it.id: it for it in prep.items_effective}
+    item_id_set = set(item_ids)
+    lo, hi = epoch_block
+    base_routing = prep.config.solvers.provider_routing
+
+    def in_scope_bad(store: "pd.DataFrame") -> "pd.DataFrame":
+        if store.empty:
+            return store
+        scoped = store[
+            store["condition_id"].isin(list(selected_by_id))
+            & store["item_id"].isin(item_id_set)
+            & store["epoch"].astype(int).between(lo, hi)
+        ]
+        return scoped[_solutions.soft_invalid_mask(scoped)] if not scoped.empty else scoped
+
+    ignored_by_cond: "dict[str, set[str]]" = {}
+    attempted: "set[tuple[str, str, int]]" = set()
+    rerouted = 0
+    reroute_usd = 0.0
+    for _round in range(max_reroutes):
+        bad = in_scope_bad(_solutions.read_solutions(prep.paths))
+        if bad.empty:
+            break
+        tasks = []
+        for cid, group in bad.groupby("condition_id"):
+            cond = selected_by_id[str(cid)]
+            providers = {p for p in group["served_provider"].dropna().tolist() if p}
+            ignored_by_cond.setdefault(cond.id, set()).update(providers)
+            cells = [
+                (item_by_id[r.item_id], int(r.epoch))
+                for r in group.itertuples()
+                if r.item_id in item_by_id
+            ]
+            if not cells:
+                continue
+            template = prep.solver_templates[cond.prompt_name]
+            price = lookup_price(prep.pricing, cond.model)
+            ctx_len = effective_context(
+                price.context_length if price else None, endpoint_windows.get(cond.model)
+            )
+            max_input = max(
+                (estimate_tokens(template.text) + estimate_tokens(it.input) for it, _ in cells),
+                default=0,
+            )
+            eff_max_tokens, clamped = fit_max_tokens(cond.gen_params.max_tokens, ctx_len, max_input)
+            task = build_reroute_task(
+                cells,
+                cond,
+                template,
+                prep.config.study,
+                prep.origins,
+                max_tokens_override=eff_max_tokens if clamped else None,
+                attempt_timeout=prep.config.solvers.attempt_timeout,
+            )
+            exec_model = prep.native_routes.get(cond.model, cond.model)
+            try:
+                task.model = factory(
+                    exec_model,
+                    "generate",
+                    model_args_for(
+                        exec_model,
+                        provider_routing=merge_provider_ignore(
+                            base_routing, ignored_by_cond[cond.id]
+                        ),
+                        cache_scheduling=False,
+                        study=prep.config.study,
+                        condition_id=cond.id,
+                    ),
+                )
+            except Exception:
+                continue  # cannot reroute this condition this round — cells stay bad
+            for it, epoch in cells:
+                attempted.add((cond.id, it.id, epoch))
+            rerouted += len(cells)
+            tasks.append(task)
+        if not tasks:
+            break
+        log_by_cond, fatal = run_condition_evals(
+            tasks,
+            stage="generate",
+            experiment_id=ident.experiment_id,
+            attempt=ident.attempt,
+            study=prep.config.study,
+            display=display,
+            log_dir=str(prep.paths.logs_stage_dir("generate")),
+            max_tasks=max_tasks_for([t.model for t in tasks]),
+        )
+        if fatal is not None:
+            break
+        for cid, log in log_by_cond.items():
+            if log is None or log.status != "success":
+                continue
+            _rows, _n, cond_usd = persist_generate_condition(
+                prep, selected_by_id[cid], log, ident.experiment_id, ident.attempt
+            )
+            reroute_usd += cond_usd or 0.0
+
+    residue = in_scope_bad(_solutions.read_solutions(prep.paths))
+    unresolved = len(residue)
+    if residue.empty:
+        bad_now: "set[tuple[str, str, int]]" = set()
+        ignored_providers: "list[str]" = []
+    else:
+        bad_now = set(
+            zip(residue["condition_id"], residue["item_id"], residue["epoch"].astype(int))
+        )
+        ignored_providers = sorted({p for p in residue["served_provider"].dropna().tolist() if p})
+    recovered = sum(1 for cell in attempted if cell not in bad_now)
+    return rerouted, recovered, unresolved, reroute_usd, ignored_providers
 
 
 def run_generate(
@@ -892,6 +1042,30 @@ def run_generate(
             **cache_columns(rows),
         )
 
+    # Phase 4: provider-aware reroute of soft failures (output-validity-reroute).
+    # Opt-in (solvers.max_reroutes); skipped under a batch plan (a batch job can't
+    # re-issue mid-flight), for wave/offset runs (those are fresh observations),
+    # and after a fatal eval. Self-contained off the store, so it also recovers
+    # prior-run soft failures on a resume.
+    rerouted = reroute_recovered = reroute_unresolved = 0
+    reroute_providers: list[str] = []
+    max_reroutes = prep.config.solvers.max_reroutes
+    if max_reroutes and prep.plan.batch is None and epoch_offset == 0 and fatal is None:
+        rerouted, reroute_recovered, reroute_unresolved, reroute_usd, reroute_providers = (
+            _reroute_soft_failures(
+                prep,
+                selected,
+                ident,
+                factory,
+                item_ids,
+                epoch_block,
+                endpoint_windows,
+                display,
+                max_reroutes,
+            )
+        )
+        total_usd += reroute_usd
+
     # Reassemble in selected order (skips + runs/errors) for a stable summary.
     reports: list[ConditionRunReport] = [reports_by_cond[c.id] for c in selected]
 
@@ -933,6 +1107,7 @@ def run_generate(
                 sorted({m for m in run_models if lookup_price(prep.pricing, m) is None})
             ),
             detect_truncated_completions(truncated_total),
+            detect_reroute_residue(reroute_unresolved, max_reroutes or 0, reroute_providers),
         )
         if h is not None
     ]
@@ -968,6 +1143,9 @@ def run_generate(
         rows_written=rows_written,
         total_usd=total_usd,
         truncated_total=truncated_total,
+        rerouted=rerouted,
+        reroute_recovered=reroute_recovered,
+        reroute_unresolved=reroute_unresolved,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
         warnings=drift_warnings + clamp_warnings,

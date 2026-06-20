@@ -92,7 +92,15 @@ def test_study_paths(tmp_path):
     assert paths.logs_stage_dir("generate") == tmp_path / "study/logs/generate"
 
 
-def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s", stop_reason="stop"):
+def _sol_row(
+    cond: str,
+    item: str,
+    epoch: int,
+    error=None,
+    solution="s",
+    stop_reason="stop",
+    native_finish_reason=None,
+):
     return {
         "study": "t",
         "experiment_id": "r",
@@ -109,6 +117,7 @@ def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s", stop_re
         "model_config_name": "mc",
         "solution": solution,
         "stop_reason": stop_reason,
+        "native_finish_reason": native_finish_reason,
         "error": error,
         "log_file": "lf",
         "created_at": "t0",
@@ -171,6 +180,24 @@ def test_truncated_mask():
     # disjoint from empty: the empty max_tokens row is in empty, not truncated
     assert empty_solution_mask(df).tolist() == [False, False, True, False, False, False]
     assert truncated_mask(_sol_df([]).iloc[0:0]).tolist() == []
+
+
+def test_soft_invalid_mask():
+    from itemeval.store._solutions import soft_invalid_mask
+
+    df = _sol_df(
+        [
+            # provider marked the call failed (200 + finish=error)
+            _sol_row("c1", "1", 1, solution="", native_finish_reason="error"),
+            # inspect flattened an unmapped reason to "unknown"
+            _sol_row("c1", "1", 2, solution="x", stop_reason="unknown"),
+            _sol_row("c1", "2", 1, solution="ok", stop_reason="stop"),  # clean
+            # an API error is the error channel (already retried), NOT a soft failure
+            _sol_row("c1", "2", 2, solution=None, native_finish_reason="error", error="boom"),
+        ]
+    )
+    assert soft_invalid_mask(df).tolist() == [True, True, False, False]
+    assert soft_invalid_mask(_sol_df([]).iloc[0:0]).tolist() == []
 
 
 class _FakeCall:

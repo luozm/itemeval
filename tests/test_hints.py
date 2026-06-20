@@ -52,6 +52,17 @@ def test_detect_truncated_completions():
     assert detect_truncated_completions(0) is None
 
 
+def test_detect_reroute_residue():
+    from itemeval._hints import detect_reroute_residue
+
+    h = detect_reroute_residue(2, 3, ["GMICloud", "Phala"])
+    assert h is not None and h.code == "reroute-residue"
+    assert "2 cell(s) still soft-failed after 3 reroute(s)" in h.message
+    assert "GMICloud, Phala" in h.message
+    assert h.learn_more == "Error-Handling#soft-failures-and-reroute"
+    assert detect_reroute_residue(0, 3, []) is None
+
+
 def test_detect_split_head_below_min_single_static_head():
     from itemeval._hints import detect_split_head_below_min
 

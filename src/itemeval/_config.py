@@ -238,6 +238,20 @@ class SolversConfig(BaseModel):
     # the schema. Optimization knob; never enters condition ids (endpoint
     # identity never has — endpoint drift warnings cover served-model drift).
     provider_routing: "dict[str, Any] | None" = None
+    # Provider-aware reroute for soft failures (output-validity-reroute): after a
+    # generate run, a solution that completed with no API error but that the
+    # provider marked failed (native_finish_reason="error", or the flattened
+    # stop_reason="unknown") is re-issued with the backend that produced it added
+    # to provider:{ignore:[...]}, up to this many rounds (accumulating bad
+    # backends). A recovered cell replaces the bad row; one still failing after the
+    # cap keeps its honest soft-failure row. None (default) = off. Opt-in because a
+    # reroute spends beyond the pre-flight estimate (bounded by cap x soft-failure
+    # cells, announced). Operational retry policy like provider_routing/
+    # attempt_timeout — never enters condition ids or the experiment_id digest
+    # (popped in _identity._NON_IDENTITY_SOLVERS), so a recovery run converges and
+    # cleans up. Skipped under a batch plan (can't re-issue mid-flight) and for
+    # wave/offset runs (those are fresh observations).
+    max_reroutes: int | None = Field(default=None, ge=1)
     # Draw `models` from a universe instead of listing them. XOR with `models`:
     # exactly one of the two must be set. Resolved + pinned at prepare time.
     sample: "ModelSample | None" = None

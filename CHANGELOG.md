@@ -7,6 +7,31 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Provider-aware reroute for soft failures** (`output-validity-reroute`): a new
+  opt-in knob `solvers.max_reroutes` (int, default `None` = off) makes `generate`
+  automatically re-issue a **soft-failed** solution — one that completed with no API
+  error but that the provider marked failed (`native_finish_reason="error"`, or the
+  flattened `stop_reason="unknown"`) — on a different OpenRouter backend, adding the
+  one that failed to `provider:{ignore:[…]}`, up to `max_reroutes` rounds
+  (accumulating the bad backends). Motivation: OpenRouter load-balances each call,
+  and a flaky backend returns HTTP 200 + `finish_reason=error` + empty/truncated
+  content that `allow_fallbacks` and inspect both treat as final — a false floor at
+  full cost (real cases: `glm-5.1`→GMICloud, `kimi-k2.6`→DigitalOcean,
+  `qwen3.5`→Phala, each clean via another backend). A recovered cell replaces the
+  bad row in place (same epoch); a cell still failing after the cap keeps its honest
+  soft-failure row (no fake score) and is surfaced in the run summary
+  (`reroute: N re-issued · M recovered · K still invalid`), the
+  `reroute-residue` hint, and new `GenerateResult` fields
+  (`rerouted`/`reroute_recovered`/`reroute_unresolved`, `--json` parity). Re-issues
+  are fresh (cache off) and the extra spend folds into `total_usd`. Detection reads
+  the `provider-finish-capture` columns; the reroute is the verbatim
+  `provider_routing` object with `ignore` extended. `max_reroutes` is an
+  operational retry policy — non-identity (it never enters condition ids or the
+  `experiment_id` digest, so a recovery run converges and cleans up). Skipped under
+  a batch plan and for wave/offset runs; single-provider models cannot be rerouted
+  (the residue names them). `None` is a pure no-op.
+
+  Closes: output-validity-reroute
 - **Serving provider + native finish_reason captured in the stores/export**
   (`provider-finish-capture`): every solver and judge call now records two raw
   provenance columns — `served_provider` (the OpenRouter backend that actually
