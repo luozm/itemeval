@@ -42,15 +42,22 @@ itemeval version with a *new* sample field — e.g. `where.output_text_only`, or
 `allocation` / `include` — never invalidates an older lock: specs are compared
 normalized through the current schema, so an absent additive field defaults in.
 A *genuinely* changed spec (`n` / `seed` / `stratify_by` / `where` / …) hard-fails
-`generate` / `grade` (running a different panel than the one pinned would mix
-results — clear the lock to re-draw), but the read-only commands
-(`estimate` / `status` / `export --snapshot`) **warn and proceed on the pinned
-panel** (`spec_drift`), so a pinned study is always inspectable. A command prints
-`models: sampled N of M … — pinned in model_locks.json` on the first draw and a
-reuse line afterward (or `… — pinned panel` + a warning under spec drift); the
-same facts ride JSON as `model_sample`
+`generate` / `grade` with a **change briefing** — a field-level diff and the two
+safe actions — because running a different panel than the one pinned would mix
+results; the read-only commands (`estimate` / `status` / `export --snapshot`)
+instead **warn and proceed on the pinned panel** (`spec_drift`), so a pinned study
+is always inspectable. To move forward on the write path without re-drawing, run
+**`itemeval rebless CONFIG`**: it records the new spec while keeping the pinned
+panel, so the lock then holds **both** the spec the panel was *drawn under*
+(`sample`) and the spec it was *re-blessed to* (`reblessed_spec` / `reblessed_at`),
+and later runs compare against the re-blessed spec. (Deleting the lock to re-draw
+is the *other* choice — it draws a different panel, a different scientific frame.)
+A command prints `models: sampled N of M … — pinned in model_locks.json` on the
+first draw and a reuse line afterward (or `… — pinned panel` + a warning under spec
+drift, or `… — re-blessed` after a re-bless); the same facts ride JSON as
+`model_sample`
 (`{source, universe_size, universe_hash, n, seed, stratify_by, allocation,
-include, models, pinned_now, universe_drift, spec_drift}`) on
+include, models, pinned_now, universe_drift, spec_drift, reblessed}`) on
 estimate/generate/grade/status, and are
 recorded in each run manifest and `STUDY_CARD.md`.
 

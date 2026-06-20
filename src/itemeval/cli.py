@@ -273,6 +273,13 @@ def _print_model_sample(prep) -> None:
             "warning: solvers.sample spec differs from model_locks.json — showing the pinned "
             "panel; clear model_locks.json to re-draw at the current spec"
         )
+    elif ms.reblessed:
+        # Re-blessed pin: the recorded spec was updated to a changed config but the
+        # panel was kept, so the panel size (not the spec's n) is the honest count.
+        print(
+            f"models: {len(ms.models)} models reused from model_locks.json (seed {ms.seed}) "
+            "— re-blessed (panel drawn under an earlier spec, kept)"
+        )
     else:
         drift = (
             f"; universe changed since the pin (now {ms.universe_size}) — draw unchanged"
@@ -728,6 +735,28 @@ def _cmd_status(args) -> int:
     return 0
 
 
+def _cmd_rebless(args) -> int:
+    from itemeval._config import load_config
+    from itemeval._modelsample import rebless_model_sample
+    from itemeval.store._layout import StudyPaths
+
+    cfg = load_config(args.config, work_dir=getattr(args, "base_dir", None))
+    paths = StudyPaths(cfg.study_dir)
+    result = rebless_model_sample(cfg, paths.model_locks)  # ConfigError → exit 2 (usage)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 0
+    # Law 1: a pin write that decides future runs — announce it.
+    print(
+        f"re-blessed: {paths.model_locks.name} now records the current solvers.sample "
+        f"spec — {len(result.models)} models kept (no re-draw)"
+    )
+    print("changed:")
+    for line in result.diff:
+        print(line)
+    return 0
+
+
 def _cmd_init(args) -> int:
     import yaml
 
@@ -880,6 +909,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = add("status", _cmd_status, "expanded grid + completion matrix; no model API calls")
     add_policy(p)
+    p.add_argument("--json", action="store_true")
+
+    p = add(
+        "rebless",
+        _cmd_rebless,
+        "re-bless a drifted model_locks.json: record the current sample spec, keep the panel",
+    )
     p.add_argument("--json", action="store_true")
     return parser
 

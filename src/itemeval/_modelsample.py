@@ -49,6 +49,22 @@ class ModelSampleResult(BaseModel):
     # (estimate/status/snapshot) proceeded on the pinned panel anyway rather than
     # bricking. The draw/write path (generate/grade) hard-fails instead.
     spec_drift: bool = False
+    # The pin was re-blessed: its panel was drawn under one spec and the recorded
+    # spec was later updated (`itemeval rebless`) to match an edited config, panel
+    # kept. The match is against the re-blessed spec, not the drawn one.
+    reblessed: bool = False
+
+
+class ReblessResult(BaseModel):
+    """What `itemeval rebless` did: the recorded spec moved to the current config,
+    the pinned panel kept (no re-draw)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diff: list[str]  # human-readable `field: old → new` lines (the change briefing)
+    models: list[str]  # the kept panel (unchanged)
+    reblessed_at: str
+    lock_path: str
 
 
 class _LockSpec(BaseModel):
@@ -88,6 +104,68 @@ def _normalized_spec(raw: "dict | None") -> "dict | None":
         return _LockSpec.model_validate(raw).model_dump()
     except ValidationError:
         return None
+
+
+def _effective_spec(lock: dict) -> "dict | None":
+    """The spec the current config is compared against: the re-blessed spec if the
+    pin was re-blessed (`itemeval rebless`), else the spec it was drawn under."""
+    return _normalized_spec(lock.get("reblessed_spec") or lock.get("sample"))
+
+
+def _cheap_source(sample: ModelSample) -> str:
+    """The `source` label without building the universe — re-bless keeps the panel
+    and must work even when the edited universe no longer builds (offline / empty).
+    Mirrors `_build_universe`'s labeling exactly (list→explicit, the keyword→
+    pricing-table, else→file), so a re-blessed spec compares equal to a resolved one.
+    """
+    if isinstance(sample.universe, list):
+        return "explicit"
+    if sample.universe == PRICING_TABLE_UNIVERSE:
+        return "pricing-table"
+    return "file"
+
+
+def _current_spec(sample: ModelSample, source: str) -> dict:
+    """The current config's normalized sample spec (the canonical comparison form)."""
+    return _LockSpec(
+        source=source,
+        n=sample.n,
+        seed=sample.seed,
+        stratify_by=sample.stratify_by,
+        allocation=sample.allocation,
+        include=sorted(sample.include),
+        exclude=sorted(sample.exclude),
+        where=sample.where,
+    ).model_dump()
+
+
+def _fmt_spec_val(v: object) -> str:
+    """Render a spec value for the change briefing (None / [] → '(none)')."""
+    if v is None or v == []:
+        return "(none)"
+    if isinstance(v, list):
+        return "[" + ", ".join(str(x) for x in v) + "]"
+    return str(v)
+
+
+def _spec_diff(old: "dict | None", new: "dict | None") -> "list[str]":
+    """`  field: old → new` lines between two normalized specs (top-level plus
+    flattened `where.*`) for the change briefing — only the fields that differ."""
+
+    def flat(spec: "dict | None") -> dict:
+        spec = spec or {}
+        out = {k: v for k, v in spec.items() if k != "where"}
+        for k, v in (spec.get("where") or {}).items():
+            out[f"where.{k}"] = v
+        return out
+
+    o, n = flat(old), flat(new)
+    lines = []
+    for key in sorted(set(o) | set(n)):
+        ov, nv = o.get(key), n.get(key)
+        if ov != nv:
+            lines.append(f"  {key}: {_fmt_spec_val(ov)} → {_fmt_spec_val(nv)}")
+    return lines
 
 
 def stratum(model: str) -> str:
@@ -393,16 +471,31 @@ def read_model_lock(path: Path) -> "dict | None":
 
 
 def _write_model_lock(
-    path: Path, spec: dict, universe_hash: str, universe: "list[str]", models: "list[str]"
+    path: Path,
+    spec: dict,
+    universe_hash: str,
+    universe: "list[str]",
+    models: "list[str]",
+    *,
+    resolved_at: "str | None" = None,
+    reblessed_spec: "dict | None" = None,
+    reblessed_at: "str | None" = None,
 ) -> None:
     data = {
         "version": MODEL_LOCKS_VERSION,
-        "resolved_at": utc_now_iso(),
-        "sample": spec,
+        # The draw's timestamp — preserved across a re-bless (which doesn't re-draw).
+        "resolved_at": resolved_at or utc_now_iso(),
+        "sample": spec,  # the spec the panel was DRAWN under (immutable after a re-bless)
         "universe_hash": universe_hash,
         "universe": universe,
         "models": models,
     }
+    if reblessed_spec is not None:
+        # Keep both: drawn-under `sample` (above) + the re-blessed-to spec here, so
+        # the panel is never silently re-attributed. Omitted for a never-reblessed
+        # lock, so its bytes are identical to a pre-rebless one.
+        data["reblessed_spec"] = reblessed_spec
+        data["reblessed_at"] = reblessed_at or utc_now_iso()
     atomic_write_bytes(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
 
 
@@ -429,6 +522,66 @@ def _reuse_pinned_panel(config: ExperimentConfig, lock: dict) -> ModelSampleResu
         pinned_now=False,
         universe_drift=False,  # a changed spec supersedes the universe comparison
         spec_drift=True,
+        reblessed=lock.get("reblessed_spec") is not None,
+    )
+
+
+def _spec_change_briefing(lock: dict, spec: dict, locks_path: Path) -> str:
+    """The write-path message when the spec genuinely changed: what changed, that
+    the pin's panel was drawn under the old spec, and the two SAFE actions — never
+    the bare "clear the lock" (which silently re-draws a different panel)."""
+    diff = _spec_diff(_effective_spec(lock), spec)
+    n_models = len(lock.get("models", []))
+    return (
+        f"solvers.sample spec changed since {locks_path.name} was written:\n"
+        + "\n".join(diff)
+        + f"\nthe pinned panel ({n_models} models) was drawn under the old spec — pick one:\n"
+        "  • keep it:  itemeval rebless <config>   "
+        "(record the new spec, keep the panel, no re-draw)\n"
+        f"  • re-draw:  delete {locks_path.name}   "
+        "(draws a NEW panel under the new spec — a different scientific frame)"
+    )
+
+
+def rebless_model_sample(config: ExperimentConfig, locks_path: Path) -> ReblessResult:
+    """Re-bless a drifted sample pin: record the current config's spec while keeping
+    the pinned panel (no re-draw). Honest provenance — the lock keeps the spec it was
+    drawn under (`sample`) and gains the re-blessed spec (`reblessed_spec` +
+    `reblessed_at`); later runs then compare the config against the re-blessed spec.
+    A pin write that decides future runs (UX-PATTERNS Law 1 — the caller announces
+    it). No universe build / network: re-bless keeps the panel, so it works even when
+    the edited spec no longer draws a universe at all."""
+    sample = config.solvers.sample
+    if sample is None:
+        raise ConfigError(
+            "solvers.sample is not configured — re-bless applies only to a sampled roster"
+        )
+    lock = read_model_lock(locks_path)
+    if lock is None:
+        raise ConfigError(
+            f"no {locks_path.name} to re-bless — run estimate/generate first to draw a panel"
+        )
+    spec = _current_spec(sample, _cheap_source(sample))
+    if _effective_spec(lock) == spec:
+        raise ConfigError(
+            f"{locks_path.name} already records the current solvers.sample spec — "
+            "nothing to re-bless"
+        )
+    diff = _spec_diff(_effective_spec(lock), spec)
+    models = list(lock["models"])
+    reblessed_at = utc_now_iso()
+    _write_model_lock(
+        locks_path,
+        lock.get("sample"),  # the spec the panel was drawn under — kept verbatim
+        lock.get("universe_hash", ""),
+        lock.get("universe", models),
+        models,
+        resolved_at=lock.get("resolved_at"),  # preserve the original draw time
+        reblessed_spec=spec,
+        reblessed_at=reblessed_at,
+    )
+    return ReblessResult(
+        diff=diff, models=models, reblessed_at=reblessed_at, lock_path=str(locks_path)
     )
 
 
@@ -484,30 +637,17 @@ def resolve_model_sample(
         universe_hash = sha256_hex(canonical_json(universe).encode("utf-8"))[:12]
         # Built (and compared) through _LockSpec so additive fields normalize — see
         # _LockSpec for why a raw dict here would re-introduce the lock-spec brick.
-        spec = _LockSpec(
-            source=source,
-            n=sample.n,
-            seed=sample.seed,
-            stratify_by=sample.stratify_by,
-            allocation=sample.allocation,
-            include=sorted(sample.include),
-            exclude=sorted(sample.exclude),
-            where=sample.where,
-        ).model_dump()
+        spec = _current_spec(sample, source)
     except ConfigError:
         if lock is not None and allow_spec_drift:
             return _reuse_pinned_panel(config, lock)
         raise
 
     if lock is not None:
-        if _normalized_spec(lock.get("sample")) != spec:
+        if _effective_spec(lock) != spec:
             if allow_spec_drift:
                 return _reuse_pinned_panel(config, lock)
-            raise ConfigError(
-                f"solvers.sample spec changed since {locks_path.name} was written "
-                f"(was {lock.get('sample')}, now {spec}) — clear {locks_path.name} to "
-                "re-draw; existing solutions for previously-sampled models remain"
-            )
+            raise ConfigError(_spec_change_briefing(lock, spec, locks_path))
         models = list(lock["models"])
         config.solvers.models = models
         return ModelSampleResult(
@@ -523,6 +663,7 @@ def resolve_model_sample(
             models=models,
             pinned_now=False,
             universe_drift=lock.get("universe_hash") != universe_hash,
+            reblessed=lock.get("reblessed_spec") is not None,
         )
 
     models = _draw(universe, sample, pricing)

@@ -181,14 +181,17 @@ budget:
   The draw is **pinned** in `model_locks.json` beside the study: later runs reuse
   the same models, a roster that has since changed only prints a warning (the
   pinned draw stands), and changing `n`/`seed`/`stratify_by`/`allocation`/
-  `include`/`where` makes `generate`/`grade` fail loudly — delete
-  `model_locks.json` to re-draw (existing solutions for dropped models remain).
-  The read-only commands (`estimate`/`status`/`export --snapshot`) don't fail on
-  that mismatch: they warn and inspect the **pinned panel**, so a study stays
-  readable while you edit its spec. (An itemeval update that merely *adds* a new
-  sample field never invalidates a lock.) The drawn set, universe size, and seed
-  are recorded in the run manifest and `STUDY_CARD.md` and printed as a
-  `models: sampled N of M …` line.
+  `include`/`where` makes `generate`/`grade` fail with a **change briefing** (the
+  field-level diff + the safe actions). You then choose: **`itemeval rebless
+  config.yaml`** records the new spec while **keeping the pinned panel** (no
+  re-draw — the panel you already ran stays the scientific object), or deleting
+  `model_locks.json` re-draws a *different* panel (existing solutions for dropped
+  models remain). The read-only commands (`estimate`/`status`/`export --snapshot`)
+  never fail on that mismatch: they warn and inspect the **pinned panel**, so a
+  study stays readable while you edit its spec. (An itemeval update that merely
+  *adds* a new sample field never invalidates a lock.) The drawn set, universe
+  size, and seed are recorded in the run manifest and `STUDY_CARD.md` and printed
+  as a `models: sampled N of M …` line.
 
   **Evaluating the current SOTA frontier?** The honest way to get one flagship
   per vendor is to **name them with `include`** — "latest by release date" is not

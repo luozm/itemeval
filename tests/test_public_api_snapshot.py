@@ -30,7 +30,7 @@ PUBLIC_API = {
     "run_grade",
 }
 
-CLI_COMMANDS = {"init", "estimate", "generate", "grade", "export", "status"}
+CLI_COMMANDS = {"init", "estimate", "generate", "grade", "export", "status", "rebless"}
 
 
 def test_public_api_surface_unchanged():

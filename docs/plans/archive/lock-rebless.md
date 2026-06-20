@@ -1,9 +1,11 @@
 # Implementation plan — lock-rebless (safe re-bless + change briefing for a drifted sample lock)
 
-**Status: NOT STARTED.** Written 2026-06-20 against the shipped `lock-spec-brick`
-fix (L1+L2 on `main`: `_normalized_spec`/`_LockSpec` in `src/itemeval/_modelsample.py`,
-`allow_spec_drift` threaded through `prepare_study`/`_load`/`build_status`). This is
-the working brief for a fresh session — read first, in order:
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/lock-rebless` (CHANGELOG
+`Closes: lock-rebless`). This file is the design record. Built against the shipped
+`lock-spec-brick` fix (L1+L2: `_normalized_spec`/`_LockSpec` in
+`src/itemeval/_modelsample.py`, `allow_spec_drift` threaded through
+`prepare_study`/`_load`/`build_status`). Original brief follows — read first, in
+order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — binding UX contract (Law 1 announce side effects; Law 2

@@ -193,60 +193,6 @@ lock-spec fix reuses (`normalized_spec()`). Optionally consumes **D**'s
 terminal-vs-transient classifier to *label* missing cells (not needed for the
 fork decision under Choice A).
 
-### Safe re-bless + change briefing for a drifted sample lock
-**Key:** `lock-rebless`
-
-**Motivation.** When a pinned `solvers.sample` spec *genuinely* changes (a real
-`n`/`seed`/`stratify_by`/`where`/`universe` edit — not an additive field, which
-the shipped `lock-spec-brick` fix already normalizes away), `generate`/`grade`
-hard-fail with `solvers.sample spec changed … clear model_locks.json`. That advice
-is a footgun: clearing the lock **re-draws a different panel** over the pinned one,
-silently changing the scientific frame the study measured — the exact failure
-`DEVELOPMENT.md`'s "Study-facing schema evolution" gate forbids ("never fails
-opaquely with 'delete the file and re-draw'"). That gate names the missing piece
-directly: a non-additive change to a pinned surface must **point at a briefing**
-and **offer a safe reconcile — re-bless a pin without re-drawing**. The
-lock-spec-brick fix made the mismatch non-bricking for *read* paths
-(estimate/status/snapshot show the pinned panel); this closes the *write* path and
-is the `model_locks` surface's path to the post-1.0 reconcile requirement.
-
-**Design sketch.** Two parts, both on the genuine-mismatch path:
-1. **Change briefing** — replace the terse error with a field-level diff (what
-   changed: `n: 2 → 3`, `where.provider: (none) → [google]`), a note that the
-   pinned panel was drawn under the old spec, and the two safe actions (re-bless to
-   keep the panel; or delete the lock to re-draw a NEW panel). Never the bare
-   "clear the lock".
-2. **Safe re-bless** (`itemeval rebless CONFIG`) — a separate, deliberate command
-   that rewrites `model_locks.json`'s recorded spec to the current config **while
-   keeping the pinned `models`/`universe` (no re-draw)**: the panel you already
-   drew and have results for stays the scientific object; only the recorded intent
-   moves. Provenance stays honest — the lock **keeps both** the spec it was *drawn*
-   under (`sample`, immutable) and the spec it was *re-blessed to* (`reblessed_spec`
-   + `reblessed_at`), so the panel is never silently re-attributed; later runs
-   compare the current config against the *effective* spec (re-blessed if present,
-   else drawn).
-
-```
-itemeval rebless config.yaml   # record the new spec, keep the panel, no re-draw
-```
-
-**Implementation notes.** `_modelsample.py` owns it: the briefing is a diff of the
-two normalized specs (reuses `_normalized_spec`/`_LockSpec` from `lock-spec-brick`);
-re-bless writes the lock with `reblessed_spec`/`reblessed_at` set and
-`sample`/`models`/`universe`/`universe_hash` untouched, and the spec-match check
-compares the current config against the *effective* spec. A separate `rebless` CLI
-subcommand is the consent surface — running it IS the consent (no money, no gate),
-and it announces the pin write (UX-PATTERNS Law 1). A `reblessed` flag on
-`ModelSampleResult` surfaces in the provenance line + `--json`. No new dependency;
-no inspect_ai involvement. Coordinates with `recovery-run-identity` (shares the
-`_identity`/normalization helpers and the `model_locks` surface) — build after it
-if it lands first.
-
-**Open questions.** Whether the same briefing + re-bless should also cover
-`dataset_locks.json` (a changed revision pin has the identical "clearing re-pins a
-different revision" footgun) — a natural sibling, but scoped to the sample lock
-first.
-
 ### Response / attempt timeout
 **Key:** `request-timeout`
 

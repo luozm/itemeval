@@ -276,6 +276,137 @@ def test_read_only_tolerates_unbuildable_universe(tmp_path):
     assert res2.spec_drift and res2.models == res1.models
 
 
+# --- L3: safe re-bless + change briefing (lock-rebless) ---
+
+
+def test_rebless_keeps_panel_and_records_both_specs(tmp_path):
+    """rebless records a genuinely-changed spec while keeping the pinned panel
+    (no re-draw). The lock keeps BOTH the drawn spec and the re-blessed spec; a
+    later resolve with the edited config then matches (reblessed=True), not drifts."""
+    import json
+
+    from itemeval._modelsample import rebless_model_sample
+
+    lock = tmp_path / "model_locks.json"
+    res1 = resolve_model_sample(
+        _cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), ROSTER, lock
+    )
+    drawn = res1.models
+
+    rb = rebless_model_sample(_cfg({"n": 3, "seed": 5, "universe": "pricing-table"}), lock)
+    assert rb.models == drawn  # panel unchanged (no re-draw)
+    assert any("n: 2 → 3" in line for line in rb.diff)  # briefing names the change
+
+    data = json.loads(lock.read_text())
+    assert data["sample"]["n"] == 2  # drawn-under spec kept verbatim
+    assert data["reblessed_spec"]["n"] == 3  # re-blessed-to spec recorded
+    assert data["models"] == drawn
+
+    # the edited config now MATCHES (compared against the re-blessed spec) and reuses
+    res2 = resolve_model_sample(
+        _cfg({"n": 3, "seed": 5, "universe": "pricing-table"}), ROSTER, lock
+    )
+    assert res2.models == drawn and not res2.spec_drift and res2.reblessed
+
+
+def test_rebless_preserves_drawn_timestamp(tmp_path):
+    import json
+
+    from itemeval._modelsample import rebless_model_sample
+
+    lock = tmp_path / "model_locks.json"
+    resolve_model_sample(_cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), ROSTER, lock)
+    drawn_at = json.loads(lock.read_text())["resolved_at"]
+    rebless_model_sample(_cfg({"n": 3, "seed": 5, "universe": "pricing-table"}), lock)
+    data = json.loads(lock.read_text())
+    assert data["resolved_at"] == drawn_at  # draw time preserved; reblessed_at is separate
+    assert data["reblessed_at"]
+
+
+def test_rebless_no_lock_and_already_current_raise(tmp_path):
+    from itemeval._modelsample import rebless_model_sample
+
+    lock = tmp_path / "model_locks.json"
+    with pytest.raises(ConfigError, match="no model_locks.json to re-bless"):
+        rebless_model_sample(_cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), lock)
+    resolve_model_sample(_cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), ROSTER, lock)
+    with pytest.raises(ConfigError, match="already records the current"):
+        rebless_model_sample(_cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), lock)
+
+
+def test_rebless_works_when_edited_spec_no_longer_draws(tmp_path):
+    """Re-bless keeps the panel, so it must work even when the edited spec can't
+    build a universe at all (a where that now excludes everything)."""
+    from itemeval._modelsample import rebless_model_sample
+
+    lock = tmp_path / "model_locks.json"
+    res1 = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": "pricing-table"}), ROSTER, lock
+    )
+    empty = {
+        "n": 2,
+        "seed": 1,
+        "universe": "pricing-table",
+        "where": {"max_output_usd_per_mtok": 0.01},
+    }
+    rb = rebless_model_sample(_cfg(empty), lock)  # would brick a draw; rebless tolerates it
+    assert rb.models == res1.models
+
+
+def test_spec_change_briefing_names_diff_and_safe_actions(tmp_path):
+    """The write-path error is a briefing: the field-level diff + both safe actions
+    (rebless / delete), never the bare 'clear the lock'."""
+    lock = tmp_path / "model_locks.json"
+    resolve_model_sample(
+        _cfg(
+            {"n": 2, "seed": 5, "universe": "pricing-table", "where": {"provider": ["anthropic"]}}
+        ),
+        ROSTER,
+        lock,
+    )
+    with pytest.raises(ConfigError) as ei:
+        resolve_model_sample(
+            _cfg(
+                {"n": 2, "seed": 5, "universe": "pricing-table", "where": {"provider": ["openai"]}}
+            ),
+            ROSTER,
+            lock,
+        )
+    msg = str(ei.value)
+    assert "where.provider" in msg and "→" in msg  # the field-level diff
+    assert "itemeval rebless" in msg  # the safe keep-the-panel action
+    assert "delete" in msg  # the re-draw action
+
+
+def test_rebless_cli_command(tmp_path, offline_adapter):
+    """End-to-end through the CLI: rebless on a drifted study returns 0 and rewrites
+    the lock; on a clean/no-lock study it is a usage error (exit 2)."""
+    from conftest import TEST_CONFIG_YAML, write_study_files
+
+    from itemeval.cli import main
+
+    def _yaml(n: int) -> str:
+        return TEST_CONFIG_YAML.replace(
+            "  models: [mockllm/solver-a, mockllm/solver-b]",
+            f"  sample:\n    n: {n}\n    seed: 7\n"
+            "    universe: [mockllm/solver-a, mockllm/solver-b, mockllm/solver-c]",
+        )
+
+    cfg2 = write_study_files(tmp_path, _yaml(2))
+    # no lock yet -> usage error
+    assert main(["rebless", str(cfg2)]) == 2
+    # draw the pin, then drift the spec and re-bless
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+
+    prepare_study(load_config(cfg2))  # pins a 2-model panel
+    cfg3 = write_study_files(tmp_path, _yaml(3))
+    assert main(["rebless", str(cfg3)]) == 0
+    # now the edited config resolves cleanly (matches the re-blessed spec)
+    prep = prepare_study(load_config(cfg3))
+    assert prep.model_sample.reblessed and not prep.model_sample.spec_drift
+
+
 def test_file_universe(tmp_path):
     ids_file = tmp_path / "models.txt"
     ids_file.write_text("# my shortlist\nm/a\n\nm/b\nm/c\n")
@@ -461,6 +592,14 @@ def test_model_sample_provenance_line(capsys):
     assert "pinned panel" in out
     assert "warning: solvers.sample spec differs from model_locks.json" in out
     assert "clear model_locks.json to re-draw" in out
+
+    # reblessed reuse: the panel size (not the spec's n) and a re-blessed clause.
+    reblessed = ms.model_copy(
+        update={"pinned_now": False, "reblessed": True, "models": ["x/a", "x/b"], "n": 20}
+    )
+    _print_model_sample(SimpleNamespace(model_sample=reblessed))
+    out = capsys.readouterr().out
+    assert "2 models reused" in out and "re-blessed" in out  # panel size 2, not n=20
 
     _print_model_sample(SimpleNamespace(model_sample=None))  # no sample -> silent
     assert capsys.readouterr().out == ""

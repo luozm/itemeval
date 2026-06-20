@@ -2,15 +2,15 @@
 
 ```
 itemeval init DIR [options]
-itemeval {estimate,generate,grade,export,status} CONFIG [options]
+itemeval {estimate,generate,grade,export,status,rebless} CONFIG [options]
 ```
 
 `init` scaffolds a new study into `DIR`; every other command takes the config
 YAML path as its argument. `itemeval` is installed as a console script;
 `python -m itemeval.cli` is equivalent.
 
-The run/report commands (`estimate|generate|grade|export|status`) accept
-`-C/--base-dir DIR` to set the **work directory** that anchors outputs (the
+The config-taking commands (`estimate|generate|grade|export|status|rebless`)
+accept `-C/--base-dir DIR` to set the **work directory** that anchors outputs (the
 `studies/` tree). It defaults to the current directory; inputs (prompts/rubrics)
 always resolve relative to the config file, independent of `-C`.
 
@@ -127,6 +127,25 @@ grid at the current scope (wave 0); studies with more than one wave get an
 extra `waves:` line with per-wave gen/graded counts
 ([Pipeline-Concepts#waves](Pipeline-Concepts.md#waves)). `--json` emits the
 full structured report (also available for `estimate` and `export`).
+
+## `rebless` — re-bless a drifted `solvers.sample` pin
+
+```
+itemeval rebless CONFIG [--json]
+```
+
+For a sampled roster (`solvers.sample`) only. When you've **genuinely changed**
+the sample spec (`n`/`seed`/`stratify_by`/`where`/`universe`), `generate`/`grade`
+stop with a *change briefing* rather than running a different panel than the one
+pinned in `model_locks.json`. `rebless` is the safe way forward: it **records the
+new spec while keeping the pinned panel** (no re-draw), so the work you already ran
+stays the scientific object. The lock then keeps both the spec the panel was *drawn
+under* and the spec it was *re-blessed to*; later runs of the edited config match
+and reuse. Prints the field-level diff and `N models kept`; `--json` emits the
+`ReblessResult` (`diff`, `models`, `reblessed_at`, `lock_path`). The *other* choice
+— deleting `model_locks.json` — re-draws a **different** panel (a different frame),
+so prefer `rebless` whenever you want to keep your results. Errors (exit 2) if
+there is no lock or the spec already matches.
 
 ## Hints
 

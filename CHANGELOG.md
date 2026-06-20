@@ -7,6 +7,27 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Safe re-bless + change briefing for a drifted sample lock** (`itemeval
+  rebless`): when a pinned `solvers.sample` spec *genuinely* changes (a real
+  `n`/`seed`/`stratify_by`/`where`/`universe` edit — additive fields are already
+  normalized away by the `lock-spec-brick` fix), `generate`/`grade` no longer
+  dead-end on the terse `clear model_locks.json`. They now print a **change
+  briefing** — a field-level diff (`n: 2 → 3`, `where.provider: (none) →
+  [openai]`), a note that the pinned panel was drawn under the old spec, and the
+  two safe actions — and a new `itemeval rebless CONFIG` command **records the new
+  spec while keeping the pinned panel** (no re-draw): the panel you already drew
+  and have results for stays the scientific object, and the lock keeps **both** the
+  spec it was drawn under (`sample`) and the re-blessed spec
+  (`reblessed_spec`/`reblessed_at`, original `resolved_at` preserved), so later
+  runs compare against the re-blessed spec. Re-blessing is announced (a pin write,
+  UX-PATTERNS Law 1) and surfaces an append-only `reblessed` flag on `model_sample`
+  in `--json` plus a `re-blessed` clause on the reuse provenance line. This is the
+  `model_locks` surface's safe-reconcile path that `DEVELOPMENT.md`'s schema-
+  evolution gate requires (never "delete the file and re-draw", which silently
+  changes the panel). No new dependency.
+
+Closes: lock-rebless
+
 - **Output-modality filter for sampled rosters**
   (`solvers.sample.where.output_text_only`): drop image/audio/video **generators**
   from a `pricing-table` draw. The runnable-text gate only checks that a model
