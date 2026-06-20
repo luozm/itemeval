@@ -11,6 +11,39 @@ from itemeval.store._logs import read_log_index
 from itemeval.store._solutions import read_solutions
 
 
+def test_attempt_timeout_bounds_retries(study):
+    """Regression: attempt_timeout without max_retries must not retry forever
+    (inspect's stop_never). The task gets a bounded max_retries so a stalled call
+    gives up and the cell errors, instead of looping."""
+    from itemeval._endpoints import RETRY_AFTER_TIMEOUT
+    from itemeval.generate._task import build_generate_task
+
+    _, prep = study
+    cond = prep.grid.generate[0]
+    template = prep.solver_templates[cond.prompt_name]
+
+    def _cfg(attempt_timeout, max_retries):
+        return build_generate_task(
+            prep.items_effective,
+            cond,
+            template,
+            prep.config.study,
+            prep.plan.replications,
+            prep.config.cache,
+            prep.origins,
+            attempt_timeout=attempt_timeout,
+            max_retries=max_retries,
+        ).config
+
+    # The bug case: timeout set, no cap -> bounded default (was None = retry forever).
+    assert _cfg(600, None).max_retries == RETRY_AFTER_TIMEOUT
+    assert _cfg(600, None).attempt_timeout == 600
+    # An explicit cap wins; no timeout leaves it to inspect (None).
+    assert _cfg(600, 5).max_retries == 5
+    assert _cfg(None, None).max_retries is None
+    assert _cfg(None, 3).max_retries == 3
+
+
 def test_resolve_display_precedence(monkeypatch):
     """Explicit value wins, then INSPECT_DISPLAY, then the "rich" default."""
     monkeypatch.delenv("INSPECT_DISPLAY", raising=False)

@@ -78,6 +78,29 @@ def min_cacheable_prefix(model: str) -> "int | None":
     return entry(model) if callable(entry) else entry
 
 
+# Default max attempts when attempt_timeout is set but max_retries is not. inspect
+# retries an attempt-timeout "according to max_retries"; with neither max_retries
+# nor a total timeout it retries FOREVER (stop_never), so a hung backend loops
+# indefinitely. A small bound makes a stalled call give up (then the cell errors).
+RETRY_AFTER_TIMEOUT = 2
+
+
+def resolve_max_retries(attempt_timeout: "int | None", max_retries: "int | None") -> "int | None":
+    """The effective `GenerateConfig.max_retries` for a call.
+
+    An explicit `max_retries` always wins. Otherwise, if `attempt_timeout` is set,
+    default to `RETRY_AFTER_TIMEOUT` so the documented "abandon a stalled attempt
+    and retry" actually terminates instead of looping forever (the timeout-retry
+    bug). With neither set, return None — inspect keeps retrying transient HTTP
+    errors with backoff, which is its intended behavior for rate limits.
+    """
+    if max_retries is not None:
+        return max_retries
+    if attempt_timeout is not None:
+        return RETRY_AFTER_TIMEOUT
+    return None
+
+
 def merge_provider_ignore(
     provider_routing: "dict[str, Any] | None", ignore_providers: "set[str] | list[str]"
 ) -> "dict[str, Any] | None":

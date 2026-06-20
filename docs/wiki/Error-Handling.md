@@ -325,24 +325,35 @@ bound it:
 ```yaml
 solvers:
   attempt_timeout: 300         # seconds; abandon a stalled attempt and retry
+  max_retries: 2               # ...at most this many attempts, then the cell errors
 graders:
   judge:
     attempt_timeout: 300       # per-judge, same meaning
+    max_retries: 2             # per-judge attempt cap
 ```
 
 The value passes straight through to inspect's `GenerateConfig.attempt_timeout`:
 when an attempt exceeds it, inspect **abandons and retries** that attempt — and
-through OpenRouter the retry may be routed to a healthier upstream. It is opt-in
-(unset = today's unbounded behavior) and is a pure execution knob, so setting it
-never changes a condition id or re-keys your study.
+through OpenRouter the retry may be routed to a healthier upstream.
+
+**A timeout retries up to `max_retries` attempts, then gives up.** inspect retries
+an abandoned attempt *until `max_retries` (or a total timeout) is reached* — and
+with neither set it **retries forever**. So itemeval bounds it: when
+`attempt_timeout` is set and `max_retries` is not, the attempt cap defaults to a
+small value (2) — without it, a genuinely hung backend would loop indefinitely,
+timing out and re-issuing without ever stopping. After the cap the cell is left as
+an **error** (the `err` column / `errors=N`), which a later [re-run](#retry-and-resume--re-run-the-same-command)
+re-attempts — likely on a fresh backend draw. Set `max_retries` explicitly to
+raise or lower the cap; it bounds transient-HTTP-error retries too. Both are pure
+execution knobs — setting either never changes a condition id or re-keys your study.
 
 Two cautions:
 
-- **Pick a value generous enough not to cut a legitimately slow stream.** A
+- **Pick a timeout generous enough not to cut a legitimately slow stream.** A
   reasoning model can stream a single completion for a long time; if the timeout
-  fires on a healthy-but-slow attempt, the retry hits the same wall and the row
-  can fail repeatedly. Size the timeout to your slowest *expected* completion.
-- **Leave it unset under a batch plan** (`policy: full-batch`). A batch job's
+  fires on a healthy-but-slow attempt, each retry hits the same wall until the cap,
+  then the cell errors. Size the timeout to your slowest *expected* completion.
+- **Leave both unset under a batch plan** (`policy: full-batch`). A batch job's
   submit-and-poll legitimately runs for minutes-to-hours and is the same call the
   timeout wraps, so a timeout would abandon a healthy batch.
 

@@ -212,13 +212,26 @@ class SolversConfig(BaseModel):
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
     seed: int | None = None  # recorded; only some providers honor it
     # Per-attempt request timeout (seconds), passed through to inspect's
-    # GenerateConfig.attempt_timeout: a stalled attempt is abandoned and retried
-    # (via OpenRouter the retry may reroute to a healthier upstream). Opt-in
-    # (None = unbounded, today's behavior). A pure execution/robustness knob —
-    # never enters condition ids or the experiment_id digest (popped in
-    # _identity._NON_IDENTITY_SOLVERS). Under a batch plan it would bound the
-    # batch poll too, so leave it unset for batch runs.
+    # GenerateConfig.attempt_timeout: a stalled attempt is abandoned and retried —
+    # but inspect retries an attempt timeout *until max_retries* (or a total
+    # timeout) is hit, and with neither set it retries FOREVER (stop_never). So
+    # itemeval bounds it: when attempt_timeout is set and max_retries is unset, the
+    # retry count defaults to RETRY_AFTER_TIMEOUT (see _endpoints.resolve_max_retries)
+    # — otherwise a hung backend loops indefinitely. After the bound the cell errors
+    # (resume re-attempts it). A pure execution/robustness knob — never enters
+    # condition ids or the experiment_id digest (popped in
+    # _identity._NON_IDENTITY_SOLVERS). Under a batch plan it would bound the batch
+    # poll too, so leave it unset for batch runs.
     attempt_timeout: int | None = Field(default=None, ge=1)
+    # Max attempts for a model call before it gives up and the cell errors, passed
+    # through to inspect's GenerateConfig.max_retries (stop_after_attempt). Bounds
+    # both attempt-timeout retries and transient-HTTP-error retries. None (default)
+    # = inspect's behavior (retry transient errors with backoff, unbounded) EXCEPT
+    # when attempt_timeout is set, where it defaults to a small bound so a stalled
+    # call cannot loop forever (see attempt_timeout above). Operational knob; never
+    # enters condition ids or the experiment_id digest (it does not affect output —
+    # inspect excludes it from the response-cache key too).
+    max_retries: int | None = Field(default=None, ge=1)
     on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
     # Provider prompt caching for the generate stage (Anthropic-style explicit
     # cache_control markers; token-prefix providers like OpenAI cache
@@ -339,9 +352,14 @@ class GraderSpec(BaseModel):
     # Same contract as solvers.provider_routing (judges route too).
     provider_routing: "dict[str, Any] | None" = None
     # Per-attempt request timeout (seconds) for this judge — see
-    # solvers.attempt_timeout. Pass-through; never enters the grade condition id
-    # or the experiment_id digest (popped in _identity._NON_IDENTITY_GRADER).
+    # solvers.attempt_timeout (bounded the same way: when set without max_retries,
+    # the retry count defaults so a stalled judge call cannot loop forever).
+    # Pass-through; never enters the grade condition id or the experiment_id digest
+    # (popped in _identity._NON_IDENTITY_GRADER).
     attempt_timeout: int | None = Field(default=None, ge=1)
+    # Max attempts for this judge's calls — see solvers.max_retries. Pass-through;
+    # never enters the grade condition id or the experiment_id digest.
+    max_retries: int | None = Field(default=None, ge=1)
     # Grade-time skip for over-long ("degenerate"/"loop") solutions: a stored
     # solution whose visible text exceeds this many characters is NOT sent to the
     # judge — it is recorded as score 0 (parse_ok=False, oversized_skip flag) and

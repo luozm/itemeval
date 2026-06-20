@@ -8,6 +8,7 @@ from inspect_ai.model import CachePolicy, ChatMessageSystem, ChatMessageUser, Ge
 from inspect_ai.solver import generate
 
 from itemeval._cachegate import CACHE_GROUP_KEY, gated_generate
+from itemeval._endpoints import resolve_max_retries
 from itemeval._item import Item
 from itemeval._templates import Template, render_template
 from itemeval.design._grid import JUDGE_FORMAT_VERSION, GradeCondition
@@ -117,6 +118,7 @@ def build_judge_task(
     cache_schedule: bool = True,
     rubric_texts: "dict[str, str] | None" = None,
     attempt_timeout: "int | None" = None,
+    max_retries: "int | None" = None,
 ) -> Task:
     # Same-item solutions share the longest cacheable prefix (rubric + problem
     # + scheme + reference). Sort so same-prefix calls are adjacent in the
@@ -161,6 +163,9 @@ def build_judge_task(
         cache_prompt="auto",  # prompt caching on repeated rubric+problem prefixes
         batch=batch,
         attempt_timeout=attempt_timeout,  # None -> inspect default (unbounded)
+        # Bound the timeout/transient retry so a stalled judge call can't loop
+        # forever (None unless attempt_timeout is set; resolve_max_retries).
+        max_retries=resolve_max_retries(attempt_timeout, max_retries),
     )
     return Task(
         dataset=MemoryDataset(samples, name=f"{study}:{cond.id}"),

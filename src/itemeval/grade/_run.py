@@ -699,6 +699,7 @@ def run_grade(
             cache_schedule=scheduled,
             rubric_texts=rubric_texts_by_rubric.get(cond.rubric_name),
             attempt_timeout=prep.config.grader_spec(cond.grader_name).attempt_timeout,
+            max_retries=prep.config.grader_spec(cond.grader_name).max_retries,
         )
         try:
             task.model = factory(

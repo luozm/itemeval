@@ -731,6 +731,7 @@ def _reroute_soft_failures(
                 prep.origins,
                 max_tokens_override=eff_max_tokens if clamped else None,
                 attempt_timeout=prep.config.solvers.attempt_timeout,
+                max_retries=prep.config.solvers.max_retries,
             )
             exec_model = prep.native_routes.get(cond.model, cond.model)
             try:
@@ -933,6 +934,7 @@ def run_generate(
             epoch_offset=epoch_offset,
             max_tokens_override=eff_max_tokens if clamped else None,
             attempt_timeout=prep.config.solvers.attempt_timeout,
+            max_retries=prep.config.solvers.max_retries,
         )
         # Native batch routing: run the call on the native id when active; the
         # sampled cond.model stays the recorded scientific identity. The model

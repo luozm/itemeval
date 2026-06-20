@@ -8,6 +8,7 @@ from inspect_ai.model import CachePolicy, ChatMessageSystem, ChatMessageUser, Ge
 from inspect_ai.solver import generate
 
 from itemeval._cachegate import CACHE_GROUP_KEY, gated_generate
+from itemeval._endpoints import resolve_max_retries
 from itemeval._item import Item
 from itemeval._templates import Template, render_template
 from itemeval.design._grid import GenCondition
@@ -48,6 +49,7 @@ def build_generate_task(
     epoch_offset: int = 0,
     max_tokens_override: "int | None" = None,
     attempt_timeout: "int | None" = None,
+    max_retries: "int | None" = None,
 ) -> Task:
     # Replications send byte-identical prompts: every epoch of an item shares
     # the full prompt as a provider cache prefix. Gate them (warm-then-fan-out)
@@ -101,6 +103,9 @@ def build_generate_task(
         cache_prompt=cache_prompt,  # None -> provider default
         batch=batch,
         attempt_timeout=attempt_timeout,  # None -> inspect default (unbounded)
+        # Bound the timeout/transient retry so a stalled attempt can't loop forever
+        # (None unless attempt_timeout is set; see _endpoints.resolve_max_retries).
+        max_retries=resolve_max_retries(attempt_timeout, max_retries),
     )
     return Task(
         dataset=MemoryDataset(samples, name=f"{study}:{cond.id}"),
@@ -128,6 +133,7 @@ def build_reroute_task(
     origins: "dict[str, DatasetOrigin]",
     max_tokens_override: "int | None" = None,
     attempt_timeout: "int | None" = None,
+    max_retries: "int | None" = None,
 ) -> Task:
     """A one-shot generate task re-issuing specific (item, target_epoch) cells on a
     fresh backend (output-validity-reroute). One sample per cell with `epochs=1`,
@@ -163,6 +169,7 @@ def build_reroute_task(
         cache_prompt=None,
         batch=None,
         attempt_timeout=attempt_timeout,
+        max_retries=resolve_max_retries(attempt_timeout, max_retries),
     )
     return Task(
         dataset=MemoryDataset(samples, name=f"{study}:{cond.id}:reroute"),

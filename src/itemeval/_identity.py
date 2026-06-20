@@ -38,8 +38,14 @@ _NON_IDENTITY_TOP = ("output_dir", "prompts_dir", "rubrics_dir", "cache", "budge
 # Nested pure-optimization / robustness pass-throughs — they never enter condition
 # ids either, so a routing/cache-marker pin or a request timeout added between runs
 # is not a new experiment.
-_NON_IDENTITY_SOLVERS = ("provider_routing", "cache_prompt", "attempt_timeout", "max_reroutes")
-_NON_IDENTITY_GRADER = ("provider_routing", "attempt_timeout", "max_solution_chars")
+_NON_IDENTITY_SOLVERS = (
+    "provider_routing",
+    "cache_prompt",
+    "attempt_timeout",
+    "max_retries",
+    "max_reroutes",
+)
+_NON_IDENTITY_GRADER = ("provider_routing", "attempt_timeout", "max_retries", "max_solution_chars")
 
 
 def normalized_config_digest(config: "ExperimentConfig") -> str:

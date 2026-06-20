@@ -5,8 +5,22 @@ from itemeval._endpoints import (
     cache_provider_of,
     merge_provider_ignore,
     model_args_for,
+    resolve_max_retries,
     routing_warnings,
 )
+
+
+def test_resolve_max_retries():
+    from itemeval._endpoints import RETRY_AFTER_TIMEOUT
+
+    # The timeout-retry bug: attempt_timeout set + max_retries unset must NOT mean
+    # "retry forever" (inspect's stop_never) — it gets a bounded default.
+    assert resolve_max_retries(600, None) == RETRY_AFTER_TIMEOUT
+    # An explicit max_retries always wins.
+    assert resolve_max_retries(600, 5) == 5
+    assert resolve_max_retries(None, 3) == 3
+    # No timeout and no cap: None — inspect's transient-error retry is unchanged.
+    assert resolve_max_retries(None, None) is None
 
 
 def test_merge_provider_ignore():

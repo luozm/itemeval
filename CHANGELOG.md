@@ -533,6 +533,19 @@ Closes: recovery-run-identity
 Closes: parallel-conditions
 
 ### Fixed
+- **`solvers.attempt_timeout` no longer retries a stalled call forever.** inspect
+  abandons a timed-out attempt and retries it "according to `max_retries`" — but
+  with neither `max_retries` nor a total timeout set (itemeval set neither), its
+  stop condition is `stop_never`, so a genuinely hung backend timed out and
+  re-issued **indefinitely** (each attempt waiting the full `attempt_timeout`),
+  burning wall-clock and money with no progress. Now, when `attempt_timeout` is set
+  and `max_retries` is not, the attempt cap defaults to **2** so the call gives up
+  and the cell is left as an honest error (a later re-run re-attempts it, likely on
+  a fresh backend). A new pass-through knob **`solvers.max_retries`** /
+  **`graders.<name>.max_retries`** sets the cap explicitly (it also bounds
+  transient-HTTP-error retries); both are operational knobs (non-identity, excluded
+  from the response-cache key). Applies to `generate`, `grade`, and the reroute
+  path.
 - **Unmapped provider finish-reasons are no longer indistinguishable.** inspect's
   `as_stop_reason` collapses any provider `finish_reason` it doesn't recognize
   (including `error`) to `stop_reason="unknown"`, so a provider soft failure was
