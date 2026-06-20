@@ -193,6 +193,78 @@ lock-spec fix reuses (`normalized_spec()`). Optionally consumes **D**'s
 terminal-vs-transient classifier to *label* missing cells (not needed for the
 fork decision under Choice A).
 
+### Response / attempt timeout
+**Key:** `request-timeout`
+
+**Motivation.** Neither itemeval nor inspect sets a total request timeout:
+`GenerateConfig.timeout` and `attempt_timeout` both default `None`, and the
+httpx client timeout doesn't catch a slow-but-alive trickle. So a degraded
+stream runs **unbounded** — one stalled endpoint holds a whole run hostage with
+no upper bound, the worst case in a flaky-routing setup.
+
+**Design sketch.** Set a generous `attempt_timeout` default (high enough never
+to cut a healthy stream) plus a `solvers.timeout` knob, so a stalled request is
+abandoned and retried — likely onto a healthier route. Pass inspect's
+`attempt_timeout` through unchanged (boundary rule: pass through, don't rename).
+
+**Implementation notes.** Thread the knob into the `GenerateConfig` we build
+(`generate/_task.py` / `grade/_judge.py`); `_config.py` `solvers` model gains
+`timeout`. Orthogonal to the `max_tokens` context-fit clamp. A timeout = an
+abandoned attempt, so it consumes `preflight-check`'s terminal-vs-transient
+classifier (don't retry a terminal error).
+
+### Truncation as a first-class signal
+**Key:** `truncation-signal`
+
+**Motivation.** A solution that stops on `max_tokens` is a truncated-but-
+non-empty string we currently count `completed` and grade as finished — so a
+**budget cut is scored as a content failure**, a validity bug that silently
+corrupts measurement.
+
+**Design sketch.** We already store `stop_reason` per solution. Surface it: add
+a `truncated` channel to `status` (beside `incomplete`) and a `truncated`
+export column, so a truncated cell is distinguishable from a genuine content
+miss. (Unmapped provider finish-reasons collapsing to `"unknown"` is a separate,
+upstream-rooted defect — tracked in KNOWN-ISSUES.)
+
+**Implementation notes.** `_status.py` (new channel), export schema (new
+column); `stop_reason` is already on the solutions row (`generate/_run.py`). No
+new knob. ~60 lines + tests.
+
+### Pre-flight model check
+**Key:** `preflight-check`
+
+**Motivation.** A dead model (e.g. `404` EOL) isn't caught until it fails
+mid-paid-run, and per-condition failures flood the log. The user should see
+roster health *before* committing spend.
+
+**Design sketch.** Before the paid loop, fire one ~1-token call per distinct
+model and surface a roster summary (`39 ok / 1 dead: <model> 404 EOL`), letting
+the user fix the roster first. Don't retry **terminal** errors; collapse each
+condition's failure to one concise line. Builds the **terminal-vs-transient
+error classifier** — a shared primitive `request-timeout` also consumes.
+
+**Implementation notes.** New pre-flight step before the money gate; the
+classifier in a small shared module; `ConditionRunReport.message` already exists
+for the concise per-condition line. Pairs with `cache-projection` as one
+"before you spend, here's what will happen" pre-flight report.
+
+### Pre-flight cache projection
+**Key:** `cache-projection`
+
+**Motivation.** A re-run's true cost is invisible up front: you can't see how
+much will be served from inspect's response cache ($0) versus paid fresh, so the
+pre-flight estimate over-states a cheap recovery re-run.
+
+**Design sketch.** Probe inspect's response cache (its own dir,
+`inspect_cache_dir("generate")`) before the gate and report `N cached / M fresh
+→ ~$X real`. Distinct from `reuse-savings` (which reports reuse *post-hoc*); this
+is a *pre-flight projection*. Pairs with `preflight-check` as one report.
+
+**Implementation notes.** The risk is replicating inspect's cache key well
+enough to predict hits without a live call. Read-only probe; no new spend, no
+new knob.
+
 ### Custom scorer plugin point + more built-in verifiable scorers
 **Key:** `scorer-plugins`
 
