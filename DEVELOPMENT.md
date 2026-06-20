@@ -133,11 +133,33 @@ a schema that can grow is the bug.
    tool offers a safe reconcile — re-bless a pin without re-drawing, backfill a
    store on read. The tool **points at the briefing**; it never fails opaquely
    with "delete the file and re-draw" (which can silently change a pinned result).
+   *(Pre-1.0, the safe-reconcile requirement may instead be discharged by a
+   result-preserving clean break — see the Pre-1.0 carve-out below.)*
 
 **Policy (all surfaces above).** itemeval does **not** promise a pre-existing pin
 or store runs transparently across versions — no migration shims that execute old
 code. It promises instead that additive changes are compatible *by construction*,
 and that breaking ones ship a study-agent briefing.
+
+**Pre-1.0 carve-out (until v1.0 — delete this paragraph at the v1.0 release).**
+While we are `0.MINOR` (see *Versioning discipline*), a *non-additive* surface
+change MAY discharge gate item 2 with a **clean break plus a result-preserving
+migration tip** instead of building a safe-reconcile path — *if* re-running
+reproduces **identical** results (content-keyed stores replay from the response
+cache at ~$0; provenance regenerates deterministically). The tip is the
+one-line `Study migration` note naming the exact action (e.g. "delete
+`manifests/` and the parquet stores, then re-run — cached generations replay
+for free"). Two guardrails stay non-negotiable even here: **(1)** the
+*additive-by-construction* invariant is never relaxed — read-time normalization
+is the cheap fix that prevents the read-only brick, not a burden; **(2)** the
+tip must be *result-preserving* — "clear a pin (`model_locks.json` /
+`dataset_locks.json`) and re-draw" stays forbidden, because a re-draw silently
+changes the panel (the original failure this section exists for). Rationale:
+pre-1.0 we deliberately carry **no transparent-upgrade burden** — building
+reconcile machinery for studies that can simply re-run for free is exactly the
+cost we are declining. At v1.0 this paragraph is removed and the full
+safe-reconcile path of gate item 2 becomes mandatory again, matching the
+post-1.0 deprecation discipline under *Versioning discipline*.
 
 **Enforcement.** Read-time normalization + the guard tests are the durable
 CI-side automation (`tests/`, run under `make test`). The judgment gate is item 7
