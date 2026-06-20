@@ -126,16 +126,20 @@ httpx client timeout doesn't catch a slow-but-alive trickle. So a degraded
 stream runs **unbounded** — one stalled endpoint holds a whole run hostage with
 no upper bound, the worst case in a flaky-routing setup.
 
-**Design sketch.** Set a generous `attempt_timeout` default (high enough never
-to cut a healthy stream) plus a `solvers.timeout` knob, so a stalled request is
-abandoned and retried — likely onto a healthier route. Pass inspect's
-`attempt_timeout` through unchanged (boundary rule: pass through, don't rename).
+**Design sketch.** Expose a `solvers.attempt_timeout` knob (and a per-judge
+`graders.<name>.attempt_timeout`), so a stalled request is abandoned and retried —
+likely onto a healthier route. Pass inspect's `attempt_timeout` through unchanged
+(boundary rule: pass through, don't rename — **not** a renamed `solvers.timeout`).
+Whether to also ship a generous non-`None` default is settled in the plan.
 
 **Implementation notes.** Thread the knob into the `GenerateConfig` we build
-(`generate/_task.py` / `grade/_judge.py`); `_config.py` `solvers` model gains
-`timeout`. Orthogonal to the `max_tokens` context-fit clamp. A timeout = an
-abandoned attempt, so it consumes `preflight-check`'s terminal-vs-transient
-classifier (don't retry a terminal error).
+(`generate/_task.py` / `grade/_judge.py`); the `solvers` model and `GraderSpec` in
+`_config.py` gain `attempt_timeout`. Keep it out of condition ids and the
+`experiment_id` digest (a pure execution knob — pop it in
+`_identity._NON_IDENTITY_SOLVERS`/`_NON_IDENTITY_GRADER`). Orthogonal to the
+`max_tokens` context-fit clamp. A timeout = an abandoned attempt, so it consumes
+`preflight-check`'s terminal-vs-transient classifier (don't retry a terminal
+error) once that ships.
 
 ### Truncation as a first-class signal
 **Key:** `truncation-signal`
