@@ -747,10 +747,15 @@ def _cmd_status(args) -> int:
             f"{c.completed}/{c.expected}",
             str(c.errors),
             str(c.incomplete),
+            str(c.truncated),
         ]
         for c in report.generate
     ]
-    print(_fmt_table(["condition", "model", "prompt", "config", "done", "err", "empty"], rows))
+    print(
+        _fmt_table(
+            ["condition", "model", "prompt", "config", "done", "err", "empty", "trunc"], rows
+        )
+    )
     print()
     grade_expected = report.grade[0].expected if report.grade else 0
     print(f"GRADE — {len(report.grade)} condition(s) x {grade_expected} solutions")

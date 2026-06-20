@@ -91,6 +91,28 @@ def empty_solution_mask(df: pd.DataFrame) -> pd.Series:
     return df["error"].isna() & blank
 
 
+# inspect StopReason values that mean "output cut for length" (truncation-signal):
+# the requested max_tokens budget, or the model's own context limit. content_filter
+# is a refusal (not a length cut) and "unknown" conflates unmapped reasons (A2) —
+# neither is truncation. Re-verify against inspect's StopReason literal on a bump.
+TRUNCATION_STOP_REASONS = frozenset({"max_tokens", "model_length"})
+
+
+def truncated_mask(df: pd.DataFrame) -> pd.Series:
+    """No-error rows that stopped on a length cap with a NON-empty completion —
+    a truncated-but-gradable answer that today counts as `completed` and is scored
+    as finished, so a budget cut reads as a content failure (truncation-signal).
+
+    The disjoint complement of `empty_solution_mask`: an *empty* length-cap stop is
+    already the empty/`incomplete` channel, so it is excluded here. This is an
+    informational sub-count of completed rows — it never reclassifies them.
+    """
+    if df.empty:
+        return pd.Series([], dtype=bool, index=df.index)
+    is_length_cap = df["stop_reason"].isin(TRUNCATION_STOP_REASONS)
+    return df["error"].isna() & is_length_cap & ~empty_solution_mask(df)
+
+
 def epochs_to_run(
     df: pd.DataFrame,
     condition_id: str,

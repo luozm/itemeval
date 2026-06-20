@@ -8,7 +8,12 @@ from itemeval._errors import StoreError
 from itemeval.store._base import read_parquet_or_empty, upsert_parquet
 from itemeval.store._gradings import GRADINGS_SCHEMA, pending_solutions
 from itemeval.store._layout import StudyPaths
-from itemeval.store._solutions import SOLUTIONS_SCHEMA, empty_solution_mask, items_to_run
+from itemeval.store._solutions import (
+    SOLUTIONS_SCHEMA,
+    empty_solution_mask,
+    items_to_run,
+    truncated_mask,
+)
 
 TEST_SCHEMA = pa.schema(
     [
@@ -86,7 +91,7 @@ def test_study_paths(tmp_path):
     assert paths.logs_stage_dir("generate") == tmp_path / "study/logs/generate"
 
 
-def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s"):
+def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s", stop_reason="stop"):
     return {
         "study": "t",
         "experiment_id": "r",
@@ -102,6 +107,7 @@ def _sol_row(cond: str, item: str, epoch: int, error=None, solution="s"):
         "prompt_hash": "h",
         "model_config_name": "mc",
         "solution": solution,
+        "stop_reason": stop_reason,
         "error": error,
         "log_file": "lf",
         "created_at": "t0",
@@ -143,6 +149,27 @@ def test_empty_solution_mask():
     )
     assert empty_solution_mask(df).tolist() == [False, True, True, False]
     assert empty_solution_mask(_sol_df([]).iloc[0:0]).tolist() == []
+
+
+def test_truncated_mask():
+    df = _sol_df(
+        [
+            _sol_row("c1", "1", 1, solution="cut", stop_reason="max_tokens"),  # truncated
+            _sol_row("c1", "1", 2, solution="cut", stop_reason="model_length"),  # truncated
+            _sol_row("c1", "2", 1, solution=None, stop_reason="max_tokens"),  # empty, NOT truncated
+            _sol_row("c1", "2", 2, solution="full", stop_reason="stop"),  # clean
+            _sol_row(
+                "c1", "3", 1, solution="cut", stop_reason="content_filter"
+            ),  # refusal, not len
+            _sol_row(
+                "c1", "3", 2, solution="cut", stop_reason="max_tokens", error="boom"
+            ),  # errored
+        ]
+    )
+    assert truncated_mask(df).tolist() == [True, True, False, False, False, False]
+    # disjoint from empty: the empty max_tokens row is in empty, not truncated
+    assert empty_solution_mask(df).tolist() == [False, False, True, False, False, False]
+    assert truncated_mask(_sol_df([]).iloc[0:0]).tolist() == []
 
 
 def test_items_to_run_require_solution_reruns_empties():

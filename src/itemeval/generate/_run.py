@@ -13,6 +13,7 @@ from itemeval._hints import (
     Hint,
     detect_cache_zero_reads,
     detect_openrouter_unpinned_cache,
+    detect_truncated_completions,
     detect_unpriced_models,
 )
 from itemeval._harvest import HarvestReport
@@ -122,6 +123,9 @@ class GenerateResult(BaseModel):
     conditions: list[ConditionRunReport]
     rows_written: int
     total_usd: float
+    # Non-empty completions cut at a length cap this run (truncation-signal);
+    # counted in rows_written, surfaced for the truncated-completions hint + JSON.
+    truncated_total: int = 0
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
@@ -641,6 +645,7 @@ def run_generate(
     reports_by_cond: dict[str, ConditionRunReport] = {}
     rows_written = 0
     total_usd = 0.0
+    truncated_total = 0  # non-empty rows cut at a length cap (truncation-signal)
     run_models: list[str] = []  # models of conditions that actually ran
     sampling_effective: dict[str, Any] = {}
     endpoints_effective: dict[str, Any] = {}
@@ -801,6 +806,13 @@ def run_generate(
         endpoints_effective[cond.id] = endpoint_info(log, cond.model, exec_model)
         rows_written += n
         total_usd += cond_usd or 0.0
+        truncated_total += sum(
+            1
+            for r in rows
+            if r["error"] is None
+            and r["stop_reason"] in _solutions.TRUNCATION_STOP_REASONS
+            and (r["solution"] or "").strip()
+        )
         ok_rows = [r for r in rows if r["error"] is None]
         if ok_rows:
             sampling_effective[cond.id] = {
@@ -865,6 +877,7 @@ def run_generate(
             detect_unpriced_models(
                 sorted({m for m in run_models if lookup_price(prep.pricing, m) is None})
             ),
+            detect_truncated_completions(truncated_total),
         )
         if h is not None
     ]
@@ -899,6 +912,7 @@ def run_generate(
         conditions=reports,
         rows_written=rows_written,
         total_usd=total_usd,
+        truncated_total=truncated_total,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
         warnings=drift_warnings + clamp_warnings,

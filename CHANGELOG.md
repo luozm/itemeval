@@ -7,6 +7,28 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Truncation as a first-class signal** (`truncated` status channel + export
+  column + a `truncated-completions` hint). A solver that stops on a length cap
+  (`max_tokens`, or the model's own `model_length`) returns a **truncated-but-
+  non-empty** string; itemeval recorded it with `error=None` and a non-blank
+  `solution`, so `status` counted it `completed` and `grade` scored it as a
+  finished answer — **a budget cut was silently scored as a content failure**, a
+  validity bug. `stop_reason` was already stored per solution, so this surfaces it
+  with **no store-schema change**: `status` gains a `trunc` column (a
+  `ConditionStatus.truncated` count per generate condition), the `gradings_long`
+  export gains an additive `truncated` boolean column, and `generate` ends with a
+  coded `truncated-completions` hint (`N completion(s) stopped at a length cap …
+  raise solvers.max_tokens or filter truncated rows`) plus an append-only
+  `truncated_total` on `GenerateResult`. Truncation = `{max_tokens, model_length}`
+  (length caps); it is the **disjoint complement** of the existing empty/
+  `incomplete` channel (an *empty* length-cap stop stays `incomplete`), and an
+  **informational sub-count of `completed`** — it never reclassifies a row, changes
+  the money gate, grading eligibility, or `on_empty`. No new knob, no new gate.
+  (`content_filter`/`unknown` stop reasons are a separate, upstream-rooted concern
+  tracked in KNOWN-ISSUES.) No new dependency.
+
+Closes: truncation-signal
+
 - **Pre-flight model check** (`itemeval preflight CONFIG`): probe every distinct
   model in the grid with one ~1-token call and report roster health
   (`39 ok · 1 dead · 0 unverified`) **before** committing to a paid run, so a dead

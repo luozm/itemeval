@@ -37,13 +37,16 @@ def test_export_schema_and_mirrors(study):
     parquet = pd.read_parquet(prep.paths.export_dir / "gradings_long.parquet")
     assert list(parquet.columns) == list(EXPORT_SCHEMA.names)
     assert (
-        len(parquet.columns) == 49
-    )  # 45 + wave/wave_label + experiment_id/attempt per stage (−2 run_id)
+        len(parquet.columns) == 50
+    )  # 45 + wave/wave_label + experiment_id/attempt per stage (−2 run_id) + truncated
     assert len(parquet) == 8
 
     # One row per grading event, never aggregated; full provenance joined in.
     assert parquet["score"].notna().all()
     assert parquet["solution"].notna().all()
+    # truncation-signal: a clean mock run truncates nothing (all stop_reason=stop).
+    assert str(parquet["truncated"].dtype) in ("bool", "boolean")
+    assert not parquet["truncated"].any()
     assert parquet["model"].nunique() == 2
     assert (parquet["replication"] == parquet["replication"].astype(int)).all()
     assert parquet["gen_usd"].notna().all() and parquet["grade_usd"].notna().all()

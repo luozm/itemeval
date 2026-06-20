@@ -79,7 +79,60 @@ def test_status_reports_incomplete_empties(study):
     assert report.grade[0].expected == 2
 
 
-def test_status_rerun_policy_excludes_empties_from_done(study):
+def _seed_truncation_mix(prep):
+    """Seed one gen condition (2 items x 2 epochs) with a mix of stop reasons:
+    a non-empty max_tokens (truncated), a non-empty model_length (truncated), an
+    empty max_tokens (empty/incomplete — NOT truncated), and a clean stop."""
+    from itemeval.store._solutions import upsert_solutions
+
+    cond = prep.grid.generate[0]
+    cases = {
+        ("1", 1): ("Long partial answer", "max_tokens"),  # truncated
+        ("1", 2): (None, "max_tokens"),  # empty (incomplete), not truncated
+        ("2", 1): ("ANSWER: 4", "stop"),  # clean
+        ("2", 2): ("Another cut-off answer", "model_length"),  # truncated
+    }
+    rows = []
+    for it in prep.items_effective:
+        for epoch in (1, 2):
+            solution, stop = cases[(it.id, epoch)]
+            rows.append(
+                {
+                    "study": prep.config.study,
+                    "experiment_id": "r",
+                    "attempt": 1,
+                    "condition_id": cond.id,
+                    "condition_slug": cond.slug,
+                    "item_id": it.id,
+                    "dataset_id": "d",
+                    "dataset_revision": "v",
+                    "epoch": epoch,
+                    "model": cond.model,
+                    "prompt_name": cond.prompt_name,
+                    "prompt_hash": "h",
+                    "model_config_name": cond.model_config_name,
+                    "solution": solution,
+                    "stop_reason": stop,
+                    "error": None,
+                    "log_file": "lf",
+                    "created_at": "t0",
+                }
+            )
+    upsert_solutions(prep.paths, rows)
+    return cond
+
+
+def test_status_reports_truncated_disjoint_from_empty(study):
+    cfg, prep = study  # items 1 and 2 are effective under dev policy
+    cond = _seed_truncation_mix(prep)
+    report = build_status(cfg, prep)
+    seeded = next(c for c in report.generate if c.condition_id == cond.id)
+    # two non-empty length-cap stops -> truncated; the empty max_tokens -> incomplete
+    assert seeded.truncated == 2
+    assert seeded.incomplete == 1
+    # truncated is a sub-count of completed, never a reclassification (skip policy:
+    # all 4 no-error rows count as produced/done).
+    assert seeded.completed == 4
     import yaml
 
     from itemeval import ExperimentConfig

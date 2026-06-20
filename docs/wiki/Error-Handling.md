@@ -80,6 +80,41 @@ or edit the build template (a new build-template hash re-materializes), or delet
 the store. The usual cause is too small a `max_tokens` for a multi-section
 marking scheme — the default is 2048.
 
+## Truncation
+
+A solver that stops on a **length cap** returns a *truncated-but-non-empty*
+answer: it completed with no API error and produced gradable-looking text, but it
+was **cut short**, not finished. Left unflagged it counts as `completed` and is
+scored by the judge as a finished answer — so **a budget cut reads as a content
+failure**, quietly corrupting the measurement.
+
+itemeval flags it. A completed row is **truncated** when `error` is null, the
+solution is **non-empty**, and `stop_reason` is a length cap —
+**`max_tokens`** (the requested `solvers.max_tokens` budget) or **`model_length`**
+(the model's own context limit). This is the disjoint complement of an
+[empty completion](#empty-completions): an *empty* length-cap stop is `empty`, a
+*non-empty* one is `truncated`. (`content_filter` is a refusal, and `unknown`
+conflates unmapped provider reasons — neither is truncation.)
+
+Where it shows up:
+
+- **`status`** — a `trunc` column on the GENERATE table (and
+  `ConditionStatus.truncated` in `--json`). It is an *informational sub-count* of
+  `done`/`completed`: a truncated row is still counted complete and is still
+  graded — the flag never reclassifies it, changes the money gate, or alters
+  `solvers.on_empty`.
+- **export** — a `truncated` boolean column in `gradings_long.parquet`; filter it
+  out of a content-validity analysis (`df[~df.truncated]`).
+- **`generate`** — the `truncated-completions` hint fires when any row was cut:
+  `21 completion(s) stopped at a length cap … raise solvers.max_tokens or filter
+  truncated rows`; `GenerateResult.truncated_total` carries the count in `--json`.
+
+The fix is a study decision, not an automatic one: **raise `solvers.max_tokens`**
+(or a per-model-config value) and re-generate — grow-in-place resume re-runs only
+the affected cells, replaying the rest from the response cache at $0 — or keep the
+truncated rows and exclude them in analysis. There is no `on_truncated` knob: the
+signal is surfaced; what to do with it is yours.
+
 ## Eval-level (whole-condition) failures
 
 If an entire `inspect_ai.eval(...)` raises — a misconfigured task, an

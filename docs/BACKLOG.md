@@ -117,24 +117,6 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
-### Truncation as a first-class signal
-**Key:** `truncation-signal`
-
-**Motivation.** A solution that stops on `max_tokens` is a truncated-but-
-non-empty string we currently count `completed` and grade as finished — so a
-**budget cut is scored as a content failure**, a validity bug that silently
-corrupts measurement.
-
-**Design sketch.** We already store `stop_reason` per solution. Surface it: add
-a `truncated` channel to `status` (beside `incomplete`) and a `truncated`
-export column, so a truncated cell is distinguishable from a genuine content
-miss. (Unmapped provider finish-reasons collapsing to `"unknown"` is a separate,
-upstream-rooted defect — tracked in KNOWN-ISSUES.)
-
-**Implementation notes.** `_status.py` (new channel), export schema (new
-column); `stop_reason` is already on the solutions row (`generate/_run.py`). No
-new knob. ~60 lines + tests.
-
 ### Pre-flight cache projection
 **Key:** `cache-projection`
 

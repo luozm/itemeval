@@ -106,14 +106,18 @@ without a sample-level `error`). Parse failures are final; errors re-run.
 
 ## `export/gradings_long.parquet` — one row per grading event
 
-The left-join of gradings onto solutions: 49 columns, grouped as
+The left-join of gradings onto solutions: 50 columns, grouped as
 
 - **Design cell**: `study, item_id, dataset_id, dataset_revision, model,
   prompt_name, prompt_hash, model_config_name, replication,
   gen_condition_id/slug, grade_condition_id/slug, grade_kind, grader_name,
   grader_model, rubric_name, rubric_hash, scorer_name`
 - **Outcome**: `score, score_raw, parse_ok, parse_error, reasoning,
-  solution, judge_completion`
+  solution, truncated, judge_completion`
+  — `truncated` is `True` when the solution was cut at a length cap
+  (`max_tokens`/`model_length`) with non-empty text: graded as finished but a
+  budget cut, not content. Filter it out of a content-validity analysis
+  (`df[~df.truncated]`). See [Error-Handling#truncation](Error-Handling.md#truncation).
 - **Params**: `temperature_requested, temperature_effective, reasoning_effort`
 - **Cost**: `gen_*` and `grade_*` token counts, `gen_usd, grade_usd,
   gen_latency_s, grade_latency_s`

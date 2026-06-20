@@ -28,7 +28,7 @@ from itemeval.store._base import _coerce_to_schema, rel_to_study
 from itemeval.store._gradings import read_gradings
 from itemeval.store._layout import StudyPaths
 from itemeval.store._ledger import read_ledger
-from itemeval.store._solutions import read_solutions
+from itemeval.store._solutions import read_solutions, truncated_mask
 
 EXPORT_SCHEMA = pa.schema(
     [
@@ -57,6 +57,10 @@ EXPORT_SCHEMA = pa.schema(
         pa.field("parse_error", pa.string()),
         pa.field("reasoning", pa.string()),
         pa.field("solution", pa.string()),
+        # True when the solution was cut at a length cap (max_tokens/model_length)
+        # with non-empty text — graded as finished, but a budget cut, not content
+        # (truncation-signal). Filter it out of a content-validity analysis.
+        pa.field("truncated", pa.bool_()),
         pa.field("judge_completion", pa.string()),
         pa.field("temperature_requested", pa.float64()),
         pa.field("temperature_effective", pa.float64()),
@@ -287,6 +291,9 @@ def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> Exp
     solutions = read_solutions(paths)
     ledger = read_ledger(paths)
 
+    # Derive the truncated flag before the rename (truncated_mask reads the raw
+    # solutions columns: error, stop_reason, solution).
+    solutions = solutions.assign(truncated=truncated_mask(solutions))
     sol = solutions.rename(columns=_SOLUTION_COLS)
     sol_cols = [
         "gen_condition_id",
@@ -303,6 +310,7 @@ def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> Exp
         "temperature_effective",
         "reasoning_effort",
         "solution",
+        "truncated",
         "gen_experiment_id",
         "gen_attempt",
         "gen_input_tokens",
@@ -320,6 +328,8 @@ def export_study(config: ExperimentConfig, snapshot: "str | None" = None) -> Exp
         on=["gen_condition_id", "item_id", "epoch"],
     )
     long["replication"] = long["epoch"]
+    # A grading with no matching solution row (left join) gets NaN truncated -> False.
+    long["truncated"] = long["truncated"].fillna(False).astype(bool)
     long = long[list(EXPORT_SCHEMA.names)]
 
     paths.export_dir.mkdir(parents=True, exist_ok=True)

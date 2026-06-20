@@ -8,7 +8,7 @@ from itemeval._harvest import HarvestReport
 from itemeval._modelsample import ModelSampleResult
 from itemeval._prepare import PreparedStudy, prepare_study
 from itemeval.store import _gradings, _ledger, _solutions
-from itemeval.store._solutions import empty_solution_mask
+from itemeval.store._solutions import empty_solution_mask, truncated_mask
 
 
 class DatasetStatus(BaseModel):
@@ -37,6 +37,9 @@ class ConditionStatus(BaseModel):
     completed: int
     errors: int
     incomplete: int = 0  # generate: empty (no-error) completions, e.g. truncated
+    # generate: non-empty completions cut at a length cap (max_tokens/model_length)
+    # — counted in `completed` but flagged so a budget cut isn't read as content.
+    truncated: int = 0
     parse_failures: int = 0
 
 
@@ -135,6 +138,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
             else rows
         )
         incomplete = int(empty_solution_mask(in_scope).sum()) if not in_scope.empty else 0
+        truncated = int(truncated_mask(in_scope).sum()) if not in_scope.empty else 0
         err_null = int(in_scope["error"].isna().sum()) if not in_scope.empty else 0
         gen_status.append(
             ConditionStatus(
@@ -150,6 +154,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
                 completed=err_null - (incomplete if rerun_empty else 0),
                 errors=int(in_scope["error"].notna().sum()) if not in_scope.empty else 0,
                 incomplete=incomplete,
+                truncated=truncated,
             )
         )
 

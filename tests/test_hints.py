@@ -11,6 +11,7 @@ from itemeval._hints import (
     detect_cache_zero_reads,
     detect_empty_solutions,
     detect_openrouter_unpinned_cache,
+    detect_truncated_completions,
     detect_unpriced_models,
     emit_hints,
 )
@@ -40,6 +41,15 @@ def test_detect_empty_solutions():
     assert "21 solutions are empty" in h.message and "model_length×21" in h.message
     assert h.learn_more == "Error-Handling#empty-completions"
     assert detect_empty_solutions(0, 0, "skip", {}) is None
+
+
+def test_detect_truncated_completions():
+    h = detect_truncated_completions(21)
+    assert h is not None and h.code == "truncated-completions"
+    assert "21 completion(s) stopped at a length cap" in h.message
+    assert "solvers.max_tokens" in h.message
+    assert h.learn_more == "Error-Handling#truncation"
+    assert detect_truncated_completions(0) is None
 
 
 def test_detect_split_head_below_min_single_static_head():

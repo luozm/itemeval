@@ -29,6 +29,7 @@ CATALOG_ORDER = [
     "anthropic-openrouter-no-split",
     "openrouter-unpinned-cache",
     "empty-solutions",
+    "truncated-completions",
     "dev-policy-at-scale",
     "unpriced-models",
     "pilot-available",
@@ -184,6 +185,24 @@ def detect_empty_solutions(
             f"but produced no gradable text [{breakdown}]"
         ),
         learn_more="Error-Handling#empty-completions",
+    )
+
+
+def detect_truncated_completions(truncated_total: int) -> "Hint | None":
+    """Non-empty completions cut at a length cap (max_tokens/model_length) — graded
+    as finished answers though they were truncated, so a budget cut reads as a
+    content failure (truncation-signal)."""
+    if truncated_total <= 0:
+        return None
+    return Hint(
+        code="truncated-completions",
+        message=(
+            f"{truncated_total} completion(s) stopped at a length cap "
+            "(max_tokens/model_length) with non-empty text — they are scored as "
+            "finished answers though they were cut short; raise solvers.max_tokens "
+            "or filter truncated rows"
+        ),
+        learn_more="Error-Handling#truncation",
     )
 
 

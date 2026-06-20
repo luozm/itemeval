@@ -1,6 +1,7 @@
 # Implementation plan — truncation-signal (truncation as a first-class signal)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-20 against
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/truncation-signal`
+(CHANGELOG `Closes: truncation-signal`); this file is the design record. Written 2026-06-20 against
 inspect_ai 0.3.x (pinned in `uv.lock`) — re-verify the `[verify]` facts below if
 that moved. Working brief for a fresh session; read these first, in order:
 

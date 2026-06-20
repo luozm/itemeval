@@ -69,7 +69,10 @@ deliberately (a non-additive store rename — ships a clean-break `Study migrati
 and `preflight-check` — an `itemeval preflight` command that probes each distinct
 model with a ~1-token call and reports roster health before a paid run, shipping
 the reusable terminal-vs-transient error classifier that `request-timeout`'s
-deferred "don't retry a terminal timeout" refinement will consume.
+deferred "don't retry a terminal timeout" refinement will consume; and
+`truncation-signal` — a `truncated` status channel + export column + hint that
+flags non-empty length-cap (`max_tokens`/`model_length`) completions, so a budget
+cut is no longer silently scored as a content failure.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

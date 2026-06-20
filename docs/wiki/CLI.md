@@ -158,7 +158,10 @@ itemeval status CONFIG [--no-harvest] [--json]
 
 Prints datasets (id @ revision, item counts), the policy-effective scope,
 both condition tables with `done/expected`, error and parse-failure counts,
-spend per stage, and manifest count. Both tables are scoped to the current
+spend per stage, and manifest count. The GENERATE table also shows an `empty`
+column (no-error blank completions) and a `trunc` column (non-empty completions
+cut at a length cap — `max_tokens`/`model_length`; see
+[Error-Handling#truncation](Error-Handling.md#truncation)). Both tables are scoped to the current
 grid at the current scope (wave 0); studies with more than one wave get an
 extra `waves:` line with per-wave gen/graded counts
 ([Pipeline-Concepts#waves](Pipeline-Concepts.md#waves)). `--json` emits the
