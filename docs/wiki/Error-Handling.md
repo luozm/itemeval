@@ -144,6 +144,41 @@ un-overridable backstop. See [Budget and Costs](Budget-and-Costs.md).
 - **Raw `.eval` logs** — full inspect evidence: stack traces, retries,
   per-sample events. The store is the source of truth; the logs are the receipts.
 
+## Stalled requests (`attempt_timeout`)
+
+By default neither itemeval nor inspect bounds a single request, so a degraded
+endpoint that trickles bytes (or hangs without erroring) can hold a run with no
+upper bound — the classic flaky-routing failure. Set a per-attempt timeout to
+bound it:
+
+```yaml
+solvers:
+  attempt_timeout: 300         # seconds; abandon a stalled attempt and retry
+graders:
+  judge:
+    attempt_timeout: 300       # per-judge, same meaning
+```
+
+The value passes straight through to inspect's `GenerateConfig.attempt_timeout`:
+when an attempt exceeds it, inspect **abandons and retries** that attempt — and
+through OpenRouter the retry may be routed to a healthier upstream. It is opt-in
+(unset = today's unbounded behavior) and is a pure execution knob, so setting it
+never changes a condition id or re-keys your study.
+
+Two cautions:
+
+- **Pick a value generous enough not to cut a legitimately slow stream.** A
+  reasoning model can stream a single completion for a long time; if the timeout
+  fires on a healthy-but-slow attempt, the retry hits the same wall and the row
+  can fail repeatedly. Size the timeout to your slowest *expected* completion.
+- **Leave it unset under a batch plan** (`policy: full-batch`). A batch job's
+  submit-and-poll legitimately runs for minutes-to-hours and is the same call the
+  timeout wraps, so a timeout would abandon a healthy batch.
+
+A timed-out attempt that ultimately fails surfaces like any other sample error
+(see the channels above). Suppressing retries on *terminal* failures (a dead
+model, not a slow one) is a separate, upcoming pre-flight check.
+
 ## Retry and resume — re-run the same command
 
 The parquet store is keyed, so re-invoking a command is always safe and never

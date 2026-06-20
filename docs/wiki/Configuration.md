@@ -46,6 +46,7 @@ solvers:
   cache_prompt: auto           # provider prompt caching for generation: auto|on|off (auto = on when replications > 1)
   split_prompt: false          # render prompt as system(template head)+user(item) for provider cache breakpoints; changes condition ids
   provider_routing: null       # optional OpenRouter routing object, sent verbatim with every openrouter/* request (pins the upstream); inert+warns if no openrouter/* model
+  attempt_timeout: null        # optional; seconds. Per-attempt request timeout passed to inspect: a stalled attempt is abandoned and retried (via OpenRouter, possibly onto a healthier upstream). default null = unbounded (today's behavior). Leave unset for batch runs — it would bound the long batch poll too. Execution knob; never changes condition ids.
 
 facets:
   prompt: [builtin:standard]   # builtin:NAME = packaged; bare NAME = local file. default: [builtin:standard]
@@ -67,6 +68,7 @@ graders:                       # resolves facets.grader names
     reasoning_effort: null
     split_rubric: false        # rubric head as system msg + solution as user msg (provider cache breakpoint); changes condition ids
     provider_routing: null     # optional; same OpenRouter routing object as solvers.provider_routing, for this judge's calls
+    attempt_timeout: null      # optional; seconds. Same as solvers.attempt_timeout, for this judge's calls
 
 crossing: full                 # only "full" in v0.1
 
@@ -262,6 +264,17 @@ budget:
   setting it in a section with no `openrouter/*` model warns (inert, never
   blocks). Why it matters and how to confirm the pin held:
   [Cost Savings](Cost-Savings.md#openrouter-or-direct).
+- **`attempt_timeout`** (on `solvers:` and per grader): a per-attempt request
+  timeout in seconds, passed straight through to inspect. If an attempt stalls
+  past it, inspect abandons and retries it — through OpenRouter the retry may land
+  on a healthier upstream, so it's the lever for an endpoint that hangs without
+  erroring. Opt-in: unset (`null`) means no bound, today's behavior. It's an
+  execution/robustness knob, never part of a condition id (setting it doesn't
+  re-key your study). Two cautions: pick a value generous enough not to cut a
+  legitimately slow stream (a too-low value retries a healthy long generation
+  until it fails), and **leave it unset under a batch plan** — there the timeout
+  would bound the long-running batch poll itself. See
+  [Error Handling](Error-Handling.md#stalled-requests-attempt_timeout).
 
 ## Two-stage (materialized) rubrics
 

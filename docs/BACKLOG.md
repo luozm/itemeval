@@ -117,30 +117,6 @@ given (seed, sorted item ids) — independent of row order.
 **Open questions.** Interaction with multi-dataset configs (sample per
 dataset or over the union? — default: union).
 
-### Response / attempt timeout
-**Key:** `request-timeout`
-
-**Motivation.** Neither itemeval nor inspect sets a total request timeout:
-`GenerateConfig.timeout` and `attempt_timeout` both default `None`, and the
-httpx client timeout doesn't catch a slow-but-alive trickle. So a degraded
-stream runs **unbounded** — one stalled endpoint holds a whole run hostage with
-no upper bound, the worst case in a flaky-routing setup.
-
-**Design sketch.** Expose a `solvers.attempt_timeout` knob (and a per-judge
-`graders.<name>.attempt_timeout`), so a stalled request is abandoned and retried —
-likely onto a healthier route. Pass inspect's `attempt_timeout` through unchanged
-(boundary rule: pass through, don't rename — **not** a renamed `solvers.timeout`).
-Whether to also ship a generous non-`None` default is settled in the plan.
-
-**Implementation notes.** Thread the knob into the `GenerateConfig` we build
-(`generate/_task.py` / `grade/_judge.py`); the `solvers` model and `GraderSpec` in
-`_config.py` gain `attempt_timeout`. Keep it out of condition ids and the
-`experiment_id` digest (a pure execution knob — pop it in
-`_identity._NON_IDENTITY_SOLVERS`/`_NON_IDENTITY_GRADER`). Orthogonal to the
-`max_tokens` context-fit clamp. A timeout = an abandoned attempt, so it consumes
-`preflight-check`'s terminal-vs-transient classifier (don't retry a terminal
-error) once that ships.
-
 ### Truncation as a first-class signal
 **Key:** `truncation-signal`
 
@@ -170,7 +146,8 @@ roster health *before* committing spend.
 model and surface a roster summary (`39 ok / 1 dead: <model> 404 EOL`), letting
 the user fix the roster first. Don't retry **terminal** errors; collapse each
 condition's failure to one concise line. Builds the **terminal-vs-transient
-error classifier** — a shared primitive `request-timeout` also consumes.
+error classifier** — a shared primitive the now-shipped `request-timeout` will
+consume once this lands (it currently retries timed-out attempts unconditionally).
 
 **Implementation notes.** New pre-flight step before the money gate; the
 classifier in a small shared module; `ConditionRunReport.message` already exists

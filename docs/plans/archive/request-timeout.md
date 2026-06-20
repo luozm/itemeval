@@ -1,9 +1,9 @@
 # Implementation plan — request-timeout (bound a stalled model attempt)
 
-**Status: IN PROGRESS (started 2026-06-20).** Written against inspect_ai 0.3.239
-(pinned in `uv.lock`) — re-verify the pinned facts below if that moved. This file
-is the working brief for a fresh implementation session: it carries all the
-context that session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-20.** Shipped on `feat/request-timeout` (CHANGELOG
+`Closes: request-timeout`). Written against inspect_ai 0.3.239 (pinned in
+`uv.lock`). This file is now the design record; the context below is what the
+implementing session worked from. The reading list it carried:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract (knob buckets, no new gates,

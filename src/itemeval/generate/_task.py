@@ -29,6 +29,7 @@ def build_generate_task(
     cache_schedule: bool = True,
     epoch_offset: int = 0,
     max_tokens_override: "int | None" = None,
+    attempt_timeout: "int | None" = None,
 ) -> Task:
     # Replications send byte-identical prompts: every epoch of an item shares
     # the full prompt as a provider cache prefix. Gate them (warm-then-fan-out)
@@ -93,6 +94,7 @@ def build_generate_task(
         reasoning_tokens=p.reasoning_tokens,
         cache_prompt=cache_prompt,  # None -> provider default
         batch=batch,
+        attempt_timeout=attempt_timeout,  # None -> inspect default (unbounded)
     )
     return Task(
         dataset=MemoryDataset(samples, name=f"{study}:{cond.id}"),

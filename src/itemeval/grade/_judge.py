@@ -116,6 +116,7 @@ def build_judge_task(
     batch: "bool | int | None" = None,
     cache_schedule: bool = True,
     rubric_texts: "dict[str, str] | None" = None,
+    attempt_timeout: "int | None" = None,
 ) -> Task:
     # Same-item solutions share the longest cacheable prefix (rubric + problem
     # + scheme + reference). Sort so same-prefix calls are adjacent in the
@@ -159,6 +160,7 @@ def build_judge_task(
         reasoning_effort=cond.grader_reasoning_effort,
         cache_prompt="auto",  # prompt caching on repeated rubric+problem prefixes
         batch=batch,
+        attempt_timeout=attempt_timeout,  # None -> inspect default (unbounded)
     )
     return Task(
         dataset=MemoryDataset(samples, name=f"{study}:{cond.id}"),

@@ -7,6 +7,27 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Per-attempt request timeout** (`solvers.attempt_timeout` /
+  `graders.<name>.attempt_timeout`): bound how long one model attempt may stall
+  before it is abandoned and retried. Neither itemeval nor inspect set any request
+  timeout, so a degraded stream ran **unbounded** — one stalled endpoint could hold
+  a whole run hostage with no upper bound (the worst case in a flaky-routing
+  setup). Both knobs pass straight through to inspect's
+  `GenerateConfig.attempt_timeout` (seconds; "abandon attempt and retry"), so a
+  timed-out attempt is retried and, through OpenRouter, may reroute to a healthier
+  upstream. **Opt-in** (`None` = today's unbounded behavior) — chosen over an
+  auto-applied default because a value picked without data could silently turn a
+  slow-but-valid reasoning stream into a failure, and under a batch plan a timeout
+  would bound the hours-long batch poll itself. A pure execution/robustness knob:
+  it never enters a condition id or the `experiment_id` digest (so setting it never
+  re-keys a study; popped in `_identity._NON_IDENTITY_SOLVERS`/`_NON_IDENTITY_GRADER`),
+  rides the run manifest's config echo for provenance, and adds no new CLI flag,
+  exit code, gate, or hint. The "don't retry a terminal error" refinement waits for
+  the upcoming pre-flight model check's terminal-vs-transient classifier. No new
+  dependency.
+
+Closes: request-timeout
+
 - **Crash-survivable progress: harvest `.eval` into the stores** (`itemeval
   harvest`, and auto-harvest on read/resume). Durable parquet was written
   all-or-nothing *after* a clean `eval()` return: a stage ran one

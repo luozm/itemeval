@@ -600,6 +600,7 @@ def run_grade(
             batch=prep.plan.batch,
             cache_schedule=scheduled,
             rubric_texts=rubric_texts_by_rubric.get(cond.rubric_name),
+            attempt_timeout=prep.config.grader_spec(cond.grader_name).attempt_timeout,
         )
         try:
             task.model = factory(

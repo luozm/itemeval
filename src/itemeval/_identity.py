@@ -35,10 +35,11 @@ if TYPE_CHECKING:
 # `budget` is what makes a `dev`→`full` policy change *growth*, not a fork
 # (Choice A): a bigger run of the same experiment, recovered into the same id.
 _NON_IDENTITY_TOP = ("output_dir", "prompts_dir", "rubrics_dir", "cache", "budget")
-# Nested pure-optimization pass-throughs — they never enter condition ids either,
-# so a routing/cache-marker pin added between runs is not a new experiment.
-_NON_IDENTITY_SOLVERS = ("provider_routing", "cache_prompt")
-_NON_IDENTITY_GRADER = ("provider_routing",)
+# Nested pure-optimization / robustness pass-throughs — they never enter condition
+# ids either, so a routing/cache-marker pin or a request timeout added between runs
+# is not a new experiment.
+_NON_IDENTITY_SOLVERS = ("provider_routing", "cache_prompt", "attempt_timeout")
+_NON_IDENTITY_GRADER = ("provider_routing", "attempt_timeout")
 
 
 def normalized_config_digest(config: "ExperimentConfig") -> str:

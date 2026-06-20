@@ -211,6 +211,14 @@ class SolversConfig(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
     seed: int | None = None  # recorded; only some providers honor it
+    # Per-attempt request timeout (seconds), passed through to inspect's
+    # GenerateConfig.attempt_timeout: a stalled attempt is abandoned and retried
+    # (via OpenRouter the retry may reroute to a healthier upstream). Opt-in
+    # (None = unbounded, today's behavior). A pure execution/robustness knob —
+    # never enters condition ids or the experiment_id digest (popped in
+    # _identity._NON_IDENTITY_SOLVERS). Under a batch plan it would bound the
+    # batch poll too, so leave it unset for batch runs.
+    attempt_timeout: int | None = Field(default=None, ge=1)
     on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
     # Provider prompt caching for the generate stage (Anthropic-style explicit
     # cache_control markers; token-prefix providers like OpenAI cache
@@ -316,6 +324,10 @@ class GraderSpec(BaseModel):
     split_rubric: bool = False
     # Same contract as solvers.provider_routing (judges route too).
     provider_routing: "dict[str, Any] | None" = None
+    # Per-attempt request timeout (seconds) for this judge — see
+    # solvers.attempt_timeout. Pass-through; never enters the grade condition id
+    # or the experiment_id digest (popped in _identity._NON_IDENTITY_GRADER).
+    attempt_timeout: int | None = Field(default=None, ge=1)
 
 
 class MaterializeSpec(BaseModel):

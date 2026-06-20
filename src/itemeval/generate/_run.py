@@ -719,6 +719,7 @@ def run_generate(
             cache_schedule=cache_schedule,
             epoch_offset=epoch_offset,
             max_tokens_override=eff_max_tokens if clamped else None,
+            attempt_timeout=prep.config.solvers.attempt_timeout,
         )
         # Native batch routing: run the call on the native id when active; the
         # sampled cond.model stays the recorded scientific identity. The model
