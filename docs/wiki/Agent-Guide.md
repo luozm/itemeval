@@ -57,19 +57,20 @@ itemeval harvest  CONFIG [--json]               # recover a crashed run's logs i
   re-pays the recovered cells. Run `itemeval harvest CONFIG` to do it explicitly,
   or `--no-harvest` to skip it. See
   [Crash recovery](Error-Handling.md#crash-recovery).
-- `--json` emits the full structured report — **prefer it over parsing
-  human-readable stdout** for the no-cost commands (`estimate`, `status`,
-  `export`). **Run the paid `generate`/`grade` without `--json`**, though: it
-  silences both the pre-flight ETA line and the live progress display, so a
-  long paid run shows nothing until it returns. Plain mode keeps both visible,
-  and you lose no machine-readable result — the run prints a self-contained
-  summary (`rows written … spend …`, per-condition `[i/N]` reports,
-  `parse_failures`, empty-solution counts) plus a `manifest: <path>` line, and
-  that manifest is the full structured run result on disk. (If you must capture
-  JSON from the run itself, `--json` still carries the run result plus
-  `pricing`, `estimate_usd`, and the `gate` outcome, and a gate stop still emits
-  a JSON document — projected cost, gate reason, the `--yes` rerun command —
-  before exit 3/4.)
+- `--json` emits the full structured report — **prefer it on every command**,
+  the paid `generate`/`grade` included. A `--json` run keeps stdout to **exactly
+  one JSON document** and routes **liveness to stderr**: a one-line
+  `starting generate — ~Nm …` before the first sample, then a throttled heartbeat
+  (`[itemeval] generate · exp …/a1 · 142/400 (35%) · 11/min · ~3m left · 2 errors`)
+  as samples complete — so a long or backgrounded paid run is never dark (capture
+  stderr alongside stdout to relay it). The JSON result carries the run result plus
+  `pricing`, `estimate_usd`, and the `gate` outcome, and a gate stop still emits a
+  JSON document — projected cost, gate reason, the `--yes` rerun command — before
+  exit 3/4. (Plain mode stays available and shows inspect's live progress bars on a
+  TTY; both modes also print the same self-contained end-of-run summary — `rows
+  written … spend …`, per-condition `[i/N]` reports, `parse_failures`,
+  empty-solution counts — plus a `manifest: <path>` line that is the full run result
+  on disk.)
 - `-C/--base-dir DIR` anchors the output tree (`studies/`); default is the
   current directory. Inputs (prompts/rubrics) always resolve relative to the
   config file.
@@ -80,9 +81,10 @@ itemeval harvest  CONFIG [--json]               # recover a crashed run's logs i
   line. Conditions within a stage run **concurrently** across distinct models
   (concurrency `K` = distinct execution models), so wall-clock is roughly
   `calls / K × per-call latency`, not the sum over models. Use the ETA to decide
-  whether to background a long run — the live progress display is ephemeral and
-  never reaches a captured-stdout caller; the durable facts are this line and the
-  end-of-run summary block.
+  whether to background a long run — inspect's live progress *bars* are ephemeral
+  (TTY only), but a `--json`/silenced run's **stderr heartbeat does reach a
+  captured-stderr caller**, so a backgrounded run stays observable; the durable
+  facts are this line and the end-of-run summary block.
 
 ### Exit codes (deterministic — branch on them)
 

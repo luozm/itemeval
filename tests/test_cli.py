@@ -94,19 +94,26 @@ def test_display_defaults_to_live_and_forwards_override(
 def test_generate_and_grade_json_stdout_pure(tmp_path, offline_adapter, capsys):
     config = write_study_files(tmp_path)
     assert cli.main(["generate", str(config), "--yes", "--json"]) == 0
-    out = capsys.readouterr().out
-    doc = json.loads(out)  # stdout must be exactly one JSON document
+    cap = capsys.readouterr()
+    doc = json.loads(cap.out)  # stdout must be exactly one JSON document (no hooks banner)
     assert doc["study"] == "tstudy"
     assert doc["rows_written"] == 8  # 2 models x 2 dev items x 2 reps
     assert doc["pricing"]["source"]
     assert doc["gate"]["proceed"] is True and doc["gate"]["exit_code"] == 0
     assert doc["estimate_usd"] is not None
+    # Liveness rides stderr under --json (live-tracker): the pre-flight "starting"
+    # line + the live heartbeat (display is none, so inspect's bars are off).
+    assert "starting generate" in cap.err
+    assert "[itemeval] generate" in cap.err
 
     assert cli.main(["grade", str(config), "--yes", "--json"]) == 0
-    doc = json.loads(capsys.readouterr().out)
+    cap = capsys.readouterr()
+    doc = json.loads(cap.out)
     assert doc["rows_written"] == 8
     assert doc["parse_failures"] == 0
     assert doc["gate"]["proceed"] is True
+    assert "starting grade" in cap.err
+    assert "[itemeval] grade" in cap.err
 
 
 def test_generate_json_gate_stop_emits_document(tmp_path, offline_adapter, capsys, monkeypatch):

@@ -7,6 +7,37 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Live-run heartbeat + `--json` liveness** (`live-tracker`): a `generate`/`grade`
+  stage no longer goes dark when inspect's live display is silenced. Under `--json`
+  (which forces `display=none`), `--display none`, or any non-TTY run, the stage now
+  emits a throttled plain-text **heartbeat to stderr** as samples complete —
+  `[itemeval] generate · exp a7b3c9d2/a1 · 142/400 (35%) · 11/min · ~3m left · 2
+  errors · 8 in-flight` — carrying live counts, a **throughput-based ETA** (refining
+  the static pre-flight prior), error and in-flight counts, and the
+  experiment_id/attempt (`recovery-run-identity`). It is gated to exactly the dark
+  cases (inspect's rich bars carry liveness otherwise; a notebook is unaffected),
+  throttled so it never slows the run, and **relay-safe** — a plain line an agent can
+  quote, unlike a progress bar that never rendered off-TTY (UX-PATTERNS Law 8). The
+  pre-flight ETA, previously printed only on the human stdout path, is now also
+  echoed to **stderr** under `--json` (a one-line `starting generate — ~3m …`), so a
+  `--json`/backgrounded run shows intent before its first sample lands. stdout under
+  `--json` stays **exactly one JSON document**: the heartbeat is a single inspect
+  `SampleEnd`/`SampleStart` hook (the published extension point — wrap, don't fork)
+  that **pre-latches inspect's hook-startup banner** before registering, so
+  registering it never leaks inspect's "hooks enabled" line onto stdout. Pure
+  liveness — **no new config knob, gate, exit code, JSON field, or hint**, and no
+  fact of record lives only in the ephemeral output (final counts/spend stay in the
+  summary block and result JSON). This **closes the "`--json` goes dark" gap**: the
+  Agent-Guide's "run the paid stages without `--json`" carve-out is relaxed back to
+  "`--json` everywhere is safe — liveness rides stderr." The same `SampleEnd` hook is
+  the heartbeat the deferred "live store during the run" idea would have used; that
+  idea is **dropped** — a per-sample parquet flush is redundant (a separate `status`
+  already projects a running stage's incremental `.eval` via `recoverable-harvest`)
+  and harmful (the hook is awaited inside `eval()` and parquet is whole-file rewrite
+  → O(N²)). No new dependency.
+
+Closes: live-tracker
+
 - **Pre-flight response-cache projection** (the `estimate`/`generate`/`grade`
   pre-gate line gains a `cache: N of M remaining calls already in the local
   response cache ($0) → ~$X real of $Y projected` clause). A re-run's true cost was

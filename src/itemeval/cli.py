@@ -586,6 +586,18 @@ def _run_stage(args, stage, runner) -> int:
     # --json declares a machine consumer: silence inspect's live display unless
     # the operator explicitly chose one, so stdout stays pure JSON.
     display = args.display if args.display is not None else ("none" if args.json else None)
+    # Liveness for a --json run: stdout is reserved for the JSON document, so the
+    # pre-flight ETA never printed and the live display is off. Echo a one-line
+    # "starting …" + the coarse ETA to stderr (where the live heartbeat continues),
+    # so a --json/backgrounded run is not dark before its first sample completes.
+    if args.json:
+        eta = _eta_line(st)
+        line = (
+            f"starting {stage} — {eta.strip()}"
+            if eta
+            else f"starting {stage}: {st.remaining_calls} calls"
+        )
+        print(line, file=sys.stderr)
     result = runner(prep, display, st.remaining_usd, st.usd)
     result.pricing = est.pricing
     result.estimate_usd = st.remaining_usd

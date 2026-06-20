@@ -76,7 +76,11 @@ cut is no longer silently scored as a content failure; and `cache-projection` �
 pre-flight `cache: N cached / M fresh → ~$X real` line that probes inspect's local
 response cache before the gate (reusing inspect's own `CacheEntry`), so a recovery
 / `--force` / replication re-run's true cost is visible up front (the gate still
-compares the ceiling).
+compares the ceiling); and `live-tracker` — a live stderr heartbeat (counts,
+throughput-based ETA, errors, in-flight) during a `generate`/`grade` run whose
+display is silenced, plus the pre-flight ETA echoed to stderr under `--json`,
+closing the "`--json` goes dark" gap so a long or backgrounded paid run shows it is
+alive (liveness rides stderr; stdout stays pure JSON).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

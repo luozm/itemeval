@@ -162,9 +162,20 @@ tired human:
 ```
 <provenance lines>   dataset/pricing/cache facts (Law 1) — stdout, one each
 <live progress>      TTY only, ephemeral, zero information of record
+<heartbeat>          when live progress is silenced (--json / --display none /
+                     off-TTY): a throttled plain-text liveness line on stderr —
+                     relay-safe, still zero information of record (Law 8)
 <summary block>      self-contained facts with numbers (Law 8) — stdout
 <hint lines>         0–2, dim, after the summary — stderr
 ```
+
+The **heartbeat** fills the gap inspect's TTY-only progress bars leave: a long
+run whose display is off (`--json`, `--display none`, backgrounded) would
+otherwise show nothing until it returns. It is liveness, not a fact of record —
+counts, a throughput ETA, error/in-flight totals — so it carries nothing the
+final summary block + result JSON don't already hold, and it never touches
+stdout (the relay rule: an agent quotes the plain stderr line; stdout stays
+pipeable / pure JSON).
 
 Hint lines go to **stderr**: they are commentary about the run, not output of
 the run, so stdout stays pipeable even without `--json` (the same convention
@@ -191,6 +202,10 @@ as compiler diagnostics). Facts of record stay on stdout.
   `--json` — proceed under threshold or with `--yes`, otherwise exit 3 with
   the rerun line (and the JSON document still emitted before the stop).
   Implemented via `check_gate(..., machine=True)`.
+- **Liveness rides stderr.** `--json` silences the live display, so the
+  pre-flight ETA and the run heartbeat (counts · throughput ETA · errors) go to
+  **stderr** — a long or backgrounded `--json` run is never dark, and stdout
+  stays exactly one JSON document.
 
 ### Turning hints off
 

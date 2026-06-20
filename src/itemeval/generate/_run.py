@@ -22,6 +22,7 @@ from itemeval._experiments import update_experiment_index
 from itemeval._manifest import build_manifest, finalize_manifest, write_manifest
 from itemeval._mockmodels import is_mock_model, resolve_model
 from itemeval._modelsample import ModelSampleResult
+from itemeval import _tracker  # registers the live-tracker hook before the first eval()
 from itemeval.adapters._base import DatasetProvenance, dataset_provenance
 from itemeval._util import estimate_tokens, utc_now_iso
 from itemeval.budget._gate import GateResult
@@ -183,6 +184,16 @@ def max_tasks_for(exec_models: "list[str]") -> int:
     return max(1, len(set(exec_models)))
 
 
+def _expected_samples(tasks: list) -> "int | None":
+    """Total sample_end emissions inspect will fire = Σ (dataset size × epochs) —
+    the heartbeat's ETA denominator. Defensive: any task-shape surprise -> None (the
+    heartbeat then shows done + rate without a percent/ETA)."""
+    try:
+        return sum(len(t.dataset) * (t.epochs or 1) for t in tasks) or None
+    except Exception:
+        return None
+
+
 def run_condition_evals(
     tasks: list,
     *,
@@ -210,27 +221,33 @@ def run_condition_evals(
         return {}, None
     from itemeval._identity import invocation_handle
 
+    # Live stderr heartbeat, but only when inspect's rich display is silenced
+    # (--json / --display none) — otherwise its bars already carry liveness.
+    heartbeat = resolve_display(display) == "none"
     try:
-        logs = inspect_ai.eval(
-            tasks,
-            model=tasks[0].model,
-            max_tasks=max_tasks,
-            display=resolve_display(display),
-            log_dir=log_dir,
-            log_format="eval",
-            fail_on_error=False,
-            retry_on_error=1,
-            tags=["itemeval", stage],
-            # itemeval_run_id is the invocation handle (the manifest basename
-            # _harvest._wave_identity looks up); experiment_id/attempt let harvest
-            # recover the row columns directly without parsing the handle.
-            metadata={
-                "itemeval_run_id": invocation_handle(experiment_id, attempt),
-                "itemeval_experiment_id": experiment_id,
-                "itemeval_attempt": attempt,
-                "itemeval_study": study,
-            },
-        )
+        with _tracker.tracking(
+            stage, experiment_id, attempt, _expected_samples(tasks), enabled=heartbeat
+        ):
+            logs = inspect_ai.eval(
+                tasks,
+                model=tasks[0].model,
+                max_tasks=max_tasks,
+                display=resolve_display(display),
+                log_dir=log_dir,
+                log_format="eval",
+                fail_on_error=False,
+                retry_on_error=1,
+                tags=["itemeval", stage],
+                # itemeval_run_id is the invocation handle (the manifest basename
+                # _harvest._wave_identity looks up); experiment_id/attempt let harvest
+                # recover the row columns directly without parsing the handle.
+                metadata={
+                    "itemeval_run_id": invocation_handle(experiment_id, attempt),
+                    "itemeval_experiment_id": experiment_id,
+                    "itemeval_attempt": attempt,
+                    "itemeval_study": study,
+                },
+            )
     except Exception as e:  # whole-eval failure (rare): caller errors every cond
         return {}, f"{type(e).__name__}: {e}"
     out: "dict[str, EvalLog]" = {}
