@@ -1,10 +1,13 @@
 # Implementation plan — recovery-run-identity (experiment-scoped run identity with attempts)
 
-**Status: NOT STARTED.** Written 2026-06-19, **decisions locked 2026-06-19**
-(this rewrite supersedes the first draft — the three design questions are now
-settled; see *Locked decisions* below). Written against the current `main`
-(post-#18/#19) and inspect_ai as pinned in `uv.lock` — re-verify the pinned
-file:line facts if the tree moved. This file is the working brief for a fresh
+**Status: IN PROGRESS (started 2026-06-20).** Written 2026-06-19, **decisions
+locked 2026-06-19** (this rewrite supersedes the first draft — the three design
+questions are now settled; see *Locked decisions* below), **re-verified against
+the post-`recoverable-harvest` tree 2026-06-20** (see *Re-verification* below —
+the locked design holds; the mechanism gains the harvest/persist write-seam S
+introduced, and the inline file:line anchors are superseded by that section).
+Written against the current `main` (post-#18/#19) and inspect_ai as pinned in
+`uv.lock` — re-verify the pinned file:line facts if the tree moved. This file is the working brief for a fresh
 implementation session and carries all the context that session needs (assume
 no conversation history — only this file and the repo). Read these first, in
 order:
@@ -63,6 +66,96 @@ built on top of it.
    additive model and P0's soft `universe_drift`). `--new-run` salts a fresh
    id; a config edit forks automatically. Chosen over the stricter
    grid-identical / gaps-are-holes rules.
+
+---
+
+## Re-verification 2026-06-20 (post-`recoverable-harvest` — read before W1)
+
+This brief was written 2026-06-19 against `main` **before** S
+(`recoverable-harvest`) shipped (2026-06-20). S rewrote
+`generate/_run.py`/`grade/_run.py` and added `_harvest.py`, introducing new
+identity consumers W1 must also change. Re-verified against the current tree:
+**the locked design is unchanged**, but the mechanism gains the touchpoints
+below and these line numbers supersede the inline ones in W1–W3.
+
+**The single metadata-stamp seam (good news — minimal churn).** Both generate
+*and* grade-judge logs are stamped in one place: `run_condition_evals`
+([generate/_run.py:174](../../src/itemeval/generate/_run.py#L174)) sets
+`metadata={"itemeval_run_id": run_id, "itemeval_study": study}` at
+[:209](../../src/itemeval/generate/_run.py#L209); the only other stamp is the
+materialize eval ([grade/_run.py:315](../../src/itemeval/grade/_run.py#L315)).
+Because `_wave_identity`, export's snapshot copy, and the study card all look up
+manifests **by filename**, keep `handle = f"{experiment_id}.a{attempt}"` as
+*both* the manifest basename *and* the `itemeval_run_id` value — then those
+by-name lookups need **zero** logic change. W1 changes only the row *columns*
+and adds *new metadata keys* (`itemeval_experiment_id` + `itemeval_attempt`,
+additive) so `harvest_stage` recovers the columns directly without parsing.
+
+**`persist_*_condition` are the shared write seam (live run + harvest both call
+them).** W1's "thread `experiment_id`/`attempt` into the row builders" now means:
+- `persist_generate_condition`
+  ([generate/_run.py:499](../../src/itemeval/generate/_run.py#L499)) and
+  `persist_grade_condition`
+  ([grade/_run.py:223](../../src/itemeval/grade/_run.py#L223)) take
+  `experiment_id`+`attempt` where they currently take `run_id: str`;
+- their callers: live `run_generate` (mint at
+  [generate/_run.py:559](../../src/itemeval/generate/_run.py#L559), was :511) and
+  `run_grade` (mint at [grade/_run.py:391](../../src/itemeval/grade/_run.py#L391),
+  was :353); **and `_harvest.py`** — `harvest_stage`
+  ([_harvest.py:173](../../src/itemeval/_harvest.py#L173)) reads the metadata and
+  passes identity through, `_wave_identity`
+  ([_harvest.py:112](../../src/itemeval/_harvest.py#L112)) reads
+  `manifests/<handle>.json`. Recovered rows must stay byte-identical to live rows
+  — same columns, same code path.
+
+**Five stores still carry `run_id`** (drop → `experiment_id`+`attempt`):
+solutions [_solutions.py:14](../../src/itemeval/store/_solutions.py#L14)
+(nullable=False), gradings
+[_gradings.py:15](../../src/itemeval/store/_gradings.py#L15) (nullable=False),
+ledger [_ledger.py:13](../../src/itemeval/store/_ledger.py#L13) — and its **key**
+`LEDGER_KEY` [:9](../../src/itemeval/store/_ledger.py#L9) becomes
+`["experiment_id","attempt","stage","condition_id","model"]`, log_index
+[_logs.py:14](../../src/itemeval/store/_logs.py#L14) (nullable),
+materialized_rubrics
+[_materialized.py:31](../../src/itemeval/store/_materialized.py#L31)
+(nullable=False).
+
+**Export public schema (clean break).**
+[store/_export.py](../../src/itemeval/store/_export.py) renames the long-table
+columns `gen_run_id`/`grade_run_id` (`:75-76`, mapped at `:131,:142`) →
+`gen_experiment_id`+`gen_attempt` / `grade_experiment_id`+`grade_attempt`; the
+`run_ids` manifest-copy loop (`:183,:200`) reconstructs the handle from
+`(experiment_id, attempt)`. The study card does the same
+([report/_card.py:37,:152](../../src/itemeval/report/_card.py#L37)). **Expect
+`tests/test_public_api_snapshot.py` to go red — update the golden export schema
+deliberately** (CONTRIBUTING step 8).
+
+**`config_sha256` consumers — correction to W1.** Only
+[_manifest.py:151](../../src/itemeval/_manifest.py#L151) (records it) and
+[store/_export.py:209](../../src/itemeval/store/_export.py#L209) (records it in
+export metadata) read it. W1's claim that `_driftcheck.py` consumes it is
+**wrong** — drift compares per-facet content hashes, not the config digest
+(`_driftcheck.py` mentions `run_id` only in warning *text*, `:158,:178`,
+cosmetic). So redefining `config_sha256` to the semantic digest is
+lower-blast-radius than W1 states; note the more-correct behavior (comment-only
+edits stop changing the digest) where export records it.
+
+**P0 already shipped — helper relationship inverted (the plan's fallback branch).**
+`lock-spec-brick` + `lock-rebless` landed first, so `_LockSpec`,
+`_normalized_spec`, `_effective_spec`, `_current_spec`, `_spec_diff`,
+`rebless_model_sample` already live in `_modelsample.py` (not `_identity.py`).
+**Decision: do NOT lift them.** W1 creates `_identity.py` with
+`normalized_config_digest()` + `experiment_id()` only; the sample-spec normalizer
+is a *different scope* (a subset of the config) and lifting it would churn
+just-shipped, tested P0 code for no behavior gain. The shared thing is the
+*technique* (normalize-through-pydantic), not the function — `_identity` and
+`_modelsample` apply it independently, exactly as the plan's "different scopes,
+one technique" already allows. (Supersedes the W1 "Build one helper module …
+exposing both `normalized_config_digest()` and a `normalized_spec()`" line and
+the "R is sequenced before P0" note.)
+
+**Blast radius.** 13 test files touch `run_id`/`manifests/`/`experiment`, plus
+`test_public_api_snapshot.py` + `test_docs_consistency.py`. Confirms Effort **L**.
 
 ---
 
