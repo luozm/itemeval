@@ -212,7 +212,9 @@ def _write_snapshot(
         json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
 
-    prep = prepare_study(config)
+    prep = prepare_study(
+        config, allow_spec_drift=True
+    )  # archiving the pinned panel, not re-drawing
     card = build_study_card(
         config,
         prep,

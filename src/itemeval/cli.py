@@ -99,13 +99,18 @@ def _cost_levers_line(prep, stage: str) -> str:
     return "cost levers: " + " · ".join(parts)
 
 
-def _load(args) -> "tuple":
+def _load(args, *, allow_spec_drift: bool = False) -> "tuple":
     from itemeval._config import load_config
     from itemeval._prepare import prepare_study
 
     cfg = load_config(args.config, work_dir=getattr(args, "base_dir", None))
     refresh = getattr(args, "refresh_pricing", False)
-    prep = prepare_study(cfg, refresh_pricing_table=refresh, policy=getattr(args, "policy", None))
+    prep = prepare_study(
+        cfg,
+        refresh_pricing_table=refresh,
+        policy=getattr(args, "policy", None),
+        allow_spec_drift=allow_spec_drift,
+    )
     return cfg, prep
 
 
@@ -257,6 +262,17 @@ def _print_model_sample(prep) -> None:
             f"models: sampled {ms.n} of {ms.universe_size} (seed {ms.seed}{strat}{incl}{excl}) "
             f"from {source} — pinned in model_locks.json"
         )
+    elif ms.spec_drift:
+        # Read-only command on a study whose sample spec drifted from the pin:
+        # the pinned panel is shown; the warning says how to re-draw (Law 2).
+        print(
+            f"models: {len(ms.models)} pinned models reused from model_locks.json "
+            f"(seed {ms.seed}) — pinned panel"
+        )
+        print(
+            "warning: solvers.sample spec differs from model_locks.json — showing the pinned "
+            "panel; clear model_locks.json to re-draw at the current spec"
+        )
     else:
         drift = (
             f"; universe changed since the pin (now {ms.universe_size}) — draw unchanged"
@@ -320,7 +336,9 @@ def _cmd_estimate(args) -> int:
     from itemeval._hints import emit_hints
     from itemeval.budget._estimator import estimate_study
 
-    _, prep = _load(args)
+    _, prep = _load(
+        args, allow_spec_drift=True
+    )  # read-only: inspect a pinned panel even if drifted
     est = estimate_study(prep)
     if args.json:
         print(est.model_dump_json(indent=2))
@@ -631,7 +649,9 @@ def _cmd_status(args) -> int:
     from itemeval._status import build_status
     from itemeval.budget._pricing import describe_pricing
 
-    cfg, prep = _load(args)
+    cfg, prep = _load(
+        args, allow_spec_drift=True
+    )  # read-only: inspect a pinned panel even if drifted
     report = build_status(cfg, prep)
     if args.json:
         print(report.model_dump_json(indent=2))

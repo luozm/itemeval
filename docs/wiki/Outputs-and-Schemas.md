@@ -37,14 +37,21 @@ download_bytes, pinned_now}`).
 `model_locks.json` appears only when `solvers.sample` draws the models (see
 [Configuration](Configuration#field-notes)). It pins the drawn set — the sample
 spec, the full universe and its content hash, and the resulting model ids — so
-later runs reuse the same models (a roster that drifts only warns; a changed
-sample spec — including `allocation`, `include`, or `where.released_after` —
-fails loudly). A command prints
+later runs reuse the same models (a roster that drifts only warns). Adding an
+itemeval version with a *new* sample field — e.g. `where.output_text_only`, or
+`allocation` / `include` — never invalidates an older lock: specs are compared
+normalized through the current schema, so an absent additive field defaults in.
+A *genuinely* changed spec (`n` / `seed` / `stratify_by` / `where` / …) hard-fails
+`generate` / `grade` (running a different panel than the one pinned would mix
+results — clear the lock to re-draw), but the read-only commands
+(`estimate` / `status` / `export --snapshot`) **warn and proceed on the pinned
+panel** (`spec_drift`), so a pinned study is always inspectable. A command prints
 `models: sampled N of M … — pinned in model_locks.json` on the first draw and a
-reuse line afterward; the same facts ride JSON as `model_sample`
+reuse line afterward (or `… — pinned panel` + a warning under spec drift); the
+same facts ride JSON as `model_sample`
 (`{source, universe_size, universe_hash, n, seed, stratify_by, allocation,
-include, models, pinned_now, universe_drift}`) on estimate/generate/grade/status,
-and are
+include, models, pinned_now, universe_drift, spec_drift}`) on
+estimate/generate/grade/status, and are
 recorded in each run manifest and `STUDY_CARD.md`.
 
 ## `solutions.parquet` (key: condition_id, item_id, epoch)

@@ -254,6 +254,18 @@ Closes: parallel-conditions
   additive field defaults in and compares equal, while a genuine change (n / seed
   / stratify_by / where / …) still fails loudly as before. The written lock format
   is unchanged.
+- **Read-only commands no longer brick when the sample spec genuinely changed.**
+  Building on the normalized comparison above: when `solvers.sample` is pinned and
+  the config's spec really did change since the pin (n / seed / stratify_by / where
+  / …), `estimate`, `status`, and `export --snapshot` now **warn and proceed on
+  the pinned panel** instead of exiting — a pinned study can always be inspected,
+  audited, or snapshotted, even mid-edit. The hard stop stays on the draw/write
+  path (`generate` / `grade`), where running a panel other than the pinned one
+  would mix results (clearing the lock there re-draws a *different* panel). The
+  text rendering prints `warning: solvers.sample spec differs from
+  model_locks.json — showing the pinned panel; clear model_locks.json to re-draw
+  at the current spec`, and an append-only `spec_drift` flag rides `model_sample`
+  in `--json`. Python: `prepare_study(allow_spec_drift=True)`.
 - **Non-reproducible routing aliases are no longer drawable in a `pricing-table`
   sample.** OpenRouter lists `-latest` / `:latest` and `~`-prefixed *variant
   routes* (e.g. `openrouter/~anthropic/claude-opus-latest`) that resolve to a

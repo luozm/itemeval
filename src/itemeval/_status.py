@@ -85,7 +85,10 @@ def _usd(series) -> float:
 
 
 def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) -> StatusReport:
-    prep = prep or prepare_study(config)
+    # status is read-only: inspect the pinned panel even if the sample spec drifted
+    # from the lock (the CLI passes a prep already prepared with this; the Python
+    # API path builds one here).
+    prep = prep or prepare_study(config, allow_spec_drift=True)
     solutions = _solutions.read_solutions(prep.paths)
     gradings = _gradings.read_gradings(prep.paths)
     ledger = _ledger.read_ledger(prep.paths)

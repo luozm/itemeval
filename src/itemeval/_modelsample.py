@@ -45,6 +45,10 @@ class ModelSampleResult(BaseModel):
     models: list[str]  # the drawn ids, sorted
     pinned_now: bool = False  # this run wrote model_locks.json
     universe_drift: bool = False  # universe changed since the pin (frozen draw stands)
+    # The config's sample spec changed since the pin, and a read-only command
+    # (estimate/status/snapshot) proceeded on the pinned panel anyway rather than
+    # bricking. The draw/write path (generate/grade) hard-fails instead.
+    spec_drift: bool = False
 
 
 class _LockSpec(BaseModel):
@@ -402,8 +406,38 @@ def _write_model_lock(
     atomic_write_bytes(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
 
 
+def _reuse_pinned_panel(config: ExperimentConfig, lock: dict) -> ModelSampleResult:
+    """Reuse the pinned panel verbatim, described from the *stored* spec — the
+    config's current sample spec differs (that's the drift), so the frozen draw in
+    the store is what a read-only command is inspecting. Read paths only; the
+    draw/write path hard-fails on a changed spec instead (clear the lock to
+    re-draw)."""
+    models = list(lock["models"])
+    config.solvers.models = models
+    stored = _normalized_spec(lock.get("sample")) or {}
+    return ModelSampleResult(
+        source=stored.get("source", "pricing-table"),
+        universe_size=len(lock.get("universe", models)),
+        universe_hash=lock.get("universe_hash", ""),
+        n=stored.get("n", len(models)),
+        seed=stored.get("seed", 0),
+        stratify_by=stored.get("stratify_by"),
+        allocation=stored.get("allocation", "proportional"),
+        include=stored.get("include", []),
+        exclude=stored.get("exclude", []),
+        models=models,
+        pinned_now=False,
+        universe_drift=False,  # a changed spec supersedes the universe comparison
+        spec_drift=True,
+    )
+
+
 def resolve_model_sample(
-    config: ExperimentConfig, pricing: PricingTable, locks_path: Path
+    config: ExperimentConfig,
+    pricing: PricingTable,
+    locks_path: Path,
+    *,
+    allow_spec_drift: bool = False,
 ) -> "ModelSampleResult | None":
     """Resolve `solvers.sample`: draw or reuse the pinned set, mutate
     `config.solvers.models` to it, return the provenance (None when no sample).
@@ -412,44 +446,63 @@ def resolve_model_sample(
     set unchanged. The config then holds both `models` and `sample`, which the
     load-time XOR validator forbids — but assignment never re-validates (pydantic
     `validate_assignment` is off) and nothing re-validates the resolved config.
+
+    `allow_spec_drift` is set by read-only commands (estimate/status/snapshot):
+    when the config's sample spec no longer matches the pin — or no longer even
+    builds a universe — they proceed on the pinned panel (flagged `spec_drift`)
+    rather than bricking. The draw/write path (generate/grade) leaves it False, so
+    a real spec change still hard-fails there (clearing the lock would re-draw a
+    different panel over the pinned one).
     """
     sample = config.solvers.sample
     if sample is None:
         return None
 
-    source, universe = _build_universe(sample, pricing, config._input_base)
-    # include pins are counted against n; the random draw fills the rest from
-    # universe \ include, so the fill (not n) must fit the non-included pool.
-    fill_needed = sample.n - len(sample.include)
-    fill_pool_size = len(set(universe) - set(sample.include))
-    if fill_needed > fill_pool_size:
-        reasons = []
-        if sample.where is not None:
-            reasons.append("the where filter may be too tight")
-        if sample.include:
-            reasons.append(f"include reserves {len(sample.include)} of n")
-        tail = f" ({'; '.join(reasons)})" if reasons else ""
-        raise ConfigError(
-            f"solvers.sample.n ({sample.n}) exceeds the {len(universe)}-model "
-            f"universe available to draw{tail}"
-        )
-    universe_hash = sha256_hex(canonical_json(universe).encode("utf-8"))[:12]
-    # Built (and compared) through _LockSpec so additive fields normalize — see
-    # _LockSpec for why a raw dict here would re-introduce the lock-spec brick.
-    spec = _LockSpec(
-        source=source,
-        n=sample.n,
-        seed=sample.seed,
-        stratify_by=sample.stratify_by,
-        allocation=sample.allocation,
-        include=sorted(sample.include),
-        exclude=sorted(sample.exclude),
-        where=sample.where,
-    ).model_dump()
-
     lock = read_model_lock(locks_path)
+
+    # Building the universe / spec can itself raise on a changed config (a where
+    # that now empties the roster, a missing universe file, an offline roster). A
+    # read-only command with an existing pin must still be inspectable, so fall
+    # back to the pinned panel instead of letting that brick it.
+    try:
+        source, universe = _build_universe(sample, pricing, config._input_base)
+        # include pins are counted against n; the random draw fills the rest from
+        # universe \ include, so the fill (not n) must fit the non-included pool.
+        fill_needed = sample.n - len(sample.include)
+        fill_pool_size = len(set(universe) - set(sample.include))
+        if fill_needed > fill_pool_size:
+            reasons = []
+            if sample.where is not None:
+                reasons.append("the where filter may be too tight")
+            if sample.include:
+                reasons.append(f"include reserves {len(sample.include)} of n")
+            tail = f" ({'; '.join(reasons)})" if reasons else ""
+            raise ConfigError(
+                f"solvers.sample.n ({sample.n}) exceeds the {len(universe)}-model "
+                f"universe available to draw{tail}"
+            )
+        universe_hash = sha256_hex(canonical_json(universe).encode("utf-8"))[:12]
+        # Built (and compared) through _LockSpec so additive fields normalize — see
+        # _LockSpec for why a raw dict here would re-introduce the lock-spec brick.
+        spec = _LockSpec(
+            source=source,
+            n=sample.n,
+            seed=sample.seed,
+            stratify_by=sample.stratify_by,
+            allocation=sample.allocation,
+            include=sorted(sample.include),
+            exclude=sorted(sample.exclude),
+            where=sample.where,
+        ).model_dump()
+    except ConfigError:
+        if lock is not None and allow_spec_drift:
+            return _reuse_pinned_panel(config, lock)
+        raise
+
     if lock is not None:
         if _normalized_spec(lock.get("sample")) != spec:
+            if allow_spec_drift:
+                return _reuse_pinned_panel(config, lock)
             raise ConfigError(
                 f"solvers.sample spec changed since {locks_path.name} was written "
                 f"(was {lock.get('sample')}, now {spec}) — clear {locks_path.name} to "

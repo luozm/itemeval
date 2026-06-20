@@ -156,9 +156,12 @@ Key config rules that bite agents (full reference:
   (`pricing-table` / a file of ids / an inline list) under a `seed`, optionally
   shaped by `stratify_by` / `allocation` / `include` (pin must-haves) / `where`.
   The draw is **pinned** in `model_locks.json` beside the study: re-runs reuse
-  it, a drifting roster only **warns** (the pin stands), but changing the sample
-  spec **fails loudly** — delete `model_locks.json` to re-draw (a user-level
-  decision, like a budget bump; existing solutions for dropped models stay). A
+  it, a drifting roster only **warns** (the pin stands), and changing the sample
+  spec **fails loudly on `generate`/`grade`** — delete `model_locks.json` to
+  re-draw (a user-level decision, like a budget bump; existing solutions for
+  dropped models stay). Read-only commands (`estimate`/`status`) don't fail on
+  that mismatch — they warn (`model_sample.spec_drift: true` in `--json`) and
+  inspect the pinned panel, so you can still read a study whose spec you edited. A
   `pricing-table` universe needs a fresh table (`estimate --refresh-pricing`)
   first. The sampled `openrouter/*` id is the model's identity everywhere
   (condition ids, the `model` column, the lock). See

@@ -75,6 +75,7 @@ def prepare_study(
     *,
     refresh_pricing_table: bool = False,
     policy: "str | None" = None,
+    allow_spec_drift: bool = False,
 ) -> PreparedStudy:
     if policy is not None and policy not in POLICY_CHOICES:
         raise ConfigError(f"invalid policy {policy!r} (choose from {', '.join(POLICY_CHOICES)})")
@@ -132,7 +133,11 @@ def prepare_study(
         # maybe_refresh returns the same object on a no-op; a new one means it refreshed.
         pricing_refreshed = pricing is not loaded
 
-    model_sample = resolve_model_sample(config, pricing, paths.model_locks)
+    # Read-only commands (estimate/status/snapshot) tolerate a sample spec that
+    # drifted from the pin and inspect the pinned panel; generate/grade hard-fail.
+    model_sample = resolve_model_sample(
+        config, pricing, paths.model_locks, allow_spec_drift=allow_spec_drift
+    )
     grid = expand_grid(config, solver_templates, rubric_templates, build_templates)
     # Native batch routing decided once here (resume-safe): solvers.models is now
     # final (post-sample). active = eligible gated by batch + the opt-in knob.

@@ -233,6 +233,49 @@ def test_additive_lock_fields_do_not_brick_reuse(tmp_path):
     assert res2.models == res1.models
 
 
+def test_read_only_tolerates_genuine_spec_change(tmp_path):
+    """L2: a *genuine* sample-spec change hard-fails the draw/write path
+    (generate/grade) as before, but read-only commands (estimate/status/snapshot)
+    must still inspect the pinned panel — `allow_spec_drift=True` warns and
+    proceeds on the frozen draw rather than bricking, and flags `spec_drift`."""
+    lock = tmp_path / "model_locks.json"
+    res1 = resolve_model_sample(
+        _cfg({"n": 2, "seed": 5, "universe": "pricing-table"}), ROSTER, lock
+    )
+    assert res1.pinned_now
+
+    changed = _cfg({"n": 3, "seed": 5, "universe": "pricing-table"})  # n: 2 -> 3, a real change
+    with pytest.raises(ConfigError, match="spec changed"):  # write/draw path still fails loud
+        resolve_model_sample(changed, ROSTER, lock)
+
+    changed = _cfg({"n": 3, "seed": 5, "universe": "pricing-table"})  # fresh cfg (models mutated)
+    res2 = resolve_model_sample(changed, ROSTER, lock, allow_spec_drift=True)
+    assert res2.spec_drift and not res2.pinned_now
+    assert res2.models == res1.models  # the pinned 2-model panel, not a 3-model redraw
+    assert res2.n == 2  # described from the STORED spec (the panel in use), not the new n=3
+    assert changed.solvers.models == res1.models  # config mutated to the pinned panel
+
+
+def test_read_only_tolerates_unbuildable_universe(tmp_path):
+    """A read path falls back to the pinned panel even when the *current* config no
+    longer builds a universe at all (a where that now excludes everything, or an
+    offline/stale roster) — the pinned panel is what's being inspected."""
+    lock = tmp_path / "model_locks.json"
+    res1 = resolve_model_sample(
+        _cfg({"n": 2, "seed": 1, "universe": "pricing-table"}), ROSTER, lock
+    )
+    empty = {  # a price ceiling that drops every model -> _build_universe raises
+        "n": 2,
+        "seed": 1,
+        "universe": "pricing-table",
+        "where": {"max_output_usd_per_mtok": 0.01},
+    }
+    with pytest.raises(ConfigError):  # write path: the empty universe is fatal
+        resolve_model_sample(_cfg(empty), ROSTER, lock)
+    res2 = resolve_model_sample(_cfg(empty), ROSTER, lock, allow_spec_drift=True)
+    assert res2.spec_drift and res2.models == res1.models
+
+
 def test_file_universe(tmp_path):
     ids_file = tmp_path / "models.txt"
     ids_file.write_text("# my shortlist\nm/a\n\nm/b\nm/c\n")
@@ -288,6 +331,43 @@ def test_prepare_surfaces_sample_end_to_end(tmp_path, offline_adapter):
     prep2 = prepare_study(load_config(write_study_files(tmp_path, sample_yaml)))
     assert not prep2.model_sample.pinned_now
     assert prep2.config.solvers.models == drawn
+
+
+def test_prepare_read_only_tolerates_spec_change_end_to_end(tmp_path, offline_adapter):
+    """L2 through prepare_study: after a genuine sample-spec change, generate/grade
+    (default) hard-fails while a read-only command (allow_spec_drift) inspects the
+    pinned panel — config mutated to it and the grid built from it."""
+    from conftest import TEST_CONFIG_YAML, write_study_files
+
+    from itemeval._config import load_config
+    from itemeval._prepare import prepare_study
+
+    def _yaml(n: int) -> str:
+        return TEST_CONFIG_YAML.replace(
+            "  models: [mockllm/solver-a, mockllm/solver-b]",
+            f"  sample:\n    n: {n}\n    seed: 7\n"
+            "    universe: [mockllm/solver-a, mockllm/solver-b, mockllm/solver-c]",
+        )
+
+    prep = prepare_study(load_config(write_study_files(tmp_path, _yaml(2))))  # pins a 2-model panel
+    pinned = list(prep.config.solvers.models)
+    assert len(pinned) == 2
+
+    with pytest.raises(ConfigError, match="spec changed"):  # write path: n 2->3 is fatal
+        prepare_study(load_config(write_study_files(tmp_path, _yaml(3))))
+
+    prep2 = prepare_study(load_config(write_study_files(tmp_path, _yaml(3))), allow_spec_drift=True)
+    assert prep2.model_sample.spec_drift
+    assert prep2.config.solvers.models == pinned  # the pinned 2-model panel, not a 3-model redraw
+    assert {c.model for c in prep2.grid.generate} == set(pinned)  # grid built from the pinned panel
+
+    # Python-surface parity: build_status(config) without a prep is read-only too —
+    # it must inspect the pinned panel, not brick, after the spec change.
+    from itemeval._status import build_status
+
+    report = build_status(load_config(write_study_files(tmp_path, _yaml(3))))
+    assert report.model_sample.spec_drift
+    assert {c.detail["model"] for c in report.generate} == set(pinned)
 
 
 def test_prepare_auto_refreshes_schema_stale_cache_for_pricing_table(
@@ -372,6 +452,15 @@ def test_model_sample_provenance_line(capsys):
     _print_model_sample(SimpleNamespace(model_sample=reused))
     out = capsys.readouterr().out
     assert "reused from model_locks.json" in out and "universe changed" in out
+
+    # spec_drift (read-only command on a study whose spec changed): pinned panel
+    # shown + a warning pointing at the re-draw.
+    drifted = ms.model_copy(update={"pinned_now": False, "spec_drift": True})
+    _print_model_sample(SimpleNamespace(model_sample=drifted))
+    out = capsys.readouterr().out
+    assert "pinned panel" in out
+    assert "warning: solvers.sample spec differs from model_locks.json" in out
+    assert "clear model_locks.json to re-draw" in out
 
     _print_model_sample(SimpleNamespace(model_sample=None))  # no sample -> silent
     assert capsys.readouterr().out == ""
