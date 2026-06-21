@@ -46,13 +46,20 @@ def _clean_solution(solution: "str | None") -> str:
 
 
 def _render_values(item: Item, solution: str, rubric_text: "str | None" = None) -> dict:
-    values = {
-        "input": item.input,
-        "solution": solution,
-        "target": item.target,
-        "grading_scheme": item.grading_scheme or "",
-        "id": item.id,
-    }
+    # Per-item metadata columns (mapping.metadata) are exposed to rubric templates
+    # as {colname} — e.g. a second frozen per-item grading scheme alongside the
+    # canonical {grading_scheme}. Listed first so the canonical fields below always
+    # win on a name collision. Values are stringified (render_template needs str).
+    values = {k: "" if v is None else str(v) for k, v in (item.metadata or {}).items()}
+    values.update(
+        {
+            "input": item.input,
+            "solution": solution,
+            "target": item.target,
+            "grading_scheme": item.grading_scheme or "",
+            "id": item.id,
+        }
+    )
     # Two-stage materialization: fill {rubric} with the frozen per-item rubric.
     # None means a plain (non-materializing) rubric, which has no {rubric}.
     if rubric_text is not None:

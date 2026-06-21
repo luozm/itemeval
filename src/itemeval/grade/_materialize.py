@@ -26,12 +26,18 @@ def materialize_id(build_template: Template, model: str) -> str:
 
 
 def _render_values(item: Item) -> dict:
-    return {
-        "input": item.input,
-        "target": item.target,
-        "grading_scheme": item.grading_scheme or "",
-        "id": item.id,
-    }
+    # Per-item metadata columns (mapping.metadata) are exposed to the build
+    # template as {colname}; canonical fields below win on a name collision.
+    values = {k: "" if v is None else str(v) for k, v in (item.metadata or {}).items()}
+    values.update(
+        {
+            "input": item.input,
+            "target": item.target,
+            "grading_scheme": item.grading_scheme or "",
+            "id": item.id,
+        }
+    )
+    return values
 
 
 def build_materialize_input(item: Item, build_template: Template) -> str:

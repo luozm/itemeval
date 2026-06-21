@@ -202,8 +202,13 @@ def test_generate_one_condition_failure_isolated(study):
 
 def _corrupt_to_soft_failure(prep, *, n=1):
     """Overwrite the first `n` stored solution rows into soft failures (HTTP 200 +
-    finish=error, blank text) — the output-validity-reroute detection target."""
-    from itemeval.store._solutions import read_solutions, upsert_solutions
+    finish=error, blank text) — the output-validity-reroute detection target.
+
+    Direct-writes (not `upsert_solutions`): the quality-preferring merge would
+    refuse to downgrade the existing good row to a blank soft failure."""
+    from conftest import force_write_solutions
+
+    from itemeval.store._solutions import read_solutions
 
     df = read_solutions(prep.paths)
     rows = []
@@ -213,7 +218,7 @@ def _corrupt_to_soft_failure(prep, *, n=1):
         bad["native_finish_reason"] = "error"
         bad["served_provider"] = "BadCo"
         rows.append(bad)
-    upsert_solutions(prep.paths, rows)
+    force_write_solutions(prep, rows)
     return rows
 
 

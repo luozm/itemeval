@@ -99,7 +99,15 @@ def read_solutions(paths: StudyPaths) -> pd.DataFrame:
 
 
 def upsert_solutions(paths: StudyPaths, rows: "list[dict]") -> int:
-    return upsert_parquet(paths.solutions, rows, SOLUTION_KEY, SOLUTIONS_SCHEMA)
+    return upsert_parquet(
+        paths.solutions,
+        rows,
+        SOLUTION_KEY,
+        SOLUTIONS_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+        content_col="solution",
+    )
 
 
 def empty_solution_mask(df: pd.DataFrame) -> pd.Series:

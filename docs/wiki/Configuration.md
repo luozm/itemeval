@@ -22,7 +22,7 @@ rubrics_dir: rubrics           # local rubric templates at <config dir>/<rubrics
 cache: true                    # inspect local response cache, both stages
 
 benchmark:
-  adapter: hf                  # only "hf" in v0.1
+  adapter: hf                  # "hf" (Hub) or "local" (a parquet/json file on disk, see below)
   datasets:                    # one or more; item ids must be unique across all
     - id: MathArena/usamo_2025
       revision: 0a2c60f2...    # optional commit SHA/tag; omit to pin at first run
@@ -34,7 +34,7 @@ benchmark:
     id: problem_idx            # optional; default: row index. column | [segments] | "{template}" (see Composite item ids)
     target: sample_solution    # optional; default ""
     grading_scheme: grading_scheme   # optional; non-strings stored as canonical JSON
-    metadata: [points]         # optional columns copied into Item.metadata
+    metadata: [points]         # optional columns copied into Item.metadata AND exposed to templates (see below)
 
 solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5]  # inspect model ids, unique
@@ -254,6 +254,20 @@ budget:
   contain `{input}` and `{solution}` (optional `{target}`, `{grading_scheme}`,
   `{id}`). Rendering replaces only known placeholders — LaTeX/JSON braces in
   templates and item text are safe.
+- **Per-item metadata in templates.** Every `mapping.metadata` column is also
+  exposed to rubric and build templates as `{colname}` (stringified; canonical
+  fields like `{input}`/`{grading_scheme}` win on a name collision). This lets a
+  rubric reference a **second per-item grading scheme** alongside the built-in
+  `{grading_scheme}` — e.g. carry one human scheme in `grading_scheme` and a
+  frozen second scheme in a `proofbench_scheme` metadata column, each read by a
+  different rubric in the same crossed study.
+- **Local datasets (`adapter: local`).** Point `datasets[].id` at a local
+  `.parquet` / `.json` / `.jsonl` file (absolute, or relative to the working
+  directory — the same base as `studies/`) instead of a Hub id. There is no Hub
+  revision, so the lock pins the file's **content hash**; a changed file is
+  detected and refused (delete the dataset's `dataset_locks.json` entry to
+  re-pin). `mapping` and `metadata` behave exactly as for `hf`. Useful for a
+  dataset you build yourself (e.g. a join of two public datasets).
 - **`policy: dev`** trims the run to the first `dev_items` items and forces
   batch off — the recommended default until your pipeline looks right.
 - **`batch: auto`** enables batch-API mode only under `policy: full-batch`

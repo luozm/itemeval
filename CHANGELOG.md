@@ -7,6 +7,21 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Per-item metadata exposed to templates**: every `mapping.metadata` column is now
+  rendered into rubric and build templates as `{colname}` (stringified; canonical
+  fields like `{input}`/`{grading_scheme}` win on a name collision). Lets a rubric
+  reference a **second per-item grading scheme** alongside the built-in
+  `{grading_scheme}` — e.g. one human scheme in `grading_scheme` and a frozen second
+  scheme in a metadata column, each read by a different rubric in one crossed study.
+
+  Closes: metadata-in-templates
+- **Local dataset adapter** (`adapter: local`): load a benchmark from a local
+  `.parquet`/`.json`/`.jsonl` file (path absolute or relative to CWD) instead of the
+  Hub. No Hub revision, so the lock pins the file's **content hash**; a changed file
+  is detected and refused until re-pinned. `mapping`/`metadata` behave as for `hf`.
+  Useful for a dataset you build yourself (e.g. a join of two public datasets).
+
+  Closes: local-adapter
 - **Provider-aware reroute for soft failures** (`output-validity-reroute`): a new
   opt-in knob `solvers.max_reroutes` (int, default `None` = off) makes `generate`
   automatically re-issue a **soft-failed** solution — one that completed with no API
@@ -533,6 +548,31 @@ Closes: recovery-run-identity
 Closes: parallel-conditions
 
 ### Fixed
+- **Recoverable-harvest no longer reverts a recovered solution to a stale older
+  attempt.** The store upsert (`upsert_parquet`) deduped on the content key
+  (`condition_id,item_id,epoch` for solutions; the grade quad for gradings) with
+  plain `keep="last"` and **no recency guard**, while the harvest re-projects every
+  *unharvested* `.eval` — and a cell overwritten by a later attempt makes its own
+  log look unharvested again. The two combined into an **oscillation**: an
+  attempt-N error row re-applied by a `status`/`export`/`generate` harvest would
+  clobber the attempt-(N+1) *recovered* solution for the same cell, then the
+  newer log re-harvested and clobbered back, flipping the row's validity by
+  processing order (observed: `claude-sonnet-4.6`/`deepseek-v4-pro` proofs
+  recovered on a timeout-bump retry silently reverting to the earlier
+  `AttemptTimeoutError` rows, so `grade` saw them as errored and skipped them —
+  paid, valid work dropped). Fix: `upsert_parquet` resolves each content key by a
+  **quality order that outranks recency** — `recency_col` (`"attempt"`), plus
+  `error_col`/`content_col` so the surviving row is **valid (no error, non-blank)
+  > empty (no error, blank) > error**, ties broken by highest attempt. Recency
+  alone was insufficient: a cell can hold a valid and a degraded row at the *same*
+  attempt (two `.eval` logs of one attempt — one that produced the solution, one
+  that timed out / 404'd / came back blank), or a *later* retry can error/blank
+  after an earlier one succeeded (a single-provider backend flipping valid↔404
+  across retries); plain recency lets the worse row win and the harvest flips the
+  cell's validity by re-application order. Ranking quality first makes the
+  surviving state deterministic and monotonic — a recovered solution is never
+  erased by a later infra failure or blank. No data was lost (recovered rows live
+  in the append-only `.eval` logs); a single post-fix harvest restores them.
 - **`solvers.attempt_timeout` no longer retries a stalled call forever.** inspect
   abandons a timed-out attempt and retries it "according to `max_retries`" — but
   with neither `max_retries` nor a total timeout set (itemeval set neither), its

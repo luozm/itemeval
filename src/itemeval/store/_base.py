@@ -57,15 +57,67 @@ def _coerce_to_schema(df: pd.DataFrame, schema: pa.Schema) -> pd.DataFrame:
 
 
 def upsert_parquet(
-    path: Path, rows: "list[dict] | pd.DataFrame", key: "list[str]", schema: pa.Schema
+    path: Path,
+    rows: "list[dict] | pd.DataFrame",
+    key: "list[str]",
+    schema: pa.Schema,
+    *,
+    recency_col: "str | None" = None,
+    error_col: "str | None" = None,
+    content_col: "str | None" = None,
 ) -> int:
-    """Concat new rows over existing, dedup on key keeping last, write atomically."""
+    """Concat new rows over existing, dedup on key keeping last, write atomically.
+
+    With `recency_col` set (e.g. ``"attempt"``), the surviving row per key is the
+    one with the **highest** recency value, not merely the last written. This is
+    what keeps a re-applied *older* attempt from clobbering a newer one: the
+    recoverable-harvest re-reads crashed `.eval` logs and re-upserts their rows
+    as "new", so without a recency guard a stale attempt-N error row would
+    overwrite an attempt-(N+1) recovered solution for the same content key (the
+    key never includes `attempt`). A stable sort on `recency_col` lands the
+    highest attempt last so `keep="last"` preserves it.
+
+    `error_col` and `content_col` together impose a **quality** order that
+    outranks recency, so the surviving row per key is the best-quality one rather
+    than merely the newest: **valid (no error, non-blank content) > empty (no
+    error, blank content) > error (non-null `error_col`)**, ties broken by
+    `recency_col`. Recency alone is insufficient when one key has rows of
+    different quality at the *same* attempt (two `.eval` logs of one attempt — one
+    that produced the solution, one that timed out / 404'd / came back blank), or
+    when a *later* retry errors or blanks after an earlier attempt succeeded (a
+    single-provider backend flipping valid↔404 across retries): plain recency lets
+    the worse row win and the harvest flips the cell's validity by re-application
+    order. Ranking quality first makes the surviving state deterministic and
+    monotonic — a recovered solution is never erased by a later infra failure or
+    blank."""
     df_new = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(rows)
     if df_new.empty:
         return 0
     existing = read_parquet_or_empty(path, schema)
     df = df_new if existing.empty else pd.concat([existing, df_new], ignore_index=True)
+    # Sort so the row to KEEP per key lands last (drop_duplicates keep="last"):
+    # no-error outranks error, then non-blank content outranks blank, then highest
+    # recency. sort_values is ascending, so False(worse) precedes True(better).
+    sort_cols: list[str] = []
+    tmp_cols: list[str] = []
+    if error_col is not None and error_col in df.columns:
+        df = df.assign(_ie_ok=df[error_col].isna())
+        sort_cols.append("_ie_ok")
+        tmp_cols.append("_ie_ok")
+    if content_col is not None and content_col in df.columns:
+        df = df.assign(
+            _ie_content=df[content_col].notna()
+            & (df[content_col].fillna("").astype(str).str.strip() != "")
+        )
+        sort_cols.append("_ie_content")
+        tmp_cols.append("_ie_content")
+    if recency_col is not None and recency_col in df.columns:
+        sort_cols.append(recency_col)
+    if sort_cols:
+        df = df.sort_values(sort_cols, kind="mergesort")
     df = df.drop_duplicates(subset=key, keep="last")
+    if tmp_cols:
+        df = df.drop(columns=tmp_cols)
     df = df.sort_values(key, kind="mergesort", ignore_index=True)
     try:
         df = _coerce_to_schema(df, schema)

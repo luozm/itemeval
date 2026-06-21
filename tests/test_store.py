@@ -48,6 +48,170 @@ def test_upsert_dedups_keeping_last(tmp_path):
     assert row_a["count"] == 2 and row_a["note"] == "new"
 
 
+REC_SCHEMA = pa.schema(
+    [
+        pa.field("k", pa.string(), nullable=False),
+        pa.field("epoch", pa.int32(), nullable=False),
+        pa.field("attempt", pa.int32(), nullable=False),
+        pa.field("note", pa.string()),
+    ]
+)
+
+ERR_SCHEMA = pa.schema(
+    [
+        pa.field("k", pa.string(), nullable=False),
+        pa.field("epoch", pa.int32(), nullable=False),
+        pa.field("attempt", pa.int32(), nullable=False),
+        pa.field("error", pa.string()),
+        pa.field("note", pa.string()),
+    ]
+)
+
+
+def test_error_pref_nonerror_wins_same_attempt(tmp_path):
+    """Two rows at the SAME attempt — one valid, one error — must resolve to the
+    valid one regardless of write order (the harvest-oscillation case)."""
+    path = tmp_path / "t.parquet"
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "error": None, "note": "ok"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "error": "Timeout", "note": "err"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1 and df.iloc[0]["note"] == "ok" and pd.isna(df.iloc[0]["error"])
+
+
+def test_error_pref_later_error_does_not_clobber_earlier_success(tmp_path):
+    """A *higher-attempt* error must not erase an earlier recovered solution
+    (single-provider backend flips valid→404 on retry)."""
+    path = tmp_path / "t.parquet"
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "error": None, "note": "valid"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 7, "error": "404", "note": "later-err"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1 and df.iloc[0]["note"] == "valid"
+
+
+def test_quality_pref_valid_beats_empty_same_attempt(tmp_path):
+    """valid (non-blank) > empty (blank) at the same attempt, either write order —
+    the case the error-only rule missed (empty is also error-null)."""
+    path = tmp_path / "t.parquet"
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "error": None, "note": "a real proof"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+        content_col="note",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "error": None, "note": ""}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+        content_col="note",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1 and df.iloc[0]["note"] == "a real proof"
+
+
+def test_error_pref_higher_attempt_success_still_wins(tmp_path):
+    """Among non-error rows, the highest attempt still wins (recency intact)."""
+    path = tmp_path / "t.parquet"
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 5, "error": None, "note": "old-ok"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 7, "error": None, "note": "new-ok"}],
+        KEY,
+        ERR_SCHEMA,
+        recency_col="attempt",
+        error_col="error",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1 and df.iloc[0]["note"] == "new-ok"
+
+
+def test_recency_upsert_keeps_highest_attempt_regardless_of_write_order(tmp_path):
+    """A re-applied *older* attempt must never clobber a newer one (the
+    recoverable-harvest re-upserts crashed `.eval` rows as 'new'). With
+    recency_col='attempt' the highest attempt per key always survives, even when
+    written last."""
+    path = tmp_path / "t.parquet"
+    # attempt 7 lands a valid row first, then a stale attempt-6 error re-applies.
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 7, "note": "valid"}],
+        KEY,
+        REC_SCHEMA,
+        recency_col="attempt",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 6, "note": "stale-error"}],
+        KEY,
+        REC_SCHEMA,
+        recency_col="attempt",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1
+    assert df.iloc[0]["attempt"] == 7 and df.iloc[0]["note"] == "valid"
+
+
+def test_recency_upsert_same_attempt_lets_new_win(tmp_path):
+    """Within equal recency the genuine rewrite (written later) still wins."""
+    path = tmp_path / "t.parquet"
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 3, "note": "old"}],
+        KEY,
+        REC_SCHEMA,
+        recency_col="attempt",
+    )
+    upsert_parquet(
+        path,
+        [{"k": "a", "epoch": 1, "attempt": 3, "note": "new"}],
+        KEY,
+        REC_SCHEMA,
+        recency_col="attempt",
+    )
+    df = pd.read_parquet(path)
+    assert len(df) == 1 and df.iloc[0]["note"] == "new"
+
+
 def test_upsert_int_roundtrip_with_nulls(tmp_path):
     path = tmp_path / "t.parquet"
     upsert_parquet(

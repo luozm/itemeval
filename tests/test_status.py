@@ -35,7 +35,7 @@ def test_status_after_full_pipeline(study):
 
 def _seed_one_empty_condition(prep):
     """Seed one gen condition with item 1 blank (no error), item 2 gradable."""
-    from itemeval.store._solutions import upsert_solutions
+    from conftest import force_write_solutions
 
     cond = prep.grid.generate[0]
     rows = []
@@ -64,7 +64,7 @@ def _seed_one_empty_condition(prep):
                     "created_at": "t0",
                 }
             )
-    upsert_solutions(prep.paths, rows)
+    force_write_solutions(prep, rows)
     return cond
 
 
@@ -83,7 +83,7 @@ def _seed_truncation_mix(prep):
     """Seed one gen condition (2 items x 2 epochs) with a mix of stop reasons:
     a non-empty max_tokens (truncated), a non-empty model_length (truncated), an
     empty max_tokens (empty/incomplete — NOT truncated), and a clean stop."""
-    from itemeval.store._solutions import upsert_solutions
+    from conftest import force_write_solutions
 
     cond = prep.grid.generate[0]
     cases = {
@@ -118,7 +118,7 @@ def _seed_truncation_mix(prep):
                     "created_at": "t0",
                 }
             )
-    upsert_solutions(prep.paths, rows)
+    force_write_solutions(prep, rows)
     return cond
 
 
