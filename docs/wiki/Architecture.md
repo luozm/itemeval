@@ -30,7 +30,7 @@ consolidation — kept separate for clarity/test-ownership, not necessity.
 | `_util.py` | 46 | Canonical JSON + sha256 (condition ids, manifests), atomic writes, the token heuristic. Used by nearly every module. |
 | `_item.py` ◆ | 29 | The canonical `Item` model — the interface between adapters and both stages. Could live in `_config.py`; separate because it's exported. |
 
-### Feature 1 — benchmark adapters (`adapters/`, ~180 lines)
+### Feature 1 — benchmark adapters (`adapters/`, ~400 lines)
 
 inspect_ai's `hf_dataset()` loads rows into `Sample`s for one eval; it has no
 revision-pinning policy, no lock file, no `grading_scheme`/metadata mapping
@@ -38,8 +38,9 @@ contract, no cross-dataset id-uniqueness check.
 
 | Module | Lines | Why |
 |---|---|---|
-| `_base.py` | 98 | Adapter protocol + registry (ROADMAP post-0.1: github/local adapters), `dataset_locks.json` ("revision pinned at first run"), multi-dataset orchestration. |
-| `_hf.py` | 85 | The one concrete adapter: `datasets.load_dataset(revision=...)` + the exact column→Item mapping rules. |
+| `_base.py` | 146 | Adapter protocol + registry (`hf` + `local`; `github` still on ROADMAP), `dataset_locks.json` ("revision pinned at first run"), multi-dataset orchestration. |
+| `_hf.py` | 157 | The Hub adapter: `datasets.load_dataset(revision=...)` + the exact column→Item mapping rules (`_record_to_item`, reused by `_local.py`). |
+| `_local.py` | 93 | The on-disk adapter: a `.parquet`/`.json`/`.jsonl` file pinned by content hash (no Hub revision), reusing `_hf.py`'s `_record_to_item`. |
 
 ### Feature 2 — design grids (`design/`, ~200 lines)
 

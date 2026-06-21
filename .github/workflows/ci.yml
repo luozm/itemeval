@@ -59,9 +59,10 @@ jobs:
         run: uv sync --locked
 
       # Offline doc/version/config-example consistency (make docs-check). A full
-      # end-to-end CLI smoke on mockllm is intentionally NOT here yet: every
-      # shipped dataset path is HF (needs network), so an end-to-end run can't
-      # stay in this hermetic lane until the `local-adapter` feature (0.3) adds
-      # an offline dataset source.
+      # end-to-end CLI smoke on mockllm is intentionally NOT here yet: until
+      # `local-adapter` (shipped 0.3) there was no network-free dataset source to
+      # run one against. That source now exists, so a hermetic smoke is finally
+      # possible; building it is the deferred follow-on tracked in
+      # docs/plans/dev-framework.md (W2).
       - name: Docs consistency
         run: make docs-check

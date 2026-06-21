@@ -55,7 +55,8 @@ else in ROADMAP is kept honest by the release checklist, not a regex.
 
 **Locked decisions:** Makefile (not just); scheduled-PR for dependency updates
 (not Renovate); `docs/BACKLOG.md` name; `**Key:** \`slug\`` markers; hermetic
-CI end-to-end smoke deferred until `local-adapter` (over caching a Hub dataset).
+CI end-to-end smoke (over caching a Hub dataset) — its blocker `local-adapter`
+has shipped, so it is now buildable; still deferred in W2.
 
 ---
 
@@ -119,10 +120,12 @@ Buildable items SHIPPED 2026-06-15; two items deferred to external triggers.
   consuming study being a wired-up sibling repo; it lives in a separate repo, so
   this can't be built or tested hermetically from here. Revisit when that repo
   is ready to call a published wheel in its own CI.
-- **Hermetic end-to-end CLI smoke** (DEFERRED) — ships with `local-adapter`
-  (mock models + committed JSONL fixture, zero network); see that BACKLOG entry
-  (`local-adapter` "CI follow-on") and the `ci.yml` note. Tracked there, not
-  here.
+- **Hermetic end-to-end CLI smoke** (DEFERRED, now unblocked) — a mockllm
+  end-to-end CLI run over a committed JSONL fixture, zero network. Its blocker —
+  a network-free dataset source — shipped as `local-adapter`; the smoke itself
+  was deliberately not built with it (see that feature's design record,
+  `docs/plans/archive/local-adapter.md`, Out-of-scope) and the `ci.yml` note.
+  Build when CI offline e2e coverage is wanted.
 
 **Deliberately NOT building** (CLAUDE.md "don't over-engineer"): a generated
 docs site, a custom doc DSL, per-sentence doc tests, branch protection while
@@ -157,13 +160,15 @@ the skills form for its invocation control.)
 W0 done. W1 done (one commit per piece: pre-commit · snapshot tests · Claude
 hook). W2 buildable items done (one commit per piece: key check · dependabot ·
 CONTRIBUTING · templates); the two deferred items land when their external
-trigger does (`local-adapter` for the hermetic smoke; a wired consuming repo for
-the downstream smoke). After each step: `make check` green; CHANGELOG/docs
-updated in the same commit.
+trigger does — the hermetic smoke is now unblocked (`local-adapter` shipped) and
+awaits only the build; the downstream smoke still waits on a wired consuming
+repo. After each step: `make check` green; CHANGELOG/docs updated in the same
+commit.
 
 ## Out of scope (tracked elsewhere)
 
-- The hermetic e2e smoke — on `local-adapter` in `docs/BACKLOG.md`.
+- The hermetic e2e smoke — now owned by W2 above (deferred); the shipped
+  blocker's design record is `docs/plans/archive/local-adapter.md`.
 - The scheduled upgrade PR detail — `docs/plans/archive/upgrade-automation.md`
   (implemented; archived).
 - The PyPI approval gate — `docs/BACKLOG.md` (`pypi-approval-gate`).
