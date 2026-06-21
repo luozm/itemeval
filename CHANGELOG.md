@@ -533,6 +533,31 @@ Closes: recovery-run-identity
 Closes: parallel-conditions
 
 ### Fixed
+- **Recoverable-harvest no longer reverts a recovered solution to a stale older
+  attempt.** The store upsert (`upsert_parquet`) deduped on the content key
+  (`condition_id,item_id,epoch` for solutions; the grade quad for gradings) with
+  plain `keep="last"` and **no recency guard**, while the harvest re-projects every
+  *unharvested* `.eval` — and a cell overwritten by a later attempt makes its own
+  log look unharvested again. The two combined into an **oscillation**: an
+  attempt-N error row re-applied by a `status`/`export`/`generate` harvest would
+  clobber the attempt-(N+1) *recovered* solution for the same cell, then the
+  newer log re-harvested and clobbered back, flipping the row's validity by
+  processing order (observed: `claude-sonnet-4.6`/`deepseek-v4-pro` proofs
+  recovered on a timeout-bump retry silently reverting to the earlier
+  `AttemptTimeoutError` rows, so `grade` saw them as errored and skipped them —
+  paid, valid work dropped). Fix: `upsert_parquet` resolves each content key by a
+  **quality order that outranks recency** — `recency_col` (`"attempt"`), plus
+  `error_col`/`content_col` so the surviving row is **valid (no error, non-blank)
+  > empty (no error, blank) > error**, ties broken by highest attempt. Recency
+  alone was insufficient: a cell can hold a valid and a degraded row at the *same*
+  attempt (two `.eval` logs of one attempt — one that produced the solution, one
+  that timed out / 404'd / came back blank), or a *later* retry can error/blank
+  after an earlier one succeeded (a single-provider backend flipping valid↔404
+  across retries); plain recency lets the worse row win and the harvest flips the
+  cell's validity by re-application order. Ranking quality first makes the
+  surviving state deterministic and monotonic — a recovered solution is never
+  erased by a later infra failure or blank. No data was lost (recovered rows live
+  in the append-only `.eval` logs); a single post-fix harvest restores them.
 - **`solvers.attempt_timeout` no longer retries a stalled call forever.** inspect
   abandons a timed-out attempt and retries it "according to `max_retries`" — but
   with neither `max_retries` nor a total timeout set (itemeval set neither), its

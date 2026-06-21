@@ -65,7 +65,9 @@ def read_gradings(paths: StudyPaths) -> pd.DataFrame:
 
 
 def upsert_gradings(paths: StudyPaths, rows: "list[dict]") -> int:
-    return upsert_parquet(paths.gradings, rows, GRADING_KEY, GRADINGS_SCHEMA)
+    return upsert_parquet(
+        paths.gradings, rows, GRADING_KEY, GRADINGS_SCHEMA, recency_col="attempt", error_col="error"
+    )
 
 
 def pending_solutions(

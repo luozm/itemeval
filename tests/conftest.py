@@ -110,6 +110,37 @@ class FakeHFAdapter:
         )
 
 
+def force_write_solutions(prep, rows) -> None:
+    """Seed solution rows bypassing the quality-preferring upsert merge.
+
+    `upsert_solutions` keeps the best-quality row per key (valid > empty > error),
+    so a test that deliberately injects a *degraded* state (empty / truncated /
+    soft-failure) over an existing good row cannot do so through the normal merge
+    — the merge correctly refuses to downgrade. This replaces the matching keys
+    directly, modelling a cell whose real stored state is the degraded one."""
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from itemeval.store._base import _coerce_to_schema
+    from itemeval.store._solutions import SOLUTIONS_SCHEMA, read_solutions
+
+    keys = ["condition_id", "item_id", "epoch"]
+    new = pd.DataFrame(rows)
+    existing = read_solutions(prep.paths)
+    if not existing.empty:
+        ex = existing.set_index(keys)
+        ex = ex[~ex.index.isin(new.set_index(keys).index)].reset_index()
+        out = pd.concat([ex, new], ignore_index=True)
+    else:
+        out = new
+    table = pa.Table.from_pandas(
+        _coerce_to_schema(out, SOLUTIONS_SCHEMA), schema=SOLUTIONS_SCHEMA, preserve_index=False
+    )
+    prep.paths.solutions.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, prep.paths.solutions)
+
+
 def write_study_files(root: Path, config_yaml: str = TEST_CONFIG_YAML) -> Path:
     """Write a config + templates under root; returns the config path."""
     (root / "prompts" / "solver").mkdir(parents=True, exist_ok=True)
