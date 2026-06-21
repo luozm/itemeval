@@ -95,7 +95,11 @@ lands and leaving an honest residue when it doesn't — turning the manual
 provider-blocklist stopgap into automatic, model-agnostic recovery; and
 `local-adapter` — a benchmark loaded from a local `.parquet`/`.json`/`.jsonl`
 file pinned by content hash instead of the Hub (the headline 0.3 adoption
-blocker, so the quickstart runs from a file on disk with no Hub upload).
+blocker, so the quickstart runs from a file on disk with no Hub upload); and
+`metadata-in-templates` — every `mapping.metadata` column exposed to rubric and
+build templates as `{colname}` (canonical fields win on collision), so a rubric
+can read a second per-item grading scheme alongside the built-in
+`{grading_scheme}`.
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

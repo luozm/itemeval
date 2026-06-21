@@ -34,7 +34,7 @@ benchmark:
     id: problem_idx            # optional; default: row index. column | [segments] | "{template}" (see Composite item ids)
     target: sample_solution    # optional; default ""
     grading_scheme: grading_scheme   # optional; non-strings stored as canonical JSON
-    metadata: [points]         # optional columns copied into Item.metadata
+    metadata: [points]         # optional columns copied into Item.metadata AND exposed to templates (see below)
 
 solvers:
   models: [openai/gpt-5-mini, anthropic/claude-haiku-4-5]  # inspect model ids, unique
@@ -254,6 +254,13 @@ budget:
   contain `{input}` and `{solution}` (optional `{target}`, `{grading_scheme}`,
   `{id}`). Rendering replaces only known placeholders — LaTeX/JSON braces in
   templates and item text are safe.
+- **Per-item metadata in templates.** Every `mapping.metadata` column is also
+  exposed to rubric and build templates as `{colname}` (stringified; canonical
+  fields like `{input}`/`{grading_scheme}` win on a name collision). This lets a
+  rubric reference a **second per-item grading scheme** alongside the built-in
+  `{grading_scheme}` — e.g. carry one human scheme in `grading_scheme` and a
+  frozen second scheme in a `proofbench_scheme` metadata column, each read by a
+  different rubric in the same crossed study.
 - **Local datasets (`adapter: local`).** Point `datasets[].id` at a local
   `.parquet` / `.json` / `.jsonl` file (absolute, or relative to the working
   directory — the same base as `studies/`) instead of a Hub id. There is no Hub
