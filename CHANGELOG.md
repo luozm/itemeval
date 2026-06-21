@@ -6,6 +6,20 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Native model ids now price off their OpenRouter slug across the version-separator
+  convention gap.** The pricing table is seeded from OpenRouter ids (e.g.
+  `anthropic/claude-opus-4.8`), but a natively-called Anthropic model requires the
+  hyphenated id its API expects (`anthropic/claude-opus-4-8`) — which missed the table
+  and logged `$0`/`priced=false` (dollars silently absent from the ledger and gate).
+  `lookup_price` now toggles the separator *between two digits* (`-`↔`.`, both
+  directions) when resolving, so the native id prices off the OpenRouter entry. The
+  toggle is confined to digit-boundary separators (`claude-3-haiku`, `gpt-4o` are
+  untouched) and a non-matching variant is skipped, so it never mis-prices. It does
+  **not** bridge a differing *provider* namespace (a natively-called `xai`/`grok`/
+  `together` id whose OpenRouter provider name differs), which remains surfaced by the
+  existing `unpriced-models` hint.
+
 ### Added
 - **Per-item metadata exposed to templates**: every `mapping.metadata` column is now
   rendered into rubric and build templates as `{colname}` (stringified; canonical

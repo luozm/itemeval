@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import urllib.request
 from datetime import datetime, timezone
 from importlib.resources import files
@@ -207,15 +208,52 @@ def describe_pricing(table: PricingTable, *, refreshed: bool = False) -> Pricing
     )
 
 
-def lookup_price(table: PricingTable, model: str) -> "ModelPrice | None":
+# A version separator sitting between two digits — the one character that
+# differs between a native provider id and its OpenRouter pricing slug.
+_VERSION_SEP = re.compile(r"(?<=\d)[.-](?=\d)")
+
+
+def _id_variants(model: str) -> list[str]:
+    """`model` plus forms with version separators toggled between '-' and '.'.
+
+    A model called natively and the same model on OpenRouter (which seeds the
+    pricing table) disagree only on the separator *inside a version number*:
+    Anthropic's API wants ``claude-opus-4-8`` while OpenRouter lists
+    ``claude-opus-4.8``; ``claude-3-5-sonnet`` vs ``claude-3.5-sonnet``. Toggling
+    the digit-boundary separator (both directions, so it bridges whichever form
+    the table happens to hold) lets a natively-called model price off its
+    OpenRouter entry. Separators with a letter on either side (``claude-3-haiku``,
+    ``gpt-4o``) are left untouched, and a variant that matches no key is simply
+    skipped by ``lookup_price`` — so this never mis-prices, it only widens the
+    search. It does NOT bridge a differing *provider* namespace (native ``grok``/
+    ``together`` ids), which stays surfaced by the ``unpriced-models`` hint.
+    """
+    variants = [model]
+    for repl in (".", "-"):
+        alt = _VERSION_SEP.sub(repl, model)
+        if alt != model and alt not in variants:
+            variants.append(alt)
+    return variants
+
+
+def _resolve_keyed(table: PricingTable, model: str) -> "ModelPrice | None":
+    """Exact key, then the OpenRouter cross-key in both directions."""
     if model in table.models:
         return table.models[model]
-    if model.startswith("mockllm/") and "mockllm/*" in table.models:
-        return table.models["mockllm/*"]
     if f"openrouter/{model}" in table.models:
         return table.models[f"openrouter/{model}"]
     if model.startswith("openrouter/") and model[len("openrouter/") :] in table.models:
         return table.models[model[len("openrouter/") :]]
+    return None
+
+
+def lookup_price(table: PricingTable, model: str) -> "ModelPrice | None":
+    for cand in _id_variants(model):
+        hit = _resolve_keyed(table, cand)
+        if hit is not None:
+            return hit
+    if model.startswith("mockllm/") and "mockllm/*" in table.models:
+        return table.models["mockllm/*"]
     return None
 
 

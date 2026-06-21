@@ -41,6 +41,86 @@ def test_lookup_precedence():
     assert lookup_price(table, "unknown/model") is None
 
 
+def _price(inp=1.0, out=2.0) -> ModelPrice:
+    return ModelPrice(input_usd_per_mtok=inp, output_usd_per_mtok=out)
+
+
+def test_native_id_prices_off_openrouter_dotted_slug():
+    """A natively-called Anthropic id (hyphenated version) prices off the
+    OpenRouter slug (dotted version) the refresh seeds — the convention gap."""
+    table = PricingTable(
+        updated_at=utc_now_iso(),
+        source="file",
+        models={"anthropic/claude-opus-4.8": _price(15.0, 75.0)},
+    )
+    # native hyphenated id (what the Anthropic API requires) resolves
+    hit = lookup_price(table, "anthropic/claude-opus-4-8")
+    assert hit is not None and hit.output_usd_per_mtok == 75.0
+    # and the reverse: a dotted id resolves off a hyphenated table key
+    table2 = PricingTable(
+        updated_at=utc_now_iso(),
+        source="file",
+        models={"anthropic/claude-haiku-4-5": _price(1.0, 5.0)},
+    )
+    assert lookup_price(table2, "anthropic/claude-haiku-4.5").output_usd_per_mtok == 5.0
+    # multi-segment version (claude-3-5-sonnet <-> claude-3.5-sonnet)
+    table3 = PricingTable(
+        updated_at=utc_now_iso(),
+        source="file",
+        models={"anthropic/claude-3.5-sonnet": _price()},
+    )
+    assert lookup_price(table3, "anthropic/claude-3-5-sonnet") is not None
+
+
+def test_version_variants_leave_non_version_separators_alone():
+    from itemeval.budget._pricing import _id_variants
+
+    # only digit<sep>digit toggles; letter-boundary separators are untouched
+    assert set(_id_variants("anthropic/claude-opus-4-8")) == {
+        "anthropic/claude-opus-4-8",
+        "anthropic/claude-opus-4.8",
+    }
+    assert _id_variants("anthropic/claude-3-haiku") == ["anthropic/claude-3-haiku"]
+    assert _id_variants("openai/gpt-4o") == ["openai/gpt-4o"]
+
+
+def test_normalization_does_not_misprice_absent_models():
+    """A toggled variant that matches no key must not invent a price."""
+    table = PricingTable(
+        updated_at=utc_now_iso(),
+        source="file",
+        models={"anthropic/claude-opus-4.8": _price()},
+    )
+    # a different, genuinely-absent version returns None (no false match)
+    assert lookup_price(table, "anthropic/claude-opus-4-9") is None
+    assert lookup_price(table, "anthropic/claude-sonnet-4-5") is None
+
+
+def test_native_price_resolution_matrix():
+    """Documents the guarantee scope: native ids whose model token matches the
+    OpenRouter slug (after version-separator normalization) price; a differing
+    provider namespace does not, and stays None for the unpriced-models hint."""
+    table = PricingTable(
+        updated_at=utc_now_iso(),
+        source="file",
+        models={
+            "openai/gpt-5.5": _price(),
+            "google/gemini-3.1-pro-preview": _price(),
+            "anthropic/claude-opus-4.8": _price(),  # dotted slug as seeded
+            "x-ai/grok-4.20": _price(),  # OpenRouter's provider name
+        },
+    )
+    # OpenAI / Google: native id == OpenRouter model token → priced as-is
+    assert lookup_price(table, "openai/gpt-5.5") is not None
+    assert lookup_price(table, "google/gemini-3.1-pro-preview") is not None
+    # Anthropic: native hyphenated id bridges to the dotted slug → priced
+    assert lookup_price(table, "anthropic/claude-opus-4-8") is not None
+    # xAI: native provider namespace ("xai"/"grok") differs from OpenRouter's
+    # "x-ai" — NOT bridged by version normalization, surfaces as unpriced
+    assert lookup_price(table, "xai/grok-4.20") is None
+    assert lookup_price(table, "grok/grok-4.20") is None
+
+
 def test_cost_usd_with_cache_fallbacks():
     price = ModelPrice(input_usd_per_mtok=10.0, output_usd_per_mtok=20.0)
     # cache read defaults to 0.1x input, write to 1.25x input
