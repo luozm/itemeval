@@ -7,6 +7,13 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **Local dataset adapter** (`adapter: local`): load a benchmark from a local
+  `.parquet`/`.json`/`.jsonl` file (path absolute or relative to CWD) instead of the
+  Hub. No Hub revision, so the lock pins the file's **content hash**; a changed file
+  is detected and refused until re-pinned. `mapping`/`metadata` behave as for `hf`.
+  Useful for a dataset you build yourself (e.g. a join of two public datasets).
+
+  Closes: local-adapter
 - **Provider-aware reroute for soft failures** (`output-validity-reroute`): a new
   opt-in knob `solvers.max_reroutes` (int, default `None` = off) makes `generate`
   automatically re-issue a **soft-failed** solution — one that completed with no API

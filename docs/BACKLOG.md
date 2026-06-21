@@ -33,47 +33,6 @@ Tiers reflect adoption value, not effort:
 
 ## Tier 1 — adoption blockers
 
-### Local file adapter (`adapter: local`) — jsonl/csv/parquet
-**Key:** `local-adapter`
-
-**Motivation.** The single most common first question for any eval tool:
-"my benchmark is a JSONL file on disk, not on HuggingFace." Today the answer
-is "upload it to the Hub", which loses many users at hello. This is the
-highest-leverage feature in the backlog.
-
-**Design sketch.** New adapter type in the existing registry:
-
-```yaml
-benchmark:
-  adapter: local
-  datasets:
-    - path: data/my_items.jsonl     # .jsonl | .csv | .parquet by extension
-  mapping: {id: qid, input: question, target: answer}
-```
-
-Reuses the `mapping` spec unchanged. The "revision pinned at first run"
-guarantee maps to a **content hash**: `dataset_locks.json` records the file's
-sha256; a changed file fails loudly (same spirit as HF revision pinning) until
-the user bumps/clears the lock. `path` resolves relative to the config file
-(input-path intent rule).
-
-**Implementation notes.** `adapters/_base.py` already defines the protocol +
-registry for exactly this; add `adapters/_local.py` (~80 lines, pandas
-readers), extend the `benchmark.adapter` literal and per-dataset model in
-`_config.py` (`id` → `path` for local), and teach the lock logic hash-vs-
-revision. Estimator/manifest unchanged (they consume canonical Items).
-Tests are hermetic by construction (tmp files).
-
-**Open questions.** Glob support (`path: data/*.jsonl`)? Probably later; one
-file per entry first.
-
-**CI follow-on.** Ship a hermetic end-to-end CLI smoke alongside this:
-mock models + a tiny committed JSONL fixture (zero network, deterministic) —
-the run the HF adapter can't give CI today (ephemeral runners start with no
-HF cache, so the dataset fetch needs network). Chosen over caching a Hub
-dataset in CI, which would only be best-effort offline. See the note in
-`.github/workflows/ci.yml`.
-
 ### GitHub repo adapter (`adapter: github`)
 **Key:** `github-adapter`
 
@@ -83,11 +42,10 @@ org-internal sets) — already promised in the README feature list.
 **Design sketch.** `{repo: org/name, ref: <sha|tag>, path: data/items.jsonl}`;
 pin = resolved commit SHA at first run into `dataset_locks.json`. Fetch via
 raw.githubusercontent (no API token for public repos; honor `GITHUB_TOKEN`
-for private). Then delegate parsing to the local-adapter readers — build
-`local-adapter` first.
+for private). Then delegate parsing to the (now shipped) local-adapter readers.
 
 **Implementation notes.** `adapters/_github.py` (~100 lines) + config literal +
-lock plumbing shared with `local-adapter`. Cache downloads under `~/.cache/itemeval/`.
+lock plumbing shared with the shipped `local-adapter`. Cache downloads under `~/.cache/itemeval/`.
 
 ### Item subset sampling — random / stratified, seeded
 **Key:** `item-sampling`

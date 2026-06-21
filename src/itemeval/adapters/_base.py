@@ -77,7 +77,11 @@ def get_adapter(name: str) -> Adapter:
         from itemeval.adapters._hf import HFAdapter
 
         return HFAdapter()
-    raise AdapterError(f"unknown adapter: {name!r} (available: hf)")
+    if name == "local":
+        from itemeval.adapters._local import LocalAdapter
+
+        return LocalAdapter()
+    raise AdapterError(f"unknown adapter: {name!r} (available: hf, local)")
 
 
 def read_locks(path: Path) -> "dict[str, str]":

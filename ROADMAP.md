@@ -35,8 +35,7 @@ theme level until scheduled.
 **Goal.** A new user runs the full pipeline on their own data with no
 HuggingFace upload.
 
-**Includes.** `local-adapter` · `github-adapter` · `item-sampling` ·
-`scorer-plugins`
+**Includes.** `github-adapter` · `item-sampling` · `scorer-plugins`
 
 **Already landed / in flight** (in `[Unreleased]`, ships with 0.3):
 `model-sampling` · `composite-item-id`; and `model-sample-composition` (recency,
@@ -93,7 +92,10 @@ served it are diagnosable straight from the export instead of by hand-reading th
 re-issues a soft-failed `generate` cell on a different backend (the failed one
 added to `provider:{ignore:[…]}`), capped, replacing the bad row when a good draw
 lands and leaving an honest residue when it doesn't — turning the manual
-provider-blocklist stopgap into automatic, model-agnostic recovery.
+provider-blocklist stopgap into automatic, model-agnostic recovery; and
+`local-adapter` — a benchmark loaded from a local `.parquet`/`.json`/`.jsonl`
+file pinned by content hash instead of the Hub (the headline 0.3 adoption
+blocker, so the quickstart runs from a file on disk with no Hub upload).
 
 **Exit criteria.** The quickstart runs from a local JSONL end-to-end; a GitHub
 repo dataset loads pinned to a commit; subset sampling is recorded in the

@@ -77,7 +77,7 @@ class MappingSpec(BaseModel):
 class BenchmarkConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    adapter: Literal["hf"]
+    adapter: Literal["hf", "local"]
     datasets: list[DatasetSpec] = Field(min_length=1)
     mapping: MappingSpec
 

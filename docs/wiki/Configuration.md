@@ -22,7 +22,7 @@ rubrics_dir: rubrics           # local rubric templates at <config dir>/<rubrics
 cache: true                    # inspect local response cache, both stages
 
 benchmark:
-  adapter: hf                  # only "hf" in v0.1
+  adapter: hf                  # "hf" (Hub) or "local" (a parquet/json file on disk, see below)
   datasets:                    # one or more; item ids must be unique across all
     - id: MathArena/usamo_2025
       revision: 0a2c60f2...    # optional commit SHA/tag; omit to pin at first run
@@ -254,6 +254,13 @@ budget:
   contain `{input}` and `{solution}` (optional `{target}`, `{grading_scheme}`,
   `{id}`). Rendering replaces only known placeholders — LaTeX/JSON braces in
   templates and item text are safe.
+- **Local datasets (`adapter: local`).** Point `datasets[].id` at a local
+  `.parquet` / `.json` / `.jsonl` file (absolute, or relative to the working
+  directory — the same base as `studies/`) instead of a Hub id. There is no Hub
+  revision, so the lock pins the file's **content hash**; a changed file is
+  detected and refused (delete the dataset's `dataset_locks.json` entry to
+  re-pin). `mapping` and `metadata` behave exactly as for `hf`. Useful for a
+  dataset you build yourself (e.g. a join of two public datasets).
 - **`policy: dev`** trims the run to the first `dev_items` items and forces
   batch off — the recommended default until your pipeline looks right.
 - **`batch: auto`** enables batch-API mode only under `policy: full-batch`
