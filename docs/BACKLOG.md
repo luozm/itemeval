@@ -525,6 +525,54 @@ already covers it).
 selection), `store/_logs.py` (find the resumable log). Investigate inspect's
 current retry API first — this may shrink to glue code.
 
+### Killable / resumable provider batch runs
+**Key:** `batch-resume`
+
+**Motivation.** A `--policy full-batch` run (and any `prefer_native_batch`
+generation) must keep its process alive for the **entire** batch wait — provider
+SLA ≤24h, usually minutes–hours. If the process dies mid-batch (crash, kill,
+closed terminal, laptop sleep) the batch keeps running and billing provider-side,
+but inspect has lost the in-memory batch id and cannot reconnect: the results are
+orphaned (auto-harvest recovers only `.eval` logs, which hold no unfinished-batch
+results), and a re-run sees the cells unfilled → submits a **new** batch → pays
+twice. The shipped `batch: … resume with the same command` announcement holds
+after a clean finish but not for a mid-batch death.
+
+**Why it's deferred (decided 2026-06-22).** The clean home is **upstream in
+inspect**, which already owns the providers, the request/result mapping, and the
+batch state — but holds the batch id **in memory only** (`Batcher._inflight_batches`,
+~15s poll; no disk persistence, no public accessor, `batch_log` is display-only).
+So even a minimal "capture the id to cancel the orphan by hand" needs an inspect
+change. The self-contained alternative — itemeval builds request bodies, submits
+to the OpenAI/Anthropic batch APIs directly with `custom_id = cellkey`, persists
+`{batch_id, provider}` under the study dir, and reconnects on re-run —
+**bypasses inspect's batcher**, which `DEVELOPMENT.md`'s "wrap, don't fork"
+forbids: the bypass carve-out is for an *abstraction conflict with item-level
+provenance*, and missing persistence is not that. It would also re-implement
+inspect's request construction, output parser, response-cache key, and `.eval`
+transcript to keep batch-path rows byte-identical to the interactive path — that
+provenance-parity work **is** the boundary cost, and it explodes the deliberately
+small contact surface. Provider-side persist→reconnect→retrieve was verified
+feasible for both OpenAI (`batches.retrieve(id)`, `metadata` persisted) and
+Anthropic (`messages.batches.retrieve(id)`, `results_url`, 29-day retention),
+with `custom_id` echoed back on every result — so the blocker is **purely the
+inspect seam**, not the provider APIs.
+
+**Design sketch (when unblocked).** File an inspect feature request to persist
+`{batch_id, custom_id→sample map, provider}` to the eval-log dir and reconnect to
+in-flight batches on a resumed eval. Once inspect exposes that, itemeval consumes
+it with a **thin** opt-in wrapper (no itemeval-side batch state beyond what
+inspect surfaces) under the existing `--policy full-batch` /
+`budget.prefer_native_batch` plan. Revisit on the inspect release-notes watch the
+upgrade pipeline already runs (`DEVELOPMENT.md` — batch/caching changes). Same
+instinct as `midcell-resume`: lean on inspect's machinery rather than build
+checkpointing.
+
+**Open questions.** Whether inspect takes the persistence upstream (preferred) or
+ever exposes the id through a published extension point that avoids a fork. Until
+either exists, the interim story is the heartbeat that keeps a batched run alive
+(CHANGELOG, Unreleased) — documented as the mitigation, not a fix.
+
 ### Savings report: count resume / response-cache reuse
 **Key:** `reuse-savings`
 
