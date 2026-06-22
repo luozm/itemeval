@@ -64,10 +64,13 @@ exists on top of inspect_ai rather than using inspect's in-eval scorers.
 ## Judge output contract
 
 The packaged format suffix instructs judges to end with a fenced JSON block
-`{"score": <number>, "reasoning": "..."}`. Parsing is strict (fenced blocks
-last-to-first, then raw JSON objects) with exact failure codes
-(`no_json_object`, `no_score_in_json`, `score_not_numeric`,
-`score_not_finite`). **Parse failures are results, not errors**: the row is
+`{"score": <number>, "reasoning": "..."}`. Parsing tries a strict decode first
+(fenced blocks last-to-first, then raw JSON objects); if that fails it retries
+once with a stray-backslash repair, so a math judge's unescaped LaTeX (`\ge`,
+`\(...\)`) in the reasoning string is recovered rather than lost. A real failure
+still gets an exact code (`no_json_object`, `no_score_in_json`,
+`score_not_numeric`, `score_not_finite`). **Parse failures are results, not
+errors**: the row is
 kept with `parse_ok=false` and is *final* — it is not retried on re-runs
 (use `--force` to re-grade). Sample-level *errors* (provider failures), by
 contrast, leave `error` set and are re-attempted on the next run.

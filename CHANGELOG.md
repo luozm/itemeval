@@ -33,6 +33,17 @@ All notable changes to itemeval are documented here. Format follows
   **not** bridge a differing *provider* namespace (a natively-called `xai`/`grok`/
   `together` id whose OpenRouter provider name differs), which remains surfaced by the
   existing `unpriced-models` hint.
+- **Math-judge gradings with LaTeX in the reasoning string are recovered instead of
+  dropped as `no_json_object`.** A judge grading math writes LaTeX (`\ge`, `\perp`,
+  `\(...\)`) inside the JSON `"reasoning"` value, where a lone backslash is an invalid
+  JSON escape — so `json.loads` raised and `parse_judge_output` returned
+  `no_json_object`, discarding an otherwise-clean `score`. After a strict parse fails,
+  parsing now retries with a stateful escape-repair (`_fix_json_escapes`) that doubles
+  every backslash not beginning a valid JSON escape (`\" \\ \/ \b \f \n \r \t`,
+  `\uXXXX`), counting backslash runs correctly where a stateless regex cannot. The
+  strict parse is always tried first, so well-formed JSON is never altered and its
+  result wins. Re-parse only (no re-call); recover a previously-dropped grade by
+  re-running `grade` with `--force`.
 
 ### Added
 - **Per-item metadata exposed to templates**: every `mapping.metadata` column is now

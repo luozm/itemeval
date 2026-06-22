@@ -78,3 +78,53 @@ def test_invariant_parse_ok_iff_no_error():
         parsed = parse_judge_output(completion)
         assert parsed.parse_ok == (parsed.parse_error is None)
         assert parsed.parse_ok == (parsed.score is not None)
+
+
+@pytest.mark.parametrize(
+    "completion,score",
+    [
+        # LaTeX with single backslashes inside the JSON string is invalid JSON; the
+        # stray-backslash repair recovers it (the real USAMO math-grading failure mode,
+        # where a judge wrote `$k \ge 3$` in the reasoning -> "Invalid \escape").
+        ('```json\n{"score": 0, "reasoning": "false for $k \\ge 3$"}\n```', 0.0),
+        ('{"score": 4, "reasoning": "uses \\frac{1}{2} and \\perp here"}', 4.0),
+        ('blah\n```json\n{"score": 7, "reasoning": "let \\alpha = \\sum x_i"}\n```', 7.0),
+        # \u-prefixed LaTeX (\underbrace, \uparrow) is NOT a valid \uXXXX escape
+        ('{"score": 2, "reasoning": "see \\underbrace{x} and \\uparrow"}', 2.0),
+    ],
+)
+def test_parse_latex_backslash_recovered(completion, score):
+    parsed = parse_judge_output(completion)
+    assert parsed.parse_ok
+    assert parsed.score == score
+    assert parsed.parse_error is None
+
+
+def test_parse_recovers_backslash_runs():
+    # mixed/over-escaped LaTeX runs (\(...\) delimiters + \\\perp) — the real j1 failure
+    # mode that a stateless doubling regex cannot fix, but the stateful walker can.
+    completion = '```json\n{"score": 0, "reasoning": "assert \\(CF\\\\\\perp BC\\) holds"}\n```'
+    parsed = parse_judge_output(completion)
+    assert parsed.parse_ok
+    assert parsed.score == 0.0
+
+
+def test_latex_reasoning_preserved_after_repair():
+    # the repaired decode must keep the LaTeX (one literal backslash) in the reasoning
+    parsed = parse_judge_output('{"score": 1, "reasoning": "$k \\ge 3$"}')
+    assert parsed.parse_ok and parsed.score == 1.0
+    assert "\\ge" in parsed.reasoning
+
+
+def test_repair_does_not_rescue_structural_garbage():
+    # the repair only fixes invalid escapes, never structural JSON errors
+    parsed = parse_judge_output("```json\n{bad json,,,}\n```")
+    assert not parsed.parse_ok
+    assert parsed.parse_error == "no_json_object"
+
+
+def test_valid_escapes_unchanged_by_repair():
+    # legitimate \n / \" survive: strict parse wins, repair never runs
+    parsed = parse_judge_output('{"score": 2, "reasoning": "line1\\nline2 \\"q\\""}')
+    assert parsed.parse_ok and parsed.score == 2.0
+    assert parsed.reasoning == 'line1\nline2 "q"'
