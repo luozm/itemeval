@@ -64,8 +64,10 @@ def _prompt_cache_clause(prep, stage: str) -> str:
         return "prompt-cache on"
     if cp == "off":
         return "prompt-cache off"
-    # auto: explicit only when there's a shared prefix to reuse (replications>1)
-    if prep.plan.replications > 1:
+    # auto: explicit only when the *design* replicates (facets reps>1) — a shared
+    # prefix to reuse. Keyed on the design reps, not the policy-adjusted plan, so the
+    # hint matches the cache_prompt actually sent (see resolve_cache_prompt).
+    if prep.config.facets.replications > 1:
         return "prompt-cache on (auto, reps>1)"
     return "prompt-cache provider-default (auto, reps=1)"
 

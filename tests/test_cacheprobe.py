@@ -95,6 +95,51 @@ def test_estimate_cache_fields_zero_without_cache(tmp_path, offline_adapter):
     assert gen.real_remaining_usd == gen.remaining_usd  # no projection applied
 
 
+def test_cache_prompt_resolves_off_design_reps_not_policy():
+    """`cache_prompt` rides in the response-cache key, so it must resolve off the
+    design replication count — never the policy-adjusted plan — or a dev pilot and
+    its full run get mismatched keys."""
+    from itemeval.generate._params import resolve_cache_prompt
+
+    assert resolve_cache_prompt("auto", 1) is None
+    assert resolve_cache_prompt("auto", 2) is True
+    assert resolve_cache_prompt("on", 1) is True
+    assert resolve_cache_prompt("off", 2) is False
+
+
+def test_dev_pilot_generations_replay_on_full_run(tmp_path, offline_adapter):
+    """Regression (cache_prompt design-reps invariance): a dev pilot whose policy
+    caps replications to 1 must cache its epoch-1 calls under the same key the full
+    run (reps 2) reads, so the full run replays the pilot's generations instead of
+    silently regenerating them — which re-pays and then staples the pilot's stale
+    grades onto overwritten solutions. Pre-fix the pilot keyed on cache_prompt=None
+    (plan reps=1) and the full run on True (plan reps=2): every epoch-1 call missed.
+    """
+    config_path = write_study_files(tmp_path)
+    data = yaml.safe_load(config_path.read_text())
+    data["cache"] = True
+    data["budget"]["dev_replications"] = 1  # design is reps=2; the dev policy caps to 1
+    cfg = ExperimentConfig.model_validate(data)
+    cfg._config_dir = config_path.parent
+    cfg._work_dir = config_path.parent
+
+    prep_dev = prepare_study(cfg, policy="dev")
+    assert prep_dev.plan.replications == 1  # the dev cap is active
+    run_generate(prep_dev)  # caches epoch 1 for every pilot item
+
+    prep_full = prepare_study(cfg, policy="full-interactive")
+    assert prep_full.plan.replications == 2
+    assert len(prep_full.items_effective) > len(prep_dev.items_effective)  # pilot is a subset
+    # force=True probes every epoch: the pilot's epoch-1 calls are cache HITS (matching
+    # key); the never-produced epoch-2 calls and the items beyond the pilot subset miss.
+    probe = probe_generate(prep_full, force=True)
+    n_gen = len(prep_full.grid.generate)
+    pilot_calls = n_gen * len(prep_dev.items_effective)  # epoch-1 of the pilot items
+    total_calls = n_gen * len(prep_full.items_effective) * prep_full.plan.replications
+    assert probe.cache_hits == pilot_calls  # every pilot epoch-1 call replays ($0); pre-fix: 0
+    assert probe.cache_misses == total_calls - pilot_calls  # genuinely fresh calls
+
+
 def test_probe_grade_detects_real_judge_cache(tmp_path, offline_adapter):
     cfg, prep = _prep_with_cache(tmp_path, cache=True)
     run_generate(prep)

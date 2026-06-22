@@ -7,6 +7,20 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **A dev pilot's generations are now reused by the subsequent full run instead of
+  silently regenerated.** `generate`'s `cache_prompt` (Anthropic-style prompt-cache
+  markers) resolved its `auto` value off the *policy-adjusted* replication count, so a
+  dev pilot (reps capped to 1) sent `cache_prompt=None` while the full run of the same
+  design (reps ≥ 2) sent `True`. That field rides in inspect's local response-cache
+  key, so the full run's item-granular resume re-ran — and overwrote — the pilot's
+  already-completed epoch-1 solutions instead of replaying them ($0). Worse, because a
+  grade is keyed on `(grade_cond, gen_cond, item, epoch)` and not on solution content,
+  the pilot's existing grades were then silently stale, pointing at the overwritten
+  solutions. `cache_prompt` now resolves off the **design** count
+  (`facets.replications`), which is stable across a `dev`→`full` grow, so the keys
+  match and the epochs replay. The resolution is centralized in one helper
+  (`generate._params.resolve_cache_prompt`) shared by the generate task, the cache
+  probe, and the cost-levers hint so they can no longer drift.
 - **Native model ids now price off their OpenRouter slug across the version-separator
   convention gap.** The pricing table is seeded from OpenRouter ids (e.g.
   `anthropic/claude-opus-4.8`), but a natively-called Anthropic model requires the

@@ -235,8 +235,11 @@ class SolversConfig(BaseModel):
     on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
     # Provider prompt caching for the generate stage (Anthropic-style explicit
     # cache_control markers; token-prefix providers like OpenAI cache
-    # automatically regardless). "auto" enables it when replications > 1 —
-    # epochs send byte-identical prompts, the textbook cacheable workload.
+    # automatically regardless). "auto" enables it when the design replicates
+    # (facets.replications > 1) — epochs send byte-identical prompts, the textbook
+    # cacheable workload. Resolved off the design count, not the policy-adjusted
+    # plan, so the value — which rides in inspect's response-cache key — stays stable
+    # across a dev->full grow (see generate._params.resolve_cache_prompt).
     cache_prompt: Literal["auto", "on", "off"] = "auto"
     # Render the solver prompt as two messages split at {input}: the static
     # template head becomes a system message — where providers with

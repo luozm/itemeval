@@ -53,6 +53,27 @@ def effective_context(model_context: "int | None", endpoint_context: "int | None
     return min(known) if known else None
 
 
+def resolve_cache_prompt(cache_prompt: str, replications: int) -> "bool | None":
+    """Resolve the tri-state ``solvers.cache_prompt`` to the bool inspect's
+    ``GenerateConfig`` takes (``None`` = provider default).
+
+    ``auto`` turns provider prompt caching on when the design replicates an item
+    (``replications > 1``), where epochs re-send a byte-identical prefix worth
+    caching. ``replications`` MUST be the **design** count (``facets.replications``),
+    never the policy-adjusted plan value: ``cache_prompt`` rides in inspect's local
+    response-cache key, so deriving it from the policy reps would give a dev pilot
+    (capped to 1 rep) a different key than the full run — silently defeating the
+    cross-run epoch replay a dev->full grow relies on (re-paying generation, then
+    staling the pilot's grades against the overwritten solutions). Single home for
+    the resolution so the generate task, the cache probe, and the hint never drift.
+    """
+    if cache_prompt == "on":
+        return True
+    if cache_prompt == "off":
+        return False
+    return True if replications > 1 else None  # auto
+
+
 class EffectiveParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

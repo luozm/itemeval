@@ -94,11 +94,13 @@ def _gen_config(prep: "PreparedStudy", cond) -> object:
     conservatively counted fresh (never a false $0)."""
     from inspect_ai.model import GenerateConfig
 
-    cp = prep.config.solvers.cache_prompt
-    cache_prompt = (
-        True
-        if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
-        else (False if cp == "off" else None)
+    from itemeval.generate._params import resolve_cache_prompt
+
+    # Same resolution as generate/_run (shared helper, design reps) so the probe's
+    # reconstructed key matches the call's — a dev-pilot epoch the full run replays
+    # must read as a hit, not a miss.
+    cache_prompt = resolve_cache_prompt(
+        prep.config.solvers.cache_prompt, prep.config.facets.replications
     )
     p = cond.gen_params
     return GenerateConfig(

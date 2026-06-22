@@ -42,6 +42,7 @@ from itemeval.generate._params import (
     effective_context,
     extract_effective_params,
     fit_max_tokens,
+    resolve_cache_prompt,
 )
 from itemeval.generate._task import build_generate_task, build_reroute_task
 from itemeval.store import _ledger, _logs, _solutions
@@ -860,13 +861,13 @@ def run_generate(
     # One truth value for "cache scheduling active": gates both task building
     # (warm-then-fan-out) and the zero-reads hint below.
     cache_schedule = prep.config.budget.cache_schedule != "off" and prep.plan.batch is None
-    # Provider prompt-cache markers (Anthropic-style): explicit when
-    # cache_prompt resolves on; loop-invariant, also feeds the unpinned hint.
-    cp = prep.config.solvers.cache_prompt
-    cache_prompt = (
-        True
-        if cp == "on" or (cp == "auto" and prep.plan.replications > 1)
-        else (False if cp == "off" else None)
+    # Provider prompt-cache markers (Anthropic-style): explicit when cache_prompt
+    # resolves on; loop-invariant. Keyed on the *design* replication count (facets),
+    # not the policy-adjusted plan: this value rides in inspect's response-cache key,
+    # so a policy-derived value would give a dev pilot (reps capped to 1) a different
+    # key than the full run and silently defeat cross-run epoch replay.
+    cache_prompt = resolve_cache_prompt(
+        prep.config.solvers.cache_prompt, prep.config.facets.replications
     )
 
     # Phase 1: plan every condition off one solutions snapshot (planning has no
