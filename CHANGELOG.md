@@ -7,6 +7,17 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **A batched `--json` run no longer goes dark, and inspect's batch prints no longer
+  corrupt its JSON.** The stderr heartbeat is paced by `on_sample_end`, which in
+  provider-batch mode fires only when a whole batch *resolves* (minutes–hours apart),
+  so the liveness line froze for the exact long runs it exists to cover. A batch eval
+  now also routes inspect's ~15s batch-status poll through the heartbeat — a
+  provider-paced line (`… · batch · … · 3 batches · 20 pending · oldest 2m · 0
+  errors`) that drops the samples/sec ETA (meaningless on the provider's clock) plus a
+  one-time banner that sets the batched-not-continuous expectation. Registering those
+  callbacks also displaces inspect's *default* batch callbacks, which `print()` to
+  **stdout** — that print would otherwise corrupt the single-JSON-document contract of
+  a `--json` run. Both provider callbacks are handed back to inspect's default on exit.
 - **A dev pilot's generations are now reused by the subsequent full run instead of
   silently regenerated.** `generate`'s `cache_prompt` (Anthropic-style prompt-cache
   markers) resolved its `auto` value off the *policy-adjusted* replication count, so a

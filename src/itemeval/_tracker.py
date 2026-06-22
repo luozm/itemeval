@@ -36,6 +36,22 @@ _init_hooks()
 
 from inspect_ai.hooks import Hooks, SampleEnd, SampleStart, hooks  # noqa: E402
 
+# Batch mode goes dark differently than a silenced display: on_sample_end fires only
+# when a whole provider batch *resolves*, so between resolutions (minutes to hours)
+# the per-sample heartbeat freezes. inspect emits an aggregate BatchStatus on every
+# ~15s status poll (batch_count + pending/completed/failed request counts) and exposes
+# set_batch_status_callback to capture it — but only via this private util path; it is
+# re-exported from neither inspect_ai nor inspect_ai.model. We register it for the
+# eval's duration so the heartbeat tracks batch churn in between, and so inspect's
+# *default* callbacks (which print to STDOUT) do not run — that print would corrupt a
+# --json run, the very mode the heartbeat exists for. Same deliberate private-symbol
+# tradeoff as init_hooks above.
+from inspect_ai.model._providers.util.batch_log import (  # noqa: E402
+    BatchStatus,
+    set_batch_log_callback,
+    set_batch_status_callback,
+)
+
 _MIN_INTERVAL_S = 10.0  # throttle: at most one heartbeat line per this many seconds
 
 
@@ -57,6 +73,13 @@ class _RunContext:
     start_monotonic: float = 0.0
     last_emit: float = 0.0
     last_emit_ended: int = -1  # ``ended`` count at the last emitted line (dedups the final line)
+    # Batch mode (provider Batch API): the per-sample counters above advance only in
+    # chunks (one jump per batch that resolves), so these aggregate batch counts —
+    # refreshed by inspect's ~15s status poll — carry liveness in between.
+    batch: bool = False
+    batch_count: int = 0
+    batch_pending: int = 0
+    batch_oldest_age: int = 0  # seconds the oldest still-open batch has been running
 
 
 _CTX = _RunContext()
@@ -74,8 +97,12 @@ def _fmt_duration(seconds: float) -> str:
 
 def render_heartbeat(ctx: _RunContext, now: float) -> str:
     """The one stderr line, pure for testing. Rate/ETA appear only once ≥3 samples
-    have completed (the throughput estimate is meaningless before that)."""
+    have completed (the throughput estimate is meaningless before that). In batch
+    mode the line is provider-paced: it carries the batch churn and drops the
+    samples/sec ETA (a batch drains in minutes–hours on the provider's clock)."""
     parts = [f"[itemeval] {ctx.stage}"]
+    if ctx.batch:
+        parts.append("batch")
     if ctx.experiment_id:
         parts.append(f"exp {ctx.experiment_id}/a{ctx.attempt}")
     if ctx.total:
@@ -83,6 +110,15 @@ def render_heartbeat(ctx: _RunContext, now: float) -> str:
         parts.append(f"{ctx.ended}/{ctx.total} ({pct}%)")
     else:
         parts.append(f"{ctx.ended} done")
+    if ctx.batch:
+        # ``ended`` jumps a batch at a time; these counts move on each ~15s poll, so
+        # the line keeps refreshing while ``ended`` sits still between resolutions.
+        parts.append(f"{ctx.batch_count} batches")
+        parts.append(f"{ctx.batch_pending} pending")
+        if ctx.batch_oldest_age > 0:
+            parts.append(f"oldest {_fmt_duration(ctx.batch_oldest_age)}")
+        parts.append(f"{ctx.errors} errors")
+        return " · ".join(parts)
     elapsed = now - ctx.start_monotonic
     if ctx.ended >= 3 and elapsed > 0:
         rate = ctx.ended / elapsed  # samples/sec
@@ -96,6 +132,15 @@ def render_heartbeat(ctx: _RunContext, now: float) -> str:
     return " · ".join(parts)
 
 
+def _safe_stderr(line: str) -> None:
+    """A single stderr line, swallowing any write error — liveness must never break
+    the run (the callback runs inside ``eval()``)."""
+    try:
+        print(line, file=sys.stderr, flush=True)
+    except Exception:
+        pass
+
+
 def _emit(ctx: _RunContext, now: float, force: bool = False) -> None:
     # First line (last_emit == 0) always emits, to show life immediately; after
     # that, at most one per _MIN_INTERVAL_S unless forced (the final line).
@@ -103,10 +148,23 @@ def _emit(ctx: _RunContext, now: float, force: bool = False) -> None:
         return
     ctx.last_emit = now
     ctx.last_emit_ended = ctx.ended
-    try:
-        print(render_heartbeat(ctx, now), file=sys.stderr, flush=True)
-    except Exception:
-        pass  # liveness must never break the run
+    _safe_stderr(render_heartbeat(ctx, now))
+
+
+def _on_batch_status(status: "BatchStatus") -> None:
+    """inspect's ~15s batch-status poll → refresh the batch counters and emit one
+    heartbeat. Registered only for the duration of a batch eval (see ``tracking()``);
+    reads ``_CTX`` directly and is a no-op once ``active`` is cleared. ``oldest_age``
+    is wall-clock (the status timestamps are unix seconds), unlike the monotonic
+    throttle clock — it is display-only."""
+    if not _CTX.active:
+        return
+    _CTX.batch_count = status.batch_count
+    _CTX.batch_pending = status.pending_requests
+    _CTX.batch_oldest_age = (
+        max(0, int(time.time() - status.oldest_created_at)) if status.oldest_created_at else 0
+    )
+    _emit(_CTX, time.monotonic())
 
 
 @contextmanager
@@ -117,10 +175,16 @@ def tracking(
     total: "int | None",
     *,
     enabled: bool,
+    batch: bool = False,
 ):
     """Turn the heartbeat on for the wrapped ``eval()``. A no-op when ``enabled`` is
     False (the rich display is carrying liveness, or a notebook), so the hook stays
-    dormant. Always clears ``active`` on exit, emitting one final line."""
+    dormant. Always clears ``active`` on exit, emitting one final line.
+
+    When ``batch`` is set, also route inspect's batch-status poll (and its otherwise
+    stdout-bound batch log) through this stderr heartbeat for the eval's duration, and
+    print a one-time banner so the operator expects batched — not continuous —
+    progress. Both provider callbacks are restored to inspect's default on exit."""
     if not enabled:
         yield
         return
@@ -135,6 +199,18 @@ def tracking(
     _CTX.start_monotonic = time.monotonic()
     _CTX.last_emit = 0.0
     _CTX.last_emit_ended = -1
+    _CTX.batch = batch
+    _CTX.batch_count = 0
+    _CTX.batch_pending = 0
+    _CTX.batch_oldest_age = 0
+    if batch:
+        set_batch_status_callback(_on_batch_status)
+        set_batch_log_callback(lambda msg: _safe_stderr(f"[itemeval] batch · {msg}"))
+        _safe_stderr(
+            "[itemeval] batch mode: results land in provider batches, not continuously "
+            "(each batch runs minutes–hours). The line below refreshes on every ~15s "
+            "poll; the done count jumps as each batch resolves."
+        )
     try:
         yield
     finally:
@@ -143,7 +219,11 @@ def tracking(
         # final sample), which would otherwise duplicate the last line.
         if _CTX.ended and _CTX.last_emit_ended != _CTX.ended:
             _emit(_CTX, time.monotonic(), force=True)
+        if batch:  # hand the provider callbacks back to inspect's default printer
+            set_batch_status_callback(None)
+            set_batch_log_callback(None)
         _CTX.active = False
+        _CTX.batch = False
 
 
 @hooks(name="itemeval/live-tracker", description="itemeval live-run stderr heartbeat")

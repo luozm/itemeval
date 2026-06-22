@@ -214,6 +214,7 @@ def run_condition_evals(
     display: "str | None",
     log_dir: str,
     max_tasks: int,
+    batch: bool = False,
 ) -> "tuple[dict[str, EvalLog], str | None]":
     """Run every condition's task in ONE inspect eval, up to max_tasks at once.
 
@@ -236,7 +237,7 @@ def run_condition_evals(
     heartbeat = resolve_display(display) == "none"
     try:
         with _tracker.tracking(
-            stage, experiment_id, attempt, _expected_samples(tasks), enabled=heartbeat
+            stage, experiment_id, attempt, _expected_samples(tasks), enabled=heartbeat, batch=batch
         ):
             logs = inspect_ai.eval(
                 tasks,
@@ -766,6 +767,7 @@ def _reroute_soft_failures(
             display=display,
             log_dir=str(prep.paths.logs_stage_dir("generate")),
             max_tasks=max_tasks_for([t.model for t in tasks]),
+            batch=prep.plan.batch is not None,
         )
         if fatal is not None:
             break
@@ -981,6 +983,7 @@ def run_generate(
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("generate")),
         max_tasks=max_tasks_for([exec_model for _, _, exec_model, _ in planned]),
+        batch=prep.plan.batch is not None,
     )
 
     # Phase 3: harvest each planned condition from its log (mapped by metadata).

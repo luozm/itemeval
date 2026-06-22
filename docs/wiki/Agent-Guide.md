@@ -63,7 +63,10 @@ itemeval harvest  CONFIG [--json]               # recover a crashed run's logs i
   `starting generate — ~Nm …` before the first sample, then a throttled heartbeat
   (`[itemeval] generate · exp …/a1 · 142/400 (35%) · 11/min · ~3m left · 2 errors`)
   as samples complete — so a long or backgrounded paid run is never dark (capture
-  stderr alongside stdout to relay it). The JSON result carries the run result plus
+  stderr alongside stdout to relay it). A native-batch run (`budget.batch`) is
+  provider-paced instead: the line carries batch churn (`· batch · 3 batches · 20
+  pending · oldest 2m · …`) and refreshes on each ~15s status poll, since results
+  land a whole batch at a time rather than continuously. The JSON result carries the run result plus
   `pricing`, `estimate_usd`, and the `gate` outcome, and a gate stop still emits a
   JSON document — projected cost, gate reason, the `--yes` rerun command — before
   exit 3/4. (Plain mode stays available and shows inspect's live progress bars on a

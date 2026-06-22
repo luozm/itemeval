@@ -177,6 +177,15 @@ final summary block + result JSON don't already hold, and it never touches
 stdout (the relay rule: an agent quotes the plain stderr line; stdout stays
 pipeable / pure JSON).
 
+In **provider-batch** mode the heartbeat is provider-paced: results land a whole
+batch at a time (minutes–hours apart), so a sample-paced line would freeze. It
+instead refreshes on inspect's ~15s batch-status poll, carries batch churn
+(`· batch · N batches · M pending · oldest …`), drops the samples/sec ETA (no
+meaning on the provider's clock), and prints a one-time banner setting the
+batched-not-continuous expectation. All of it still stays on stderr — and doing
+so displaces inspect's own batch callbacks, which would otherwise `print()` to
+stdout and break a `--json` run.
+
 Hint lines go to **stderr**: they are commentary about the run, not output of
 the run, so stdout stays pipeable even without `--json` (the same convention
 as compiler diagnostics). Facts of record stay on stdout.

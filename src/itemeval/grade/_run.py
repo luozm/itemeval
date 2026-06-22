@@ -738,6 +738,7 @@ def run_grade(
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("grade")),
         max_tasks=max_tasks_for([ex for _, _, ex, _, _ in planned]),
+        batch=prep.plan.batch is not None,
     )
 
     # Phase 3: harvest each judge condition from its log (mapped by metadata).

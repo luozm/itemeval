@@ -107,3 +107,69 @@ def test_no_hooks_banner_on_stdout_in_a_fresh_process():
     assert "DONE" in r.stdout
     assert "hooks enabled" not in r.stdout
     assert "inspect_ai v" not in r.stdout
+
+
+def test_render_heartbeat_batch_mode():
+    # Batch mode: line is provider-paced — carries batch churn, drops the samples/sec ETA.
+    ctx = _tracker._RunContext(
+        active=True,
+        stage="grade",
+        experiment_id="abcd1234",
+        attempt=1,
+        total=40,
+        ended=8,
+        errors=0,
+        start_monotonic=0.0,
+        batch=True,
+        batch_count=3,
+        batch_pending=20,
+        batch_oldest_age=125,
+    )
+    line = _tracker.render_heartbeat(ctx, now=30.0)
+    assert line.startswith("[itemeval] grade · batch")
+    assert "8/40 (20%)" in line  # committed sample progress, monotonic
+    assert "3 batches" in line
+    assert "20 pending" in line
+    assert "oldest 2m" in line
+    assert "/min" not in line and "left" not in line  # no throughput ETA in batch mode
+
+
+def test_on_batch_status_updates_ctx_and_emits(capsys):
+    import time
+    from inspect_ai.model._providers.util.batch_log import BatchStatus
+
+    with _tracker.tracking("grade", "exp1", 1, 40, enabled=True, batch=True):
+        status = BatchStatus(
+            batch_count=2,
+            pending_requests=15,
+            completed_requests=5,
+            failed_requests=0,
+            oldest_created_at=int(time.time()) - 60,
+        )
+        _tracker._on_batch_status(status)
+        assert _tracker._CTX.batch_count == 2
+        assert _tracker._CTX.batch_pending == 15
+        assert _tracker._CTX.batch_oldest_age >= 55
+    err = capsys.readouterr().err
+    assert "[itemeval] grade · batch" in err
+    assert "2 batches" in err and "15 pending" in err
+
+
+def test_tracking_batch_registers_banner_and_restores_callbacks(capsys):
+    import inspect_ai.model._providers.util.batch_log as bl
+
+    with _tracker.tracking("generate", "exp1", 1, 8, enabled=True, batch=True):
+        assert bl._batch_status_callback is _tracker._on_batch_status
+        assert _tracker._CTX.batch is True
+    assert bl._batch_status_callback is None  # handed back to inspect's default
+    assert _tracker._CTX.batch is False
+    err = capsys.readouterr().err
+    assert "batch mode:" in err  # one-time expectation-setting banner
+
+
+def test_no_batch_callback_registered_when_batch_off():
+    import inspect_ai.model._providers.util.batch_log as bl
+
+    with _tracker.tracking("generate", "exp1", 1, 8, enabled=True, batch=False):
+        assert bl._batch_status_callback is None  # untouched on the non-batch path
+        assert _tracker._CTX.batch is False
