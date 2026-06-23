@@ -63,7 +63,11 @@ itemeval harvest  CONFIG [--json]               # recover a crashed run's logs i
   `starting generate — ~Nm …` before the first sample, then a throttled heartbeat
   (`[itemeval] generate · exp …/a1 · 142/400 (35%) · 11/min · ~3m left · 2 errors`)
   as samples complete — so a long or backgrounded paid run is never dark (capture
-  stderr alongside stdout to relay it). A native-batch run (`budget.batch`) is
+  stderr alongside stdout to relay it). If completions go quiet (a hung provider
+  call), a timer takes over and names the slowest in-flight cells
+  (`… no completion for 3m · 2 cell(s) in-flight >2m:` then one
+  `model · item · elapsed` line each, `try N` when a cell is retrying) — so a stall
+  shows *which* cell is stuck, not just a frozen line. A native-batch run (`budget.batch`) is
   provider-paced instead: the line carries batch churn (`· batch · 3 batches · 20
   pending · oldest 2m · …`) and refreshes on each ~15s status poll, since results
   land a whole batch at a time rather than continuously. The JSON result carries the run result plus

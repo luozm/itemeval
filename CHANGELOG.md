@@ -75,6 +75,20 @@ All notable changes to itemeval are documented here. Format follows
   re-running `grade` with `--force`.
 
 ### Added
+- **The `--json`/silenced run heartbeat now surfaces stalled cells.** The shipped
+  liveness line is paced by sample *completions*, so a hung cell (no `SampleEnd` —
+  e.g. a provider call wedged for minutes) froze the line with no clue which cell was
+  stuck. A wall-clock timer now runs alongside the eval and, when completions go quiet
+  (~30s with no per-sample line), prints the slowest in-flight cells —
+  `[itemeval] generate · no completion for 3m · 2 cell(s) in-flight >2m:` then one
+  `model · item · elapsed` line each (with `· try N` when inspect is retrying that
+  cell), capped at 10 with a `+N more` footer. It shares the per-sample throttle, so
+  it only speaks during a genuine stall and never competes with the normal line; it is
+  skipped in native-batch mode (already provider-paced). Pure liveness on stderr — no
+  new knob, JSON field, or fact of record (UX-PATTERNS Law 8); the threshold/interval
+  are fixed internal defaults. Builds on the `live-tracker` heartbeat.
+
+  Closes: straggler-heartbeat
 - **Per-item metadata exposed to templates**: every `mapping.metadata` column is now
   rendered into rubric and build templates as `{colname}` (stringified; canonical
   fields like `{input}`/`{grading_scheme}` win on a name collision). Lets a rubric

@@ -79,7 +79,10 @@ compares the ceiling); and `live-tracker` — a live stderr heartbeat (counts,
 throughput-based ETA, errors, in-flight) during a `generate`/`grade` run whose
 display is silenced, plus the pre-flight ETA echoed to stderr under `--json`,
 closing the "`--json` goes dark" gap so a long or backgrounded paid run shows it is
-alive (liveness rides stderr; stdout stays pure JSON); and `oversized-solution-skip`
+alive (liveness rides stderr; stdout stays pure JSON), extended by
+`straggler-heartbeat` — a wall-clock timer that, when completions stall, names the
+slowest in-flight cells (`model · item · elapsed`, with `try N` when retrying) so a
+hung cell is visible instead of a frozen line; and `oversized-solution-skip`
 — a per-grader `max_solution_chars` knob that auto-scores 0 (without a judge call)
 any stored solution whose visible text exceeds the threshold, so a weak model's
 repetition-loop output is no longer paid to the judge to grade as the zero it is;
