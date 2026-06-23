@@ -599,20 +599,24 @@ map. The keepalive is an asyncio task the orchestrator launches around `eval()`
 (the heartbeat already runs in-process for the eval's duration via `tracking()`),
 cancelled in the `finally`.
 
-**Implementation notes.** `_tracker.py` (a per-sample start map keyed by sample id,
-a timer coroutine, a `render_stragglers` pure function for tests),
-`generate/_run.py` / `grade/_run.py` (launch/cancel the timer inside the
-`tracking()` scope). Builds directly on the shipped `live-tracker`; relay-safe and
-carries no fact of record (UX-PATTERNS Law 8), so still no new gate, JSON field, or
-store change. ~120 lines + tests.
+**Implementation notes.** Entirely in `_tracker.py` (a per-sample start map keyed by
+sample id, an `eval_id→model` map from `on_task_start`, a timer coroutine, a
+`render_stragglers` pure function for tests). The timer must run **inside inspect's
+event loop** — `inspect_ai.eval()` is synchronous and owns that loop, so a task
+created in the orchestrator's `tracking()` scope never ticks — so it launches from
+the in-loop `on_run_start` hook and cancels in `on_run_end`, both on the existing
+`LiveTracker`. No run-module change: both stages already funnel through one
+hook-wired `run_condition_evals`. Builds directly on the shipped `live-tracker`;
+relay-safe and carries no fact of record (UX-PATTERNS Law 8), so still no new gate,
+JSON field, or store change. ~120 lines + tests.
 
-**Open questions.** The retry-state annotation the handoff wanted (`try N/max` /
-`reroute N/max` / `on_empty rerun aN`) is mostly **not observable** from the
-SampleStart/SampleEnd hooks: inspect's per-attempt retries happen *inside* a sample
-that hasn't ended, and itemeval's reroute / on_empty reruns happen *between* evals —
-so the first version shows run-level `attempt` / `experiment_id` only, and
-surfacing inspect's internal retry count waits on an inspect retry hook. Whether the
-threshold is a config knob or a fixed internal default (lean: fixed default first).
+**Open questions.** Resolved: the threshold/interval/cap are **fixed internal
+defaults**, not knobs. Resolved: a `try N` retry annotation **is** observable — the
+"inspect retry hook" the handoff wanted exists (`on_sample_attempt_start`, 1-based
+`attempt`, verified inspect 0.3.239), so the first version shows it. Still out of
+scope (genuinely not per-sample-observable): `reroute N/max` and `on_empty rerun aN`,
+which happen *between* evals in itemeval orchestration, not inside a sample — the
+run-level `attempt` / `experiment_id` already on the heartbeat covers that dimension.
 
 ---
 
