@@ -1,9 +1,11 @@
 # Implementation plan — straggler-heartbeat (timer-driven slow-cell liveness)
 
-**Status: IN PROGRESS (started 2026-06-22).** Written against inspect_ai 0.3.239
-(pinned in `uv.lock`) — re-verify the pinned hook facts below if that moved. This
-file is the working brief for a fresh implementation session: it carries all the
-context that session needs. Read these first, in order:
+**Status: IMPLEMENTED 2026-06-22.** Shipped on `feat/straggler-heartbeat` (CHANGELOG
+`Closes: straggler-heartbeat`). Both workstreams landed in one commit, entirely in
+`_tracker.py` (+ `tests/test_tracker.py`): the timer + `render_stragglers` (W1) and
+the `try N` retry annotation via `on_sample_attempt_start` (W2). Written against
+inspect_ai 0.3.239 (pinned in `uv.lock`). This file is the design record; below was
+the working brief. Read these first, in order:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. The load-bearing law here is

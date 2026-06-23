@@ -578,46 +578,6 @@ resolved `max_tokens` so only the models *this* study would truncate are flagged
 (lean: yes — a bare cap number is noise; the actionable signal is "this model
 can't emit the length you're asking for").
 
-### Timer-driven straggler heartbeat
-**Key:** `straggler-heartbeat`
-
-**Motivation.** The shipped `live-tracker` heartbeat is
-**completion-event-driven** (`_tracker.LiveTracker.on_sample_end` is the only
-per-sample emit), so a hung cell — no `SampleEnd` — produces no updates: the line
-freezes for as long as the stall lasts (observed: a ~13-min freeze during a
-provider hang), and slow-vs-hung is invisible without `lsof` / `ps` / reading the
-`.eval`. The tracker already computes an aggregate `in-flight` count but cannot say
-**which** cells are slow or for how long.
-
-**Design sketch.** Add a wall-clock keepalive that ticks every ~30–60s **only when
-no sample has ended since the last emitted line** (so it never competes with the
-throttled per-completion line), listing the slowest in-flight cells — each
-`model · item · elapsed` — capped at the top ~10 with a `+N more` footer, and
-including only cells over a threshold (default ~120s). `SampleStart` records
-per-sample start metadata into a map; `SampleEnd` removes it; the timer reads the
-map. The keepalive is an asyncio task the orchestrator launches around `eval()`
-(the heartbeat already runs in-process for the eval's duration via `tracking()`),
-cancelled in the `finally`.
-
-**Implementation notes.** Entirely in `_tracker.py` (a per-sample start map keyed by
-sample id, an `eval_id→model` map from `on_task_start`, a timer coroutine, a
-`render_stragglers` pure function for tests). The timer must run **inside inspect's
-event loop** — `inspect_ai.eval()` is synchronous and owns that loop, so a task
-created in the orchestrator's `tracking()` scope never ticks — so it launches from
-the in-loop `on_run_start` hook and cancels in `on_run_end`, both on the existing
-`LiveTracker`. No run-module change: both stages already funnel through one
-hook-wired `run_condition_evals`. Builds directly on the shipped `live-tracker`;
-relay-safe and carries no fact of record (UX-PATTERNS Law 8), so still no new gate,
-JSON field, or store change. ~120 lines + tests.
-
-**Open questions.** Resolved: the threshold/interval/cap are **fixed internal
-defaults**, not knobs. Resolved: a `try N` retry annotation **is** observable — the
-"inspect retry hook" the handoff wanted exists (`on_sample_attempt_start`, 1-based
-`attempt`, verified inspect 0.3.239), so the first version shows it. Still out of
-scope (genuinely not per-sample-observable): `reroute N/max` and `on_empty rerun aN`,
-which happen *between* evals in itemeval orchestration, not inside a sample — the
-run-level `attempt` / `experiment_id` already on the heartbeat covers that dimension.
-
 ---
 
 ## Tier 3 — scale and breadth
