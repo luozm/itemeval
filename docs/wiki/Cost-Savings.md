@@ -125,10 +125,12 @@ hint).
 `budget.policy: full-batch` sends calls through the provider's batch queue at
 about half price. **Trade-off:** results take minutes to hours, with no live
 progress — use it for large runs you'll collect later, never for iterating.
-**Limit:** works with OpenAI/Anthropic/Google/Grok/Together directly; **not
+**Limit:** works with OpenAI/Anthropic/Grok/Together directly; **not
 through OpenRouter** — but if you sampled your models as `openrouter/…`,
 `prefer_native_batch` can route them to their native API to get the discount
-anyway (next section).
+anyway (next section). (Google/Gemini batch is currently broken upstream, so
+itemeval runs a Google model interactively instead — see the caveat under Native
+batch routing below.)
 
 ### 5. Guardrails — savings by prevention (on by default)
 
@@ -169,8 +171,17 @@ budget:
 
 A model routes only when **all** of these hold: you are on a batch run, the knob
 is on, the model is `openrouter/<provider>/…` for a provider whose native API
-batches (Anthropic, OpenAI, Google, xAI→grok, Together), and that provider's API
-key is in your environment. Anything else stays on OpenRouter untouched.
+batches (Anthropic, OpenAI, xAI→grok, Together), and that provider's API key is in
+your environment. Anything else stays on OpenRouter untouched.
+
+> **Google/Gemini native batch is currently unavailable.** inspect_ai's Gemini
+> batch serialization is broken upstream (it sends `system_instruction` as a JSON
+> array where the batch API requires a `{parts:…}` object, so every batch line is
+> rejected with `400 INVALID_ARGUMENT`). Until that is fixed upstream, itemeval
+> never routes a Google model to native batch, and a directly-named `google/…`
+> model runs **interactively** even under `policy: full-batch` — announced with a
+> `native batch unavailable for N model(s) …` warning, and billed at full price
+> (no batch discount is applied to it in the estimate, ledger, or summary).
 
 **Batch or cache — which is cheaper?** Both cut the same bill and you can only
 pick one per run (batch reorders calls, which turns prompt caching off).
