@@ -524,13 +524,17 @@ path's cache scheduling, batch, and `cache_prompt` (the reroute task hard-codes
 `cache=False`, which resume must not). When every epoch of an item is missing,
 this reduces to today's whole-item task; the win is the holed-item case.
 
-**Implementation notes.** `generate/_run.py` (planning loop ~`:886-911`: stop
-collapsing `missing` to items; carry the per-cell set), `generate/_task.py` (a
-cell-granular generate task, or a `cells=` mode on `build_generate_task`,
-mirroring reroute's write-back-by-metadata), the harvest path (write each row at
-its original epoch, as reroute does), and `budget/_estimator.py` + `_status.py`
-(count missing **cells**, not holed items, so the pre-flight denominator
-matches). ~120 lines + tests. No schema change.
+**Implementation notes.** Reuse the shipped reroute machinery: `generate/_run.py`
+Phase-1 planning (~`:886-911`) splits each condition's missing set per item —
+*whole-missing* items keep the `epochs=Epochs(N)` main task (cache/warming
+preserved), *holed* items route their missing cells to a new cell-granular
+**hole-fill phase** modeled on `_reroute_soft_failures`, reusing
+`build_reroute_task` (one sample per cell, `epochs=1`, cache-off, write-back via
+`reroute_epoch`) with base routing. The estimator and `status` are **already**
+cell-granular (`epochs_to_run`-based `remaining_calls`/`completed_cells`), so the
+fix aligns the executor to the existing estimate rather than changing the
+counters. Append-only result fields (`cells_filled`/`items_holed`); no store
+schema change. ~120 lines + tests.
 
 **Relation to other items.** Complements `grade-solution-fingerprint` (the other
 half: detect a grade gone stale when a solution *does* change, for any reason) —
