@@ -485,6 +485,48 @@ match the response-cache's byte-exactness). Whether to also fingerprint the rubr
 (already covered by `rubric_hash`, which is in the row but not the skip predicate —
 fold both into the staleness check?).
 
+### Bounded / deterministic-aware empty rerun
+**Key:** `bounded-empty-rerun`
+
+**Motivation.** `solvers.on_empty: rerun` re-attempts empty (no-error, blank)
+completions on every `generate`, relying on the local response cache to keep a
+*deterministic* empty free on re-runs (the knob's own doc: "an identical request
+will hit the response cache and stay empty"). But when `cache` is off — or any
+replay misses — a model that deterministically empties at ceiling (its reasoning
+budget fully spent, `stop_reason ∈ {max_tokens, model_length}`, no output text)
+re-bills its full cost on **every restart** with no chance of a different result
+at a fixed config (a budget bump is a *new* condition id, not a rerun of the same
+cell). Real case: ~$7.6 of premium-anchor spend, 13 ceiling-hits re-billed across
+attempts. The current mitigations are both blunt — `cache: on` (defeated by a
+cache-off study or a missed replay) or `on_empty: skip` (identity-bearing, so it
+can't be flipped on mid-study).
+
+**Design sketch.** Two complementary levers:
+1. **Deterministic-empty detection.** Classify an empty whose `stop_reason` is a
+   clean/length-cap stop (`stop` / `max_tokens` / `model_length`) as
+   *deterministic* — re-issuing the identical request cannot change the outcome —
+   and mark it **done** rather than pending, so `rerun` only re-attempts genuinely
+   *transient* empties (a provider hiccup that returned blank, `unknown`/`error`
+   stop). Reuses the `stop_reason` already stored per solution.
+2. **`solvers.max_empty_reruns`** (int, default `None` = today's unbounded
+   behavior): a hard cap on empty re-attempts per cell — the empty-channel sibling
+   of the shipped `max_retries` / `max_reroutes`.
+
+Both are operational/cost knobs → **non-identity** (excluded from the
+`experiment_id` digest and the response-cache key, like `max_retries`), so setting
+either never re-keys a study.
+
+**Implementation notes.** `_config.py` (the knob + the deterministic stop-reason
+set), the not-done predicate where `require_solution` is read today
+(`store/_solutions.py` + `_status.py`), `generate/_run.py` (honor the cap), and
+`budget/_estimator.py` (a deterministic empty must stop counting as a re-billable
+remaining call — it also reads `require_solution`). ~80 lines + tests.
+
+**Open questions.** Whether a deterministic empty is *reported* distinctly from a
+skipped empty in the run summary (lean: yes — a settled cell, not a deferred one).
+Whether `content_filter` counts as deterministic (lean: no — treat as transient; a
+reroute may clear it).
+
 ---
 
 ## Tier 3 — scale and breadth
