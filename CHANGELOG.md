@@ -6,6 +6,25 @@ All notable changes to itemeval are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **`solvers.retry_on_error` — a configurable sample-level retry for `generate`,
+  including a fail-fast "fast pass".** itemeval always called inspect's
+  `eval(retry_on_error=1)` with a hard-coded `1` sample-retry (chosen for
+  resilience), with no way for a study to change it. The new knob threads verbatim
+  to inspect's `eval(retry_on_error=...)` for the generate stage: unset (`null`,
+  the default) keeps itemeval's built-in `1` — today's behavior, unchanged; `0`
+  takes a **single attempt**, so a stalled cell holes after **one**
+  `attempt_timeout` instead of two (a deliberately fail-fast first pass — fill the
+  holes later with a longer timeout or a fresh run); `N` retries `N` times for a
+  flaky provider window. This is the *sample*-level layer, distinct from
+  `max_retries` (which retries within one model call). Grade keeps the built-in
+  `1`. Pure execution/robustness knob — **non-identity** (excluded from condition
+  ids and the `experiment_id` digest, so setting it never re-keys a study); a
+  digest-stability guard test freezes that. `ge=0` (unlike `max_retries`' `ge=1`,
+  because `0` is the meaningful fail-fast value).
+
+  Closes: retry-on-error
+
 ### Fixed
 - **Resume no longer silently re-runs — and overwrites — the completed epochs of a
   partially-finished item.** `generate`'s resume scoped re-runs at *item*

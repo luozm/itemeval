@@ -43,6 +43,7 @@ _NON_IDENTITY_SOLVERS = (
     "cache_prompt",
     "attempt_timeout",
     "max_retries",
+    "retry_on_error",
     "max_reroutes",
 )
 _NON_IDENTITY_GRADER = ("provider_routing", "attempt_timeout", "max_retries", "max_solution_chars")

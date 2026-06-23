@@ -232,6 +232,17 @@ class SolversConfig(BaseModel):
     # enters condition ids or the experiment_id digest (it does not affect output —
     # inspect excludes it from the response-cache key too).
     max_retries: int | None = Field(default=None, ge=1)
+    # inspect's SAMPLE-level retry (eval(retry_on_error=...)): a sample that errors
+    # — e.g. an attempt-timeout hole, or a transient provider error — is re-run up to
+    # this many times. Distinct from max_retries, which bounds retries WITHIN a single
+    # model call; this re-runs the whole sample. None (default) keeps itemeval's
+    # built-in 1 sample-retry (resilience); 0 = a single attempt, so a slow cell
+    # becomes a hole after one attempt_timeout instead of two — a deliberately
+    # fail-fast "fast pass" (fill the holes later with a longer timeout / fresh run).
+    # Generate stage only (grade keeps the built-in 1). Pure execution/robustness
+    # knob; never enters condition ids or the experiment_id digest (popped in
+    # _identity._NON_IDENTITY_SOLVERS).
+    retry_on_error: int | None = Field(default=None, ge=0)
     on_empty: EmptySolutionPolicy = "skip"  # handling of empty (no-error) solutions
     # Provider prompt caching for the generate stage (Anthropic-style explicit
     # cache_control markers; token-prefix providers like OpenAI cache

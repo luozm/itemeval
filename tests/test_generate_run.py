@@ -44,6 +44,36 @@ def test_attempt_timeout_bounds_retries(study):
     assert _cfg(None, 3).max_retries == 3
 
 
+def test_retry_on_error_threads_to_eval(monkeypatch):
+    """solvers.retry_on_error reaches inspect's eval(): unset -> the built-in 1,
+    0 -> a single attempt (fail-fast pass). Pure pass-through, default unchanged."""
+    import itemeval.generate._run as run_mod
+
+    captured: dict = {}
+
+    def fake_eval(tasks, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        return []  # no logs -> ({}, None); we only assert the eval kwargs
+
+    monkeypatch.setattr(run_mod.inspect_ai, "eval", fake_eval)
+    task = SimpleNamespace(dataset=[0], epochs=1, model="mockllm/model")
+
+    for given, expected in [(None, 1), (0, 0), (2, 2)]:
+        run_mod.run_condition_evals(
+            [task],
+            stage="generate",
+            experiment_id="exp",
+            attempt=1,
+            study="s",
+            display="rich",
+            log_dir="/tmp",
+            max_tasks=1,
+            retry_on_error=given,
+        )
+        assert captured["retry_on_error"] == expected, (given, expected)
+
+
 def test_resolve_display_precedence(monkeypatch):
     """Explicit value wins, then INSPECT_DISPLAY, then the "rich" default."""
     monkeypatch.delenv("INSPECT_DISPLAY", raising=False)
