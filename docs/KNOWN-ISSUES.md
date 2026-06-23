@@ -125,3 +125,28 @@ harvest`'s `classify_logs`), and deletes only the fully-superseded `.eval` —
 never a partially-superseded one (a prior attempt is the only log for the good
 cells it alone produced). A side effect → announce count + bytes (Law 1) and
 require the flag (consent).
+
+---
+
+## Pre-flight wall-clock ETA mislabels request parallelism as `concurrency`
+**Found:** 2026-06-22
+
+**Symptom.** The `estimate`/`generate`/`grade` pre-flight line reads `~Nm at
+concurrency K`, where `K` is the number of **distinct execution models**
+(`len(exec_models)`), not request parallelism. A single-judge `grade` stage prints
+`concurrency 1` while ~50 requests run concurrently under inspect's
+`max_connections` — and the live heartbeat's own `in-flight` field shows the truth
+and contradicts it. The same `K` is the ETA divisor
+(`remaining_calls / K × per_call_latency`), so the ETA is systematically too long
+for few-model stages (observed: an announced ~53m stage that ran ~2m; swings of
+~46s↔18m across one run from heavy-tailed latency).
+
+**Where.** `src/itemeval/cli.py` (the `at concurrency {st.concurrency}` line,
+~`:54`) and `src/itemeval/budget/_estimator.py` (`concurrency = max(1,
+len(exec_models))` ~`:1026`; `eta_seconds` divides by it ~`:67`).
+
+**Status.** Deferred — the ETA is informational (the money gate never reads it,
+UX-PATTERNS Law 2). Fix sketch: relabel the field to **model lanes** (what `K`
+actually is) and base the ETA on `lanes × max_connections` for request
+parallelism. The residual swing is inherent — a coarse prior over a long-tailed
+latency distribution — so the ETA stays a caveated single line, not a promise.
