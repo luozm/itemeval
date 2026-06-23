@@ -506,6 +506,38 @@ skipped empty in the run summary (lean: yes — a settled cell, not a deferred o
 Whether `content_filter` counts as deterministic (lean: no — treat as transient; a
 reroute may clear it).
 
+### Configurable sample-level retry (fail-fast "fast pass")
+**Key:** `retry-on-error`
+
+**Motivation.** itemeval always calls inspect's `eval(..., retry_on_error=1)` with a
+**hard-coded `1`** sample-level retry, chosen for resilience — a study cannot change
+it. Two real needs. (1) **Fail-fast pass:** with `solvers.attempt_timeout` set, a
+stalled cell is retried once and *times out again* before it holes, so a stuck cell
+costs ~2× the timeout in wall-clock; a quick first pass wants `0` — hole after a
+single attempt, fill the holes later with a longer timeout / fresh run. (2) **More
+resilience:** a flaky provider window may warrant `2`+. This is the *sample*-level
+layer, distinct from the shipped `max_retries` (within one model call).
+
+**Design sketch.** A `solvers.retry_on_error: int | None = Field(default=None, ge=0)`
+knob, threaded verbatim to inspect's `eval(retry_on_error=...)` for the **generate**
+stage only (grade keeps the built-in `1`). Because inspect's own default means *no*
+retries, itemeval keeps passing an explicit value: config `None` → pass `1`
+(today's resilient default — unchanged), `0` → single attempt (fail-fast), `N` → `N`.
+`ge=0` (not `ge=1`) because `0` is the meaningful fail-fast value.
+
+**Implementation notes.** `_config.py` (the field), `_identity.py`
+(`_NON_IDENTITY_SOLVERS` += `"retry_on_error"` — keeps the digest stable so it never
+re-keys a study; mandatory **and** sufficient), `generate/_run.py`
+(`run_condition_evals` gains the arg, `1 if None else value` at the eval call; the
+three generate call sites pass `solvers.retry_on_error`). Pure execution/robustness
+knob → non-identity (never a condition id or the `experiment_id` digest). ~50 lines +
+tests. Additive-optional surface; discharged by a digest-stability guard test
+(DEVELOPMENT.md schema gate item 1).
+
+**Open questions.** Whether grade ever needs a symmetric knob (lean: no — add on
+demand). Whether a too-aggressive `0` pass warrants a coded hint (lean: no — the
+existing hole / soft-failure surfacing already shows the symptom).
+
 ### Deeper pre-flight: single-provider & output-cap flags
 **Key:** `preflight-endpoints`
 
