@@ -7,6 +7,30 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **Resume no longer silently re-runs — and overwrites — the completed epochs of a
+  partially-finished item.** `generate`'s resume scoped re-runs at *item*
+  granularity: one errored or missing epoch re-executed **every** completed sibling
+  epoch of that item (the planning loop collapsed the per-epoch missing set to whole
+  items). With the local response cache intact those siblings replayed for $0, but
+  on a cache **miss** — most sharply after bumping a documented-safe non-identity
+  knob like `solvers.attempt_timeout`, which sits in inspect's per-epoch
+  response-cache key — they became real paid re-draws, and a fresh valid draw
+  **overwrote** the prior valid solution (the recency tie-break in `upsert_parquet`),
+  silently replacing a completed, already-graded answer. Resume now splits each
+  condition's missing set per item: a *whole-missing* item keeps the `epochs=N` path
+  (response-cache + prompt-warming preserved — the grow-in-place hot path), while a
+  *holed* item (some epochs done, some missing) has **only its missing cells**
+  re-issued through a cell-granular hole-fill phase (reusing the reroute task — one
+  sample per cell, `epochs=1`, cache-off, written back at the original epoch).
+  Completed siblings are never re-executed, so they can be neither re-paid nor
+  overwritten, independent of the cache-key issue. The fill is announced (`filled: N
+  missing cell(s) across K holed item(s) — completed siblings untouched`, plus
+  `cells_filled` / `items_holed` in `--json`) and folded into the single money gate;
+  the pre-flight estimate was already cell-granular, so this aligns the executor with
+  it. The complementary stale-grade detection (when a solution legitimately changes)
+  remains the separate `grade-solution-fingerprint` candidate.
+
+  Closes: cell-granular-resume
 - **A native Google/Gemini judge under a batch plan no longer fails the run
   mid-flight.** inspect_ai's `GoogleBatcher` serializes `system_instruction` as a
   JSON array, but Gemini's batch REST schema requires a `{parts:[…]}` object, so
