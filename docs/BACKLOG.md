@@ -509,6 +509,16 @@ attempts. The current mitigations are both blunt — `cache: on` (defeated by a
 cache-off study or a missed replay) or `on_empty: skip` (identity-bearing, so it
 can't be flipped on mid-study).
 
+**Evidence (2026-06-22).** A 22-run detect-only streaming experiment on the same
+premium-anchor study independently partitioned the dead-call modes: **9/22** were
+clean reasoning-exhaustion empties (`stop_reason ∈ {max_tokens, model_length}`, no
+text) — exactly this feature's deterministic-empty bucket — re-billed on every
+restart, matching the `$7.6` fingerprint above (plausibly the same incident). This
+confirms the design (post-hoc `stop_reason` classification, in-package, no inspect
+seam) and raises priority. The non-self-signaling residue (a silent *hang* that
+never returns a row) is a separate, inspect-blocked concern tracked under
+`token-progress-timeout`.
+
 **Design sketch.** Two complementary levers:
 1. **Deterministic-empty detection.** Classify an empty whose `stop_reason` is a
    clean/length-cap stop (`stop` / `max_tokens` / `model_length`) as
@@ -577,6 +587,72 @@ coded hint). ~90 lines + tests (a fixture endpoints payload exercises the parse)
 resolved `max_tokens` so only the models *this* study would truncate are flagged
 (lean: yes — a bare cap number is noise; the actionable signal is "this model
 can't emit the length you're asking for").
+
+### Token-progress idle timeout for silent hangs (mid-run dead-call detection)
+**Key:** `token-progress-timeout`
+
+**Motivation.** The shipped wall-clock `attempt_timeout` (`request-timeout`, passed
+to inspect's `GenerateConfig.attempt_timeout` → `anyio.move_on_after`) is a
+**total-duration** kill: it can't tell a stalled provider from a long-but-alive
+generation, so any finite setting false-kills valid long reasoning/proofs (the
+g-theory study set 900 s and still abandoned cells), while raising it trades
+false-kills for unbounded hangs. The robust signal is **token progress**, not
+elapsed time. This feature owns only the **non-self-signaling** dead mode: the
+stream stays open, tokens stop arriving forever, and **no** finish / usage /
+`stop_reason` / OpenRouter `504` is ever emitted — so nothing post-hoc can see it
+and the call hangs until the wall-clock kill (or never).
+
+**Evidence (22-run detect-only streaming experiment, 2026-06-22, $1.41).** The
+silent-hang/drop modes were **~4/22** and produced no self-signal: a **370 s** stall
+emitted no `504` and never recovered; 2 streams dropped with no `[DONE]`/finish/
+usage. Two numbers fix the detector when it can be built — the max **recovered**
+inter-token gap was **57.6 s** (a call that paused 57.6 s mid-stream and then
+*completed*) and 0/22 recovered gaps exceeded 60 s, so the idle threshold must sit
+well above ~58 s (a conservative **~150 s**, configurable). Keep-alives mask a
+byte-level timeout: OpenRouter streams `: OPENROUTER PROCESSING` (~0.5 s) *through*
+a stalled upstream, so the timer must key on **content/reasoning token deltas**, not
+raw bytes, and reset on reasoning deltas too (first content arrived as late as
+533 s on long reasoners).
+
+**Why it's deferred (inspect boundary).** The detector must reset on each token
+delta and ignore keep-alive frames — i.e. run **inside the SSE consumption loop** in
+`inspect_ai/model/_providers/openai_compatible.py`. itemeval calls
+`Model.generate()`, which returns a *complete* `ModelOutput` (neither the caller nor
+the `@solver` wrap point sees deltas), and inspect's `client_timeout` is byte-level
+(reset by the keep-alives) with no token-delta idle knob to pass through. The only
+in-package route is to **subclass/replace the provider** and run our own SSE reader,
+which re-derives the response-cache key, `.eval` transcript, and output parsing to
+keep rows byte-identical — a provider fork, which `DEVELOPMENT.md`'s "wrap, don't
+fork" forbids. (Same deferral pattern as `batch-resume`: the clean home is upstream
+in inspect — not a dependency on it.)
+
+**Design sketch (when unblocked).** File an inspect feature request for a
+**token-progress idle timeout** on the streaming model call — reset on each content
+*or* reasoning delta, ignore keep-alive/comment SSE frames, raise a retryable
+timeout after an idle threshold (default well above ~58 s), distinct from the total
+`attempt_timeout`. Once inspect exposes it, itemeval consumes it with a thin
+pass-through knob (`solvers.idle_timeout` / `graders.<name>.idle_timeout`), an
+operational **non-identity** knob like `attempt_timeout`/`max_retries` (never a
+condition id or the `experiment_id` digest), with `max_tokens` as the cost bound.
+Revisit on the inspect release-notes watch the upgrade pipeline already runs
+(`DEVELOPMENT.md` — streaming/timeout changes).
+
+**Scope boundary (handed off, not double-covered).** The **self-signaling** dead
+modes are owned elsewhere and buildable in-package today: a clean reasoning-
+exhaustion empty (`stop_reason ∈ {max_tokens, model_length}`, ~9/22) is
+`bounded-empty-rerun`'s deterministic-empty bucket; a silent stream-*drop* that
+surfaces as an `unknown`/error empty is a *transient* for `output-validity-reroute`
++ `on_empty: rerun`. Both classify a **stored** `stop_reason` post-hoc (no inspect
+seam) — which is exactly why they are not blocked and this one is. The interim
+mitigation for the hang is operational: raise `attempt_timeout` above the max real
+proof duration (cost still bounded by `max_tokens`), with `straggler-heartbeat`
+surfacing the stalled cell.
+
+**Open questions.** Whether inspect takes the idle timeout upstream (preferred) or
+exposes a streaming callback that avoids a fork. The threshold default and whether
+it stays a knob (lean: knob — the experiment under-samples the 60–370 s recoverable
+region). Whether the silent-drop is already fully discharged by reroute (then this
+feature is purely the silent-hang idle timer).
 
 ---
 
