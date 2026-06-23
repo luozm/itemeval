@@ -54,6 +54,19 @@ def test_normalized_digest_drops_provider_routing(tmp_path):
     assert normalized_config_digest(_load(tmp_path / "b", routed)) == base.config_sha256
 
 
+def test_normalized_digest_drops_retry_on_error(tmp_path):
+    # retry-on-error: a sample-level retry knob is pure execution/robustness, so
+    # set-vs-unset must NOT move the digest or experiment_id — otherwise the
+    # additive field would re-key every existing study (DEVELOPMENT.md schema gate).
+    base = _load(tmp_path / "a", TEST_CONFIG_YAML)
+    fast_pass = TEST_CONFIG_YAML.replace(
+        "  temperature: 0.3", "  temperature: 0.3\n  retry_on_error: 0"
+    )
+    other = _load(tmp_path / "b", fast_pass)
+    assert normalized_config_digest(other) == base.config_sha256
+    assert experiment_id(other, "generate") == experiment_id(base, "generate")
+
+
 def test_experiment_id_stable_and_stage_scoped(tmp_path):
     a = _load(tmp_path / "a", TEST_CONFIG_YAML)
     b = _load(tmp_path / "b", TEST_CONFIG_YAML)

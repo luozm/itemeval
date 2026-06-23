@@ -222,6 +222,7 @@ def run_condition_evals(
     log_dir: str,
     max_tasks: int,
     batch: bool = False,
+    retry_on_error: "int | None" = None,
 ) -> "tuple[dict[str, EvalLog], str | None]":
     """Run every condition's task in ONE inspect eval, up to max_tasks at once.
 
@@ -233,8 +234,10 @@ def run_condition_evals(
     (never by index — concurrent completion order is not stable). inspect
     isolates per-task errors into failed logs (sibling models keep running);
     only a whole-call exception sets ``fatal`` (msg), so the caller can mark
-    every condition errored. ``fail_on_error=False`` + ``retry_on_error=1`` keep
-    the per-sample semantics identical to the old per-condition loop."""
+    every condition errored. ``fail_on_error=False`` keeps the per-sample
+    semantics identical to the old per-condition loop; ``retry_on_error`` is the
+    sample-level retry count (``None`` -> the built-in ``1``; ``0`` = single
+    attempt, a fail-fast pass — see ``SolversConfig.retry_on_error``)."""
     if not tasks:
         return {}, None
     from itemeval._identity import invocation_handle
@@ -254,7 +257,7 @@ def run_condition_evals(
                 log_dir=log_dir,
                 log_format="eval",
                 fail_on_error=False,
-                retry_on_error=1,
+                retry_on_error=1 if retry_on_error is None else retry_on_error,
                 tags=["itemeval", stage],
                 # itemeval_run_id is the invocation handle (the manifest basename
                 # _harvest._wave_identity looks up); experiment_id/attempt let harvest
@@ -779,6 +782,7 @@ def _reroute_soft_failures(
             log_dir=str(prep.paths.logs_stage_dir("generate")),
             max_tasks=max_tasks_for([t.model for t in tasks]),
             batch=prep.plan.batch is not None,
+            retry_on_error=prep.config.solvers.retry_on_error,
         )
         if fatal is not None:
             break
@@ -896,6 +900,7 @@ def _fill_holes(
         log_dir=str(prep.paths.logs_stage_dir("generate")),
         max_tasks=max_tasks_for([t.model for t in tasks]),
         batch=False,
+        retry_on_error=prep.config.solvers.retry_on_error,
     )
     if fatal is not None:
         return FillResult()
@@ -1190,6 +1195,7 @@ def run_generate(
         log_dir=str(prep.paths.logs_stage_dir("generate")),
         max_tasks=max_tasks_for([exec_model for _, _, exec_model, _ in planned]),
         batch=prep.plan.batch is not None,
+        retry_on_error=prep.config.solvers.retry_on_error,
     )
 
     # Phase 3: harvest each planned condition from its log (mapped by metadata).

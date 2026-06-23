@@ -217,6 +217,18 @@ def test_sample_inline_list_universe():
         ExperimentConfig.model_validate(data)
 
 
+def test_solvers_retry_on_error_bounds():
+    from itemeval._config import SolversConfig
+
+    # default None (= itemeval's built-in 1); 0 (fail-fast) and positive accepted;
+    # negative rejected (ge=0, unlike max_retries' ge=1 — 0 is the meaningful value).
+    assert SolversConfig(models=["mockllm/m"]).retry_on_error is None
+    assert SolversConfig(models=["mockllm/m"], retry_on_error=0).retry_on_error == 0
+    assert SolversConfig(models=["mockllm/m"], retry_on_error=2).retry_on_error == 2
+    with pytest.raises(Exception):
+        SolversConfig(models=["mockllm/m"], retry_on_error=-1)
+
+
 def test_sample_where_rejected_for_curated_universe():
     import yaml
 

@@ -1,11 +1,11 @@
 # Implementation plan — retry-on-error (configurable sample-level retry / fail-fast pass)
 
-**Status: IN PROGRESS (started 2026-06-23).** Written against inspect_ai 0.3.239
-(pinned in `uv.lock`) — re-verify the inspect facts below if that moved. The
-implementation already exists in the working tree (config field + identity pop +
-generate-stage threading + a pass-through test); this plan is the design record
-and names the **remaining same-change paperwork** (a digest-stability guard test,
-a validation test, the CHANGELOG entry, BACKLOG removal). Read first, in order:
+**Status: IMPLEMENTED 2026-06-23.** Shipped on `feat/retry-on-error` (CHANGELOG
+`Closes: retry-on-error`). Written against inspect_ai 0.3.239 (pinned in
+`uv.lock`). This file is now the design record; the context below is what the
+implementing session worked from (config field + identity pop + generate-stage
+threading + a pass-through test + the digest-stability guard and validation tests
++ the CHANGELOG entry and BACKLOG removal). The reading list it carried:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract (knob buckets, no new gates,
