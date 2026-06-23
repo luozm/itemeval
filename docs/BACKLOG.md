@@ -493,65 +493,6 @@ match the response-cache's byte-exactness). Whether to also fingerprint the rubr
 (already covered by `rubric_hash`, which is in the row but not the skip predicate —
 fold both into the staleness check?).
 
-### Cell-granular resume / recovery re-runs
-**Key:** `cell-granular-resume`
-
-**Motivation.** Resume re-runs are scoped at **item** granularity, not cell:
-`generate/_run.py:890` computes the per-epoch missing set (`epochs_to_run` →
-`dict[item_id, set[missing_epoch]]`) but immediately collapses it
-(`to_run = [iid for iid in item_ids if missing[iid]]`) and builds a whole-item
-task with `epochs=Epochs(replications)`. So one errored cell re-executes *every
-completed sibling epoch* of its item. The local response cache normally replays
-those siblings at $0 — but any cache miss makes them real paid re-generations,
-and a fresh valid re-draw then **overwrites** the prior valid solution
-(`upsert_parquet`'s valid-vs-valid tie breaks by recency, `store/_base.py:114`),
-silently replacing a completed, already-graded solution. Real incident
-(2026-06-23, g-theory): bumping `solvers.attempt_timeout` — a documented-safe
-non-identity knob — busted inspect's response cache (the field sits in inspect's
-cache key, not its exclude set) and overwrote 9 published solutions; their
-grades, which carry no solution provenance, were silently kept stale. Scoping
-recovery to the truly-missing cells fixes the root: completed siblings never
-re-run, so they can be neither re-paid nor overwritten — independent of the
-cache-key issue.
-
-**Design sketch.** Build the resume task over the missing **(item, epoch)**
-cells, not whole items. The pattern already ships: the reroute task
-(`build_reroute_task`, `generate/_task.py:128`) runs one `Sample` per cell with
-`epochs=Epochs(1)`, each carrying its target epoch in metadata so the harvest
-writes back the *original* epoch in place. Generalize that to the resume path —
-one sample per `(item, epoch)` from `epochs_to_run`'s set — **keeping** the main
-path's cache scheduling, batch, and `cache_prompt` (the reroute task hard-codes
-`cache=False`, which resume must not). When every epoch of an item is missing,
-this reduces to today's whole-item task; the win is the holed-item case.
-
-**Implementation notes.** Reuse the shipped reroute machinery: `generate/_run.py`
-Phase-1 planning (~`:886-911`) splits each condition's missing set per item —
-*whole-missing* items keep the `epochs=Epochs(N)` main task (cache/warming
-preserved), *holed* items route their missing cells to a new cell-granular
-**hole-fill phase** modeled on `_reroute_soft_failures`, reusing
-`build_reroute_task` (one sample per cell, `epochs=1`, cache-off, write-back via
-`reroute_epoch`) with base routing. The estimator and `status` are **already**
-cell-granular (`epochs_to_run`-based `remaining_calls`/`completed_cells`), so the
-fix aligns the executor to the existing estimate rather than changing the
-counters. Append-only result fields (`cells_filled`/`items_holed`); no store
-schema change. ~120 lines + tests.
-
-**Relation to other items.** Complements `grade-solution-fingerprint` (the other
-half: detect a grade gone stale when a solution *does* change, for any reason) —
-this incident is fresh evidence for both. Distinct from `midcell-resume` (sub-cell
-re-walk of one large cell). The cache-key root (`attempt_timeout` rides inspect's
-response-cache key though itemeval treats it as non-identity) is an
-**upstream-inspect** filing, like `token-progress-timeout`/`batch-resume`; this
-feature removes the hazard in-package without waiting on it.
-
-**Open questions.** Whether to also add a defensive **provenance lock** in
-`upsert_parquet`/grade (never let a re-draw overwrite a cell with downstream
-gradings) as belt-and-suspenders, or rely on cell-granular resume (root) +
-`grade-solution-fingerprint` (detection) — leaning the latter two, since the lock
-duplicates their coverage and complicates the harvest's deliberate
-quality-monotonic upsert. Whether the cell task batches per item or per cell
-under a native-batch plan (cells, to match reroute).
-
 ### Bounded / deterministic-aware empty rerun
 **Key:** `bounded-empty-rerun`
 

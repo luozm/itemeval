@@ -63,6 +63,15 @@ delta, because completed rows resume-skip and identical calls replay from the
 local memo at $0. The `pilot-available` hint points here when the money gate
 engages with no completed rows behind it.
 
+Resume is **per cell**, not per item. If an item finished some replications but
+one errored or was interrupted, re-running refills **only** the missing
+`(item, epoch)` cells — the completed sibling epochs are never re-executed, so
+they are never re-paid and never overwritten, even if a config change (e.g.
+bumping the operational `solvers.attempt_timeout`) invalidated the local response
+cache for that item. The run reports it as `filled: N missing cell(s) across K
+holed item(s) — completed siblings untouched` (`cells_filled` / `items_holed` in
+`--json`).
+
 ### 3. Provider "seen this before" discounts — on by default, two opt-ins
 
 Providers charge ~75–90% less for input text they processed moments ago. Two

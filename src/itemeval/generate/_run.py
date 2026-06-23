@@ -137,6 +137,13 @@ class GenerateResult(BaseModel):
     rerouted: int = 0
     reroute_recovered: int = 0
     reroute_unresolved: int = 0
+    # Cell-granular resume (cell-granular-resume): a holed item — some epochs done,
+    # some missing — has only its missing cells filled, never its completed
+    # siblings. cells_filled = missing cells re-issued this run; items_holed =
+    # distinct items that had a partial hole. The fill spend is folded into
+    # total_usd and its rows into rows_written.
+    cells_filled: int = 0
+    items_holed: int = 0
     manifest_path: str
     hints: list[Hint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)  # drift warnings — never block
@@ -797,6 +804,170 @@ def _reroute_soft_failures(
     return rerouted, recovered, unresolved, reroute_usd, ignored_providers
 
 
+class FillResult(BaseModel):
+    """Aggregate of the cell-granular hole-fill phase (cell-granular-resume)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cells_filled: int = 0  # missing cells re-issued (one row per cell)
+    items_holed: int = 0  # distinct items that had a partial hole
+    rows_written: int = 0
+    usd: float = 0.0
+    truncated: int = 0
+    run_models: list[str] = Field(default_factory=list)
+    sampling_effective: dict = Field(default_factory=dict)
+    endpoints_effective: dict = Field(default_factory=dict)
+
+
+def _fill_holes(
+    prep: "PreparedStudy",
+    selected: "list[GenCondition]",
+    holes_by_cond: "dict[str, list[tuple[Item, int]]]",
+    ident: Any,
+    factory: "ModelFactory",
+    endpoint_windows: "dict[str, int]",
+    display: "str | None",
+    reports_by_cond: "dict[str, ConditionRunReport]",
+) -> FillResult:
+    """Phase 3.5 (cell-granular-resume): fill the truly-missing cells of *holed*
+    items without re-running their completed siblings. One reroute-style task per
+    condition (`build_reroute_task`: one sample per (item, epoch), `epochs=1`,
+    cache-off, write-back at the absolute epoch via `reroute_epoch`) with the base
+    `provider_routing` — this is a primary draw, not a backend swap, so no provider
+    is ignored. Inspect's response cache keys on the runtime epoch (`per_epoch`),
+    so a one-epoch task cannot replay an item's other epochs; the holed cells have
+    no good completion to replay anyway, so cache-off is correct (and matches the
+    shipped reroute / wave-offset paths). Updates `reports_by_cond` for each filled
+    condition and returns the run-level aggregate."""
+    selected_by_id = {c.id: c for c in selected}
+    base_routing = prep.config.solvers.provider_routing
+    tasks = []
+    holed_items_by_cond: "dict[str, set[str]]" = {}
+    for cid, cells in holes_by_cond.items():
+        cond = selected_by_id[cid]
+        template = prep.solver_templates[cond.prompt_name]
+        price = lookup_price(prep.pricing, cond.model)
+        ctx_len = effective_context(
+            price.context_length if price else None, endpoint_windows.get(cond.model)
+        )
+        max_input = max(
+            (estimate_tokens(template.text) + estimate_tokens(it.input) for it, _ in cells),
+            default=0,
+        )
+        eff_max_tokens, clamped = fit_max_tokens(cond.gen_params.max_tokens, ctx_len, max_input)
+        task = build_reroute_task(
+            cells,
+            cond,
+            template,
+            prep.config.study,
+            prep.origins,
+            max_tokens_override=eff_max_tokens if clamped else None,
+            attempt_timeout=prep.config.solvers.attempt_timeout,
+            max_retries=prep.config.solvers.max_retries,
+        )
+        exec_model = prep.native_routes.get(cond.model, cond.model)
+        try:
+            task.model = factory(
+                exec_model,
+                "generate",
+                model_args_for(
+                    exec_model,
+                    provider_routing=base_routing,
+                    cache_scheduling=False,
+                    study=prep.config.study,
+                    condition_id=cond.id,
+                ),
+            )
+        except Exception:
+            continue  # cannot build this condition's model — its report falls to the guard
+        holed_items_by_cond[cid] = {it.id for it, _ in cells}
+        tasks.append(task)
+    if not tasks:
+        return FillResult()
+    # The hole-fill tasks are interactive (build_reroute_task hard-sets batch=None,
+    # like reroute) even under a batch plan — so the heartbeat is sample-paced.
+    log_by_cond, fatal = run_condition_evals(
+        tasks,
+        stage="generate",
+        experiment_id=ident.experiment_id,
+        attempt=ident.attempt,
+        study=prep.config.study,
+        display=display,
+        log_dir=str(prep.paths.logs_stage_dir("generate")),
+        max_tasks=max_tasks_for([t.model for t in tasks]),
+        batch=False,
+    )
+    if fatal is not None:
+        return FillResult()
+    out = FillResult()
+    for cid, log in log_by_cond.items():
+        if log is None or log.status != "success":
+            continue
+        cond = selected_by_id[cid]
+        rows, n, cond_usd = persist_generate_condition(
+            prep, cond, log, ident.experiment_id, ident.attempt
+        )
+        out.cells_filled += n
+        out.rows_written += n
+        out.usd += cond_usd or 0.0
+        out.run_models.append(cond.model)
+        out.endpoints_effective[cid] = endpoint_info(
+            log, cond.model, prep.native_routes.get(cond.model, cond.model)
+        )
+        out.truncated += sum(
+            1
+            for r in rows
+            if r["error"] is None
+            and r["stop_reason"] in _solutions.TRUNCATION_STOP_REASONS
+            and (r["solution"] or "").strip()
+        )
+        ok_rows = [r for r in rows if r["error"] is None]
+        if ok_rows:
+            out.sampling_effective[cid] = {
+                k.replace("_effective", ""): ok_rows[0][k]
+                for k in (
+                    "temperature_effective",
+                    "top_p_effective",
+                    "max_tokens_effective",
+                    "reasoning_effort_effective",
+                )
+            }
+        errors = sum(1 for r in rows if r["error"] is not None)
+        n_items = len(holed_items_by_cond.get(cid, ()))
+        existing = reports_by_cond.get(cid)
+        if existing is not None and existing.status == "run":
+            # Condition also ran whole-missing items on the main path — fold the
+            # filled cells into its report.
+            usd = (
+                None
+                if (existing.usd is None and cond_usd is None)
+                else (existing.usd or 0.0) + (cond_usd or 0.0)
+            )
+            reports_by_cond[cid] = existing.model_copy(
+                update={
+                    "items_run": existing.items_run + n_items,
+                    "rows_written": existing.rows_written + n,
+                    "errors": existing.errors + errors,
+                    "usd": usd,
+                }
+            )
+        else:
+            reports_by_cond[cid] = ConditionRunReport(
+                condition_id=cid,
+                slug=cond.slug,
+                status="run",
+                items_run=n_items,
+                rows_written=n,
+                errors=errors,
+                usd=cond_usd,
+                log_file=rel_to_study(prep.paths, log.location),
+                local_cache_rows=local_cache_rows(rows),
+                **cache_columns(rows),
+            )
+    out.items_holed = sum(len(s) for s in holed_items_by_cond.values())
+    return out
+
+
 def run_generate(
     prep: "PreparedStudy",
     *,
@@ -883,6 +1054,16 @@ def run_generate(
     planned: list[tuple[GenCondition, list[Item], str, Any]] = []
     clamped_models: dict[str, tuple[int, int, int]] = {}  # model -> (requested, effective, ctx)
     batch_suppressed: set[str] = set()  # models forced interactive (native batch broken upstream)
+    # cell-granular-resume: split each condition's missing set per item. A
+    # *whole-missing* item (no epoch in the block completed) stays on the main
+    # epochs=N path below (cache scheduling + cache_prompt warming preserved — the
+    # grow-in-place hot path). A *holed* item (some epochs done, some missing)
+    # routes only its missing cells to the hole-fill phase, so its completed
+    # siblings are never re-executed (never re-paid, never overwritten). A holed
+    # item is the ONLY case the silent-overwrite bug could touch, so confining the
+    # cell-granular path to it leaves every other run unchanged.
+    holes_by_cond: "dict[str, list[tuple[Item, int]]]" = {}
+    item_by_id = {it.id: it for it in prep.items_effective}
     for cond in selected:
         if force:
             to_run = list(item_ids)
@@ -894,18 +1075,32 @@ def run_generate(
                 epoch_block,
                 require_solution=prep.config.solvers.on_empty == "rerun",
             )
-            to_run = [iid for iid in item_ids if missing[iid]]
+            to_run = []
+            holes = []  # (item, absolute epoch) cells of partially-completed items
+            for iid in item_ids:
+                miss = missing[iid]
+                if not miss:
+                    continue
+                if len(miss) >= reps:  # whole-missing -> main epochs=N path
+                    to_run.append(iid)
+                else:  # holed -> fill only the missing cells, leave siblings be
+                    holes.extend((item_by_id[iid], e) for e in sorted(miss))
+            if holes:
+                holes_by_cond[cond.id] = holes
         if not to_run:
-            reports_by_cond[cond.id] = ConditionRunReport(
-                condition_id=cond.id,
-                slug=cond.slug,
-                status="skipped",
-                items_run=0,
-                rows_written=0,
-                errors=0,
-                usd=None,
-                log_file=None,
-            )
+            # A holes-only condition gets its report from the fill phase; only a
+            # condition with nothing missing at all is a true skip.
+            if cond.id not in holes_by_cond:
+                reports_by_cond[cond.id] = ConditionRunReport(
+                    condition_id=cond.id,
+                    slug=cond.slug,
+                    status="skipped",
+                    items_run=0,
+                    rows_written=0,
+                    errors=0,
+                    usd=None,
+                    log_file=None,
+                )
             continue
         to_run_set = set(to_run)
         items = [it for it in prep.items_effective if it.id in to_run_set]
@@ -1059,6 +1254,30 @@ def run_generate(
             **cache_columns(rows),
         )
 
+    # Phase 3.5: fill the holes of partially-completed items (cell-granular-resume)
+    # — only their missing cells, never the completed siblings. Runs for waves too
+    # (the absolute write-back is offset-agnostic); skipped after a fatal main eval.
+    cells_filled = items_holed = 0
+    if holes_by_cond and fatal is None:
+        fill = _fill_holes(
+            prep,
+            selected,
+            holes_by_cond,
+            ident,
+            factory,
+            endpoint_windows,
+            display,
+            reports_by_cond,
+        )
+        cells_filled = fill.cells_filled
+        items_holed = fill.items_holed
+        rows_written += fill.rows_written
+        total_usd += fill.usd
+        truncated_total += fill.truncated
+        run_models.extend(fill.run_models)
+        sampling_effective.update(fill.sampling_effective)
+        endpoints_effective.update(fill.endpoints_effective)
+
     # Phase 4: provider-aware reroute of soft failures (output-validity-reroute).
     # Opt-in (solvers.max_reroutes); skipped under a batch plan (a batch job can't
     # re-issue mid-flight), for wave/offset runs (those are fresh observations),
@@ -1082,6 +1301,24 @@ def run_generate(
             )
         )
         total_usd += reroute_usd
+
+    # Guard: a holes-only condition whose fill could not build/run never got a
+    # report above — give it an honest error report so reassembly never KeyErrors.
+    for c in selected:
+        reports_by_cond.setdefault(
+            c.id,
+            ConditionRunReport(
+                condition_id=c.id,
+                slug=c.slug,
+                status="error",
+                items_run=0,
+                rows_written=0,
+                errors=0,
+                usd=None,
+                log_file=None,
+                message="hole-fill phase produced no result for this condition",
+            ),
+        )
 
     # Reassemble in selected order (skips + runs/errors) for a stable summary.
     reports: list[ConditionRunReport] = [reports_by_cond[c.id] for c in selected]
@@ -1173,6 +1410,8 @@ def run_generate(
         rerouted=rerouted,
         reroute_recovered=reroute_recovered,
         reroute_unresolved=reroute_unresolved,
+        cells_filled=cells_filled,
+        items_holed=items_holed,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
         warnings=drift_warnings + clamp_warnings + batch_fallback_warnings,

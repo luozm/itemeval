@@ -1,10 +1,9 @@
 # Implementation plan — cell-granular-resume (scope resume re-runs to the missing cells, not whole items)
 
-**Status: IN PROGRESS (started 2026-06-23).** Written 2026-06-23 against
-inspect_ai 0.3.239 (pinned in `uv.lock`) — re-verify the pinned inspect facts in
-*Context* if that moved. This file is the working brief for a fresh
-implementation session: it carries all the context that session needs. Read
-these first, in order:
+**Status: IMPLEMENTED 2026-06-23.** Shipped as a `Fixed` CHANGELOG entry
+(`Closes: cell-granular-resume`). This file is the design record; the framing
+below is the working brief it was built from. Written against inspect_ai 0.3.239
+(pinned in `uv.lock`). The reading order it set out:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. The relevant laws here:

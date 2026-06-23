@@ -61,6 +61,7 @@ def test_generate_e2e(study):
 
     # 2 conditions x 2 dev items x 2 epochs
     assert result.rows_written == 8
+    assert result.cells_filled == 0  # a fresh run is all whole-missing — no holes
     assert all(r.status == "run" for r in result.conditions)
     df = read_solutions(prep.paths)
     assert len(df) == 8
@@ -111,6 +112,7 @@ def test_generate_resume_skips_complete(study):
     second = run_generate(prep)
     assert all(r.status == "skipped" for r in second.conditions)
     assert second.rows_written == 0
+    assert second.cells_filled == 0 and second.items_holed == 0  # no holes -> no fill
 
 
 def test_generate_force_reruns(study):
@@ -262,6 +264,103 @@ def test_reroute_off_by_default(study):
         & (df["epoch"] == bad["epoch"])
     ]
     assert cell["native_finish_reason"].iloc[0] == "error"  # untouched
+
+
+def _drop_cell(prep, condition_id, item_id, epoch):
+    """Remove one (condition, item, epoch) solution row, punching a hole into an
+    otherwise-complete item (cell-granular-resume test setup)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from itemeval.store._base import _coerce_to_schema
+    from itemeval.store._solutions import SOLUTIONS_SCHEMA, read_solutions
+
+    df = read_solutions(prep.paths)
+    keep = df[
+        ~(
+            (df["condition_id"] == condition_id)
+            & (df["item_id"] == item_id)
+            & (df["epoch"] == epoch)
+        )
+    ]
+    table = pa.Table.from_pandas(
+        _coerce_to_schema(keep, SOLUTIONS_SCHEMA), schema=SOLUTIONS_SCHEMA, preserve_index=False
+    )
+    pq.write_table(table, prep.paths.solutions)
+
+
+def _fill_factory(text="FILLED-NEW ANSWER: 1"):
+    """A model factory whose output differs from the stored siblings — so a
+    re-drawn sibling would visibly change, proving it was (not) re-run."""
+    from inspect_ai.model import ModelOutput, get_model
+
+    def fn(input, tools, tool_choice, config):
+        return ModelOutput.from_content(model="mockllm/m", content=text, stop_reason="stop")
+
+    return lambda model, stage, model_args=None: get_model(model, custom_outputs=fn)
+
+
+def test_resume_fills_hole_without_touching_siblings(study):
+    """The incident regression: a holed item (one epoch missing) refills ONLY the
+    missing cell — the completed sibling epoch is never re-drawn or overwritten."""
+    _, prep = study
+    run_generate(prep)  # 8 good rows (2 conds x 2 items x 2 epochs)
+    df0 = read_solutions(prep.paths)
+    cond = prep.grid.generate[0]
+    item = prep.items_effective[0]
+    sibling_text = df0[
+        (df0["condition_id"] == cond.id) & (df0["item_id"] == item.id) & (df0["epoch"] == 1)
+    ].iloc[0]["solution"]
+
+    _drop_cell(prep, cond.id, item.id, 2)  # punch a hole at epoch 2; epoch 1 stays
+    assert len(read_solutions(prep.paths)) == 7
+
+    result = run_generate(prep, model_factory=_fill_factory())
+
+    assert result.cells_filled == 1 and result.items_holed == 1
+    assert result.rows_written == 1  # only the missing cell ran (not the whole item)
+    df = read_solutions(prep.paths)
+    assert len(df) == 8  # hole refilled, nothing duplicated
+    filled = df[
+        (df["condition_id"] == cond.id) & (df["item_id"] == item.id) & (df["epoch"] == 2)
+    ].iloc[0]
+    assert "FILLED-NEW" in filled["solution"]  # the missing cell got the fresh draw
+    sib_now = df[
+        (df["condition_id"] == cond.id) & (df["item_id"] == item.id) & (df["epoch"] == 1)
+    ].iloc[0]
+    assert sib_now["solution"] == sibling_text  # sibling untouched (never re-run)
+
+
+def test_resume_mixed_whole_missing_and_holed(study):
+    """A condition with both a whole-missing item (main epochs=N path) and a holed
+    item (cell-granular fill): both run, the holed item's sibling stays, and the
+    per-condition report merges the main + filled rows."""
+    _, prep = study
+    run_generate(prep)
+    df0 = read_solutions(prep.paths)
+    cond = prep.grid.generate[0]
+    holed, whole = prep.items_effective[0], prep.items_effective[1]
+    sibling_text = df0[
+        (df0["condition_id"] == cond.id) & (df0["item_id"] == holed.id) & (df0["epoch"] == 1)
+    ].iloc[0]["solution"]
+
+    _drop_cell(prep, cond.id, holed.id, 2)  # holed item: epoch 2 missing
+    _drop_cell(prep, cond.id, whole.id, 1)  # whole-missing item: both epochs gone
+    _drop_cell(prep, cond.id, whole.id, 2)
+    assert len(read_solutions(prep.paths)) == 5
+
+    result = run_generate(prep, model_factory=_fill_factory())
+
+    assert result.cells_filled == 1 and result.items_holed == 1  # holed item only
+    assert result.rows_written == 3  # 2 (whole item, main) + 1 (hole, fill)
+    rep = next(r for r in result.conditions if r.condition_id == cond.id)
+    assert rep.status == "run" and rep.items_run == 2 and rep.rows_written == 3
+    df = read_solutions(prep.paths)
+    assert len(df) == 8
+    sib_now = df[
+        (df["condition_id"] == cond.id) & (df["item_id"] == holed.id) & (df["epoch"] == 1)
+    ].iloc[0]
+    assert sib_now["solution"] == sibling_text  # holed item's sibling untouched
 
 
 def test_reroute_unresolved_after_cap(study):

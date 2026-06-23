@@ -619,6 +619,13 @@ def _run_stage(args, stage, runner) -> int:
         _print_wave_summary(result, prep)
         if stage == "generate":
             print(f"rows written: {result.rows_written}  spend: {_fmt_usd(result.total_usd)}")
+            if result.cells_filled:
+                # Law 1/8: the fill re-issued paid calls for the missing cells of
+                # holed items only — completed siblings were left untouched.
+                print(
+                    f"filled: {result.cells_filled} missing cell(s) across "
+                    f"{result.items_holed} holed item(s) — completed siblings untouched"
+                )
             if result.rerouted:
                 # Law 1: the reroute re-issued paid calls; self-contained line with
                 # counts (advice lives in the reroute-residue hint).
