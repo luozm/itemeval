@@ -454,45 +454,6 @@ denominator is declared (a `mapping`-level `max_points: <col>` vs. an export
 option). Modeling (variance components, IRT) stays in the user's stats stack —
 this only widens the table.
 
-### Solution-fingerprinted grading (self-invalidating grades)
-**Key:** `grade-solution-fingerprint`
-
-**Motivation.** A grade is keyed on `(grade_cond, gen_cond, item, epoch)` with no
-solution-content component (`store/_gradings.GRADING_KEY`), and `pending_solutions`
-skips a cell as "done" whenever a grading row exists for that key — regardless of
-whether the underlying solution still matches the one that was graded. So if a
-solution is ever overwritten at a fixed key, its grade silently goes stale (the
-report joins grade↔solution on that same key and shows a grade computed against
-content that no longer exists). Two known triggers have since been fixed — the
-`cache_prompt` dev→full bug and the item-granular resume that re-drew and overwrote
-completed epochs (`cell-granular-resume`, both in the same `[Unreleased]` cycle).
-But those fixes remove *triggers*; nothing yet **detects** a changed solution, so
-the general hazard survives for any future resume/recovery path that re-draws a
-completed epoch under a fixed key. Today gradings carry no reference to the graded
-solution, so a stale grade is invisible — this is the complementary detection layer.
-
-**Design sketch.** Add a `solution_hash` column to the gradings store (sha256 of the
-graded solution text, set when the judge runs). Make a cell "done" in
-`pending_solutions` only when a grading row exists for the key **and** its
-`solution_hash` matches the current solution's — otherwise it is pending again, so a
-changed solution auto-re-grades instead of silently staling. The same hash lets the
-cache probe and `status` surface "N grades stale (solution changed)" rather than
-counting them done.
-
-**Implementation notes.** Additive schema column (backfill `None` on read per the
-store's evolution rule, like `_backfill_wave`); a null hash on an old row means
-"unknown — treat as matching" so existing stores don't force a global re-grade.
-Compute the hash in `grade/_run` at upsert; compare in `store/_gradings.pending_solutions`
-(needs the solution text alongside the key — it already has the solutions frame).
-Mirror the predicate in `_cacheprobe.probe_grade` so the projection stays honest.
-~60 lines + tests. Pairs with the UX-PATTERNS "no silent side effects" law: a stale
-grade is a silent side effect of a re-generation.
-
-**Open questions.** Hash the raw solution text vs. a normalized form (lean: raw, to
-match the response-cache's byte-exactness). Whether to also fingerprint the rubric
-(already covered by `rubric_hash`, which is in the row but not the skip predicate —
-fold both into the staleness check?).
-
 ### Bounded / deterministic-aware empty rerun
 **Key:** `bounded-empty-rerun`
 

@@ -161,7 +161,10 @@ both condition tables with `done/expected`, error and parse-failure counts,
 spend per stage, and manifest count. The GENERATE table also shows an `empty`
 column (no-error blank completions) and a `trunc` column (non-empty completions
 cut at a length cap — `max_tokens`/`model_length`; see
-[Error-Handling#truncation](Error-Handling.md#truncation)). Both tables are scoped to the current
+[Error-Handling#truncation](Error-Handling.md#truncation)). The GRADE table shows a
+`stale` column — grades whose solution was overwritten since they were scored
+(their `solution_hash` no longer matches); these are excluded from `done` and
+auto-re-grade on the next `grade` run. Both tables are scoped to the current
 grid at the current scope (wave 0); studies with more than one wave get an
 extra `waves:` line with per-wave gen/graded counts
 ([Pipeline-Concepts#waves](Pipeline-Concepts.md#waves)). `--json` emits the

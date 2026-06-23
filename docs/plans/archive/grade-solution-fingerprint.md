@@ -1,10 +1,10 @@
 # Implementation plan — grade-solution-fingerprint (self-invalidating grades)
 
-**Status: IN PROGRESS (started 2026-06-23).** Written 2026-06-23 against the
-current store/grade code on `main` (no inspect_ai surface is touched — this is a
-pure pandas/parquet change). This file is the working brief for a fresh
-implementation session: it carries all context that session needs. Read these
-first, in order:
+**Status: IMPLEMENTED 2026-06-23.** Written 2026-06-23 against the current
+store/grade code on `main` (no inspect_ai surface is touched — this was a pure
+pandas/parquet change). Shipped as both workstreams in one cycle; this file is
+now the design record. The original working-brief context follows. Read order
+when it was active:
 
 1. `CLAUDE.md` — repo conventions (uv, src layout, test rules, commit style).
 2. `docs/UX-PATTERNS.md` — **binding** UX contract. Relevant laws: Law 1 (no

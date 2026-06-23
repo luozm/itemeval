@@ -148,3 +148,24 @@ def test_probe_grade_detects_real_judge_cache(tmp_path, offline_adapter):
     run_grade(prep)
     warm = probe_grade(prep, force=True)
     assert warm.cache_hits == cold.cache_misses and warm.cache_misses == 0
+
+
+def test_probe_grade_restale_on_changed_solution(tmp_path, offline_adapter):
+    """grade-solution-fingerprint: after a solution is overwritten, its existing
+    grade is stale, so probe_grade (no force) counts that cell as fresh work — the
+    staleness predicate flows from pending_solutions into the cost projection."""
+    from itemeval.store._solutions import read_solutions, upsert_solutions
+
+    cfg, prep = _prep_with_cache(tmp_path, cache=True)
+    run_generate(prep)
+    run_grade(prep)
+    # Everything graded and current -> nothing pending -> no projected judge calls.
+    assert probe_grade(prep).cache_misses == 0
+
+    # Overwrite one stored solution; its grade's solution_hash no longer matches.
+    row = read_solutions(prep.paths).iloc[0].to_dict()
+    row["solution"] = (row["solution"] or "") + " EDITED"
+    upsert_solutions(prep.paths, [row])
+
+    # That one cell is stale -> pending -> a fresh (uncached) judge call -> a miss.
+    assert probe_grade(prep).cache_misses >= 1
