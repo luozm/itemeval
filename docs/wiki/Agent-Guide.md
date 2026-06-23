@@ -168,6 +168,11 @@ Key config rules that bite agents (full reference:
   file under `prompts_dir`/`rubrics_dir` (relative to the config file). Solver
   prompts must contain `{input}`; rubrics must contain `{input}` and
   `{solution}`.
+- A rubric can read a **second per-item grading scheme** beyond the built-in
+  `{grading_scheme}`: every `mapping.metadata` column is exposed to templates as
+  `{colname}`, so different rubrics in one crossed study can each pull their own
+  frozen scheme (e.g. `{grading_scheme}` vs `{proofbench_scheme}`). See
+  [Configuration](Configuration.md#field-notes) → "Per-item metadata in templates."
 - Pooling datasets that share a natural key (a row index, a per-year problem
   number) — item ids must be unique across datasets, so give them a composite
   `mapping.id`: a list of columns, or a template with a `{dataset}` token
