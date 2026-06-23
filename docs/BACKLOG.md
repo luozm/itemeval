@@ -527,6 +527,49 @@ skipped empty in the run summary (lean: yes — a settled cell, not a deferred o
 Whether `content_filter` counts as deterministic (lean: no — treat as transient; a
 reroute may clear it).
 
+### Deeper pre-flight: single-provider & output-cap flags
+**Key:** `preflight-endpoints`
+
+**Motivation.** The shipped `itemeval preflight` 1-token probe catches a *dead*
+model (404 / EOL / auth) but can't pre-flag two roster hazards a paid run will
+still hit: a **single-provider** model (only one OpenRouter backend serves it — so
+`output-validity-reroute` cannot rescue a soft failure there; it is a hard floor),
+and a **low output-cap** endpoint (a backend whose `max_completion_tokens` sits far
+below the study's `max_tokens` — e.g. a 2048-cap provider → guaranteed truncation
+of a long proof). Both are knowable up front from the same endpoints API itemeval
+already calls.
+
+**Design sketch.** The `endpoint-context-clamp` fetch
+(`budget/_endpoint_windows.min_window_from_payload`) already pulls each model's
+full `endpoints` list but extracts only the minimum `context_length`. Extend it to
+also return the **endpoint count** (1 ⇒ single-provider) and the minimum
+`max_completion_tokens` across endpoints, and surface both in `preflight`:
+
+```
+# sketch
+39 ok · 1 dead · 2 single-provider · 1 output-cap ≤2048
+```
+
+with per-model `{single_provider, min_output_tokens}` detail under `--json` and a
+coded hint. No new command and no extra network call on a warm endpoint cache; it
+rides the existing staged `preflight` (invoking it is the consent to its tiny
+probe spend). Exit-code semantics unchanged (a dead model ⇒ exit 1);
+single-provider / output-cap are **warnings**, not failures — a single-provider
+model is a legitimate target, the operator just needs to know reroute won't save
+it. Drops the handoff's "loop-prone" flag (not statically derivable from roster
+metadata).
+
+**Implementation notes.** `budget/_endpoint_windows.py` (additive `WindowEntry`
+fields `endpoint_count` / `min_output_tokens` — a `~/.cache` file, not a
+study-facing surface, so the schema bump self-heals on the next fetch),
+`_preflight.py` + `cli.py` (the report rows + `--json` fields), `_hints.py` (the
+coded hint). ~90 lines + tests (a fixture endpoints payload exercises the parse).
+
+**Open questions.** Whether to compare `min_output_tokens` against the config's
+resolved `max_tokens` so only the models *this* study would truncate are flagged
+(lean: yes — a bare cap number is noise; the actionable signal is "this model
+can't emit the length you're asking for").
+
 ---
 
 ## Tier 3 — scale and breadth
