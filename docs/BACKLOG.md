@@ -570,6 +570,42 @@ resolved `max_tokens` so only the models *this* study would truncate are flagged
 (lean: yes — a bare cap number is noise; the actionable signal is "this model
 can't emit the length you're asking for").
 
+### Timer-driven straggler heartbeat
+**Key:** `straggler-heartbeat`
+
+**Motivation.** The shipped `live-tracker` heartbeat is
+**completion-event-driven** (`_tracker.LiveTracker.on_sample_end` is the only
+per-sample emit), so a hung cell — no `SampleEnd` — produces no updates: the line
+freezes for as long as the stall lasts (observed: a ~13-min freeze during a
+provider hang), and slow-vs-hung is invisible without `lsof` / `ps` / reading the
+`.eval`. The tracker already computes an aggregate `in-flight` count but cannot say
+**which** cells are slow or for how long.
+
+**Design sketch.** Add a wall-clock keepalive that ticks every ~30–60s **only when
+no sample has ended since the last emitted line** (so it never competes with the
+throttled per-completion line), listing the slowest in-flight cells — each
+`model · item · elapsed` — capped at the top ~10 with a `+N more` footer, and
+including only cells over a threshold (default ~120s). `SampleStart` records
+per-sample start metadata into a map; `SampleEnd` removes it; the timer reads the
+map. The keepalive is an asyncio task the orchestrator launches around `eval()`
+(the heartbeat already runs in-process for the eval's duration via `tracking()`),
+cancelled in the `finally`.
+
+**Implementation notes.** `_tracker.py` (a per-sample start map keyed by sample id,
+a timer coroutine, a `render_stragglers` pure function for tests),
+`generate/_run.py` / `grade/_run.py` (launch/cancel the timer inside the
+`tracking()` scope). Builds directly on the shipped `live-tracker`; relay-safe and
+carries no fact of record (UX-PATTERNS Law 8), so still no new gate, JSON field, or
+store change. ~120 lines + tests.
+
+**Open questions.** The retry-state annotation the handoff wanted (`try N/max` /
+`reroute N/max` / `on_empty rerun aN`) is mostly **not observable** from the
+SampleStart/SampleEnd hooks: inspect's per-attempt retries happen *inside* a sample
+that hasn't ended, and itemeval's reroute / on_empty reruns happen *between* evals —
+so the first version shows run-level `attempt` / `experiment_id` only, and
+surfacing inspect's internal retry count waits on an inspect retry hook. Whether the
+threshold is a config knob or a fixed internal default (lean: fixed default first).
+
 ---
 
 ## Tier 3 — scale and breadth
