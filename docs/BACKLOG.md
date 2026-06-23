@@ -463,13 +463,13 @@ skips a cell as "done" whenever a grading row exists for that key — regardless
 whether the underlying solution still matches the one that was graded. So if a
 solution is ever overwritten at a fixed key, its grade silently goes stale (the
 report joins grade↔solution on that same key and shows a grade computed against
-content that no longer exists). The `cache_prompt` dev→full bug (CHANGELOG, fixed)
-was one trigger; the general hazard remains for any solution change under a fixed
-key — most notably a `dev`→`full` grow with `cache: false` (no response cache to
-replay completed epochs, so item-granular resume re-draws and overwrites epoch 1
-regardless of `cache_prompt`), and any future resume/recovery path that re-draws a
-completed epoch. Today nothing detects it: gradings carry no reference to the graded
-solution.
+content that no longer exists). Two known triggers have since been fixed — the
+`cache_prompt` dev→full bug and the item-granular resume that re-drew and overwrote
+completed epochs (`cell-granular-resume`, both in the same `[Unreleased]` cycle).
+But those fixes remove *triggers*; nothing yet **detects** a changed solution, so
+the general hazard survives for any future resume/recovery path that re-draws a
+completed epoch under a fixed key. Today gradings carry no reference to the graded
+solution, so a stale grade is invisible — this is the complementary detection layer.
 
 **Design sketch.** Add a `solution_hash` column to the gradings store (sha256 of the
 graded solution text, set when the judge runs). Make a cell "done" in
