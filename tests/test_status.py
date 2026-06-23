@@ -33,6 +33,28 @@ def test_status_after_full_pipeline(study):
     assert len(report.manifests) == 2
 
 
+def test_status_reports_stale_grades_after_solution_change(study):
+    """grade-solution-fingerprint: a grade whose solution was overwritten is reported
+    `stale` and dropped from `completed`, so status doesn't claim a pending re-grade
+    as done."""
+    from itemeval.store._solutions import read_solutions, upsert_solutions
+
+    cfg, prep = study
+    run_generate(prep)
+    run_grade(prep)
+    grade = build_status(cfg, prep).grade[0]
+    assert grade.completed == 8 and grade.stale == 0
+
+    # Overwrite one stored solution; its existing grade is now stale.
+    row = read_solutions(prep.paths).iloc[0].to_dict()
+    row["solution"] = (row["solution"] or "") + " EDITED"
+    upsert_solutions(prep.paths, [row])
+
+    grade = build_status(cfg, prep).grade[0]
+    assert grade.stale == 1
+    assert grade.completed == 7  # the stale grade no longer counts as done
+
+
 def _seed_one_empty_condition(prep):
     """Seed one gen condition with item 1 blank (no error), item 2 gradable."""
     from conftest import force_write_solutions

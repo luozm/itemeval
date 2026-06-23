@@ -94,7 +94,12 @@ export carry the same two columns, inherited from the graded solution row.
 
 Provenance: `study, experiment_id, attempt, grade_condition_id/slug, gen_condition_id,
 item_id, epoch, grade_kind` (judge|verifiable), `grader_name, grader_model,
-rubric_name, rubric_hash, scorer_name`.
+rubric_name, rubric_hash, scorer_name, solution_hash`.
+`solution_hash` is the sha256 of the solution text this grade scored: a cell counts
+as graded only while it still matches the current solution, so a solution overwritten
+at a fixed key auto-re-grades on the next `grade` run instead of leaving a stale
+score (and `status` reports it as `stale`). Null on stores written before the column
+existed (read as "unknown → matches", so an old study never force-re-grades).
 Result: `score, score_raw, parse_ok, parse_error, reasoning,
 judge_completion, error`.
 Raw judge-call provenance: `served_provider, native_finish_reason` (as in

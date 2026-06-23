@@ -3,6 +3,7 @@
 import pandas as pd
 import pyarrow as pa
 
+from itemeval._util import sha256_hex
 from itemeval.store._base import assert_identity_current, read_parquet_or_empty, upsert_parquet
 from itemeval.store._layout import StudyPaths
 from itemeval.store._solutions import empty_solution_mask
@@ -24,6 +25,11 @@ GRADINGS_SCHEMA = pa.schema(
         pa.field("grader_model", pa.string()),
         pa.field("rubric_name", pa.string()),
         pa.field("rubric_hash", pa.string()),
+        # Fingerprint (sha256) of the graded solution text (grade-solution-fingerprint):
+        # lets a grade self-invalidate when the solution at this key is overwritten.
+        # Nullable: null on rows written before the column existed (backfilled on read)
+        # reads as "unknown -> matches", so an old store never forces a global re-grade.
+        pa.field("solution_hash", pa.string()),
         pa.field("scorer_name", pa.string()),
         pa.field("score", pa.float64()),
         pa.field("score_raw", pa.string()),
@@ -55,13 +61,44 @@ GRADINGS_SCHEMA = pa.schema(
 )
 
 
+def solution_fingerprint(solution: "str | None") -> str:
+    """sha256 hex of the graded solution text. Raw bytes, no normalization, to match
+    the response cache's byte-exactness; None/NaN normalizes to "" (an empty
+    completion graded as-is under on_empty=grade)."""
+    text = (
+        ""
+        if solution is None or (isinstance(solution, float) and pd.isna(solution))
+        else str(solution)
+    )
+    return sha256_hex(text.encode("utf-8"))
+
+
+def grade_matches_solution(stored_hash, current_solution) -> bool:
+    """Whether a done grading is still current for its solution. A null stored hash
+    (old store, pre-column) is unknown and treated as matching; otherwise it must
+    equal the current solution's fingerprint."""
+    if stored_hash is None or (isinstance(stored_hash, float) and pd.isna(stored_hash)):
+        return True
+    return stored_hash == solution_fingerprint(current_solution)
+
+
+def _backfill_solution_hash(df: pd.DataFrame) -> pd.DataFrame:
+    """Old gradings stores predate solution_hash (grade-solution-fingerprint);
+    default it to null on read so they still load — a null reads as "unknown,
+    treat as matching" in the staleness check (the additive-by-construction
+    invariant, DEVELOPMENT.md schema gate). Mirrors _backfill_wave's locus."""
+    if "solution_hash" not in df.columns:
+        df = df.assign(solution_hash=None)
+    return df
+
+
 def read_gradings(paths: StudyPaths) -> pd.DataFrame:
     from itemeval.store._solutions import _backfill_provenance, _backfill_wave
 
     df = assert_identity_current(
         read_parquet_or_empty(paths.gradings, GRADINGS_SCHEMA), paths.gradings
     )
-    return _backfill_provenance(_backfill_wave(df))
+    return _backfill_solution_hash(_backfill_provenance(_backfill_wave(df)))
 
 
 def upsert_gradings(paths: StudyPaths, rows: "list[dict]") -> int:
@@ -81,8 +118,11 @@ def pending_solutions(
     """Gradable solutions rows not yet finally graded under this grade condition.
 
     A solutions row is pending iff no gradings row exists for
-    (grade_condition_id, gen condition, item, epoch) with error null. Rows with
-    parse_ok=False are final (not re-run); rows with error set are pending again.
+    (grade_condition_id, gen condition, item, epoch) with error null **and a
+    matching solution_hash** — a done grading whose stored fingerprint no longer
+    matches the current solution is stale, so its cell is pending again and
+    auto-re-grades (grade-solution-fingerprint). Rows with parse_ok=False are
+    final (not re-run); rows with error set are pending again.
 
     Empty no-error completions are excluded unless `include_empty=True` (the
     `grade` empty-solution policy, which grades the empty answer as-is).
@@ -96,9 +136,17 @@ def pending_solutions(
     ]
     if done.empty:
         return gradable
-    done_keys = set(zip(done["gen_condition_id"], done["item_id"], done["epoch"].astype(int)))
-    mask = [
-        (row.condition_id, row.item_id, int(row.epoch)) not in done_keys
-        for row in gradable.itertuples()
-    ]
-    return gradable[mask]
+    # One done row per (gen condition, item, epoch) after upsert; map each to the
+    # fingerprint of the solution it graded so a cell counts as done only when the
+    # current solution still matches.
+    done_hash = {
+        (r.gen_condition_id, r.item_id, int(r.epoch)): r.solution_hash for r in done.itertuples()
+    }
+
+    def _pending(row) -> bool:
+        key = (row.condition_id, row.item_id, int(row.epoch))
+        if key not in done_hash:
+            return True
+        return not grade_matches_solution(done_hash[key], row.solution)
+
+    return gradable[[_pending(row) for row in gradable.itertuples()]]

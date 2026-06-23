@@ -41,6 +41,10 @@ class ConditionStatus(BaseModel):
     # — counted in `completed` but flagged so a budget cut isn't read as content.
     truncated: int = 0
     parse_failures: int = 0
+    # grade: done gradings whose graded solution was since overwritten — their
+    # stored solution_hash no longer matches the current solution, so they will
+    # auto-re-grade and are not counted in `completed` (grade-solution-fingerprint).
+    stale: int = 0
 
 
 class SnapshotStatus(BaseModel):
@@ -179,6 +183,25 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
             & gradings["gen_condition_id"].isin(grid_gen_ids)
         ]
 
+    # Current solution text per (gen condition, item, epoch) — to detect a done
+    # grading whose graded solution has since been overwritten (the same predicate
+    # pending_solutions re-grades on); one row per key after upsert.
+    sol_text = (
+        {(r.condition_id, r.item_id, int(r.epoch)): r.solution for r in solutions.itertuples()}
+        if not solutions.empty
+        else {}
+    )
+
+    def stale_count(done_rows) -> int:
+        n = 0
+        for r in done_rows.itertuples():
+            key = (r.gen_condition_id, r.item_id, int(r.epoch))
+            if key in sol_text and not _gradings.grade_matches_solution(
+                r.solution_hash, sol_text[key]
+            ):
+                n += 1
+        return n
+
     grade_status = []
     for cond in prep.grid.grade:
         rows = (
@@ -186,7 +209,9 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
             if not grade_scoped.empty
             else grade_scoped
         )
-        completed = int(rows["error"].isna().sum()) if not rows.empty else 0
+        done_rows = rows[rows["error"].isna()] if not rows.empty else rows
+        stale = stale_count(done_rows) if not done_rows.empty else 0
+        completed = (int(rows["error"].isna().sum()) if not rows.empty else 0) - stale
         errors = int(rows["error"].notna().sum()) if not rows.empty else 0
         parse_failures = (
             int((rows["error"].isna() & ~rows["parse_ok"].astype(bool)).sum())
@@ -208,6 +233,7 @@ def build_status(config: ExperimentConfig, prep: "PreparedStudy | None" = None) 
                 completed=completed,
                 errors=errors,
                 parse_failures=parse_failures,
+                stale=stale,
             )
         )
 

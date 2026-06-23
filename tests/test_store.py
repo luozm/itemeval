@@ -469,6 +469,68 @@ def test_read_backfills_provenance_columns_on_old_store(tmp_path):
         assert c in grad.columns and grad[c].isna().all()
 
 
+def test_pending_solutions_solution_fingerprint():
+    """grade-solution-fingerprint: a done grade whose stored solution_hash no longer
+    matches the current solution is stale -> pending again (auto re-grade); a matching
+    hash stays done; a null hash (old store) is treated as unknown -> matching."""
+    from itemeval.store._gradings import solution_fingerprint
+
+    solutions = _sol_df(
+        [
+            _sol_row("c1", "1", 1, solution="orig"),  # graded against "orig", unchanged
+            _sol_row("c1", "2", 1, solution="changed"),  # solution overwritten since grading
+            _sol_row("c1", "3", 1, solution="x"),  # graded by an old (null-hash) store
+        ]
+    )
+    gradings = _grading_df(
+        [
+            _grading_row("g1", "c1", "1", 1, solution_hash=solution_fingerprint("orig")),  # match
+            _grading_row("g1", "c1", "2", 1, solution_hash=solution_fingerprint("orig")),  # stale
+            _grading_row("g1", "c1", "3", 1, solution_hash=None),  # unknown -> matches
+        ]
+    )
+    pending = pending_solutions(solutions, gradings, "g1", force=False)
+    keys = {(r.condition_id, r.item_id, int(r.epoch)) for r in pending.itertuples()}
+    assert keys == {("c1", "2", 1)}  # only the changed solution re-grades
+
+
+def test_read_backfills_solution_hash_on_old_store(tmp_path):
+    """grade-solution-fingerprint: a gradings store written before solution_hash
+    existed still reads back (column defaulted null), and a null hash is treated as
+    matching by pending_solutions — an old store never forces a global re-grade
+    (the additive-by-construction invariant, DEVELOPMENT.md schema gate)."""
+    from itemeval.store._gradings import read_gradings
+
+    paths = StudyPaths(tmp_path / "study")
+    paths.ensure()
+
+    old_schema = pa.schema([f for f in GRADINGS_SCHEMA if f.name != "solution_hash"])
+    row = {n: None for n in old_schema.names}
+    row.update(
+        {
+            "study": "t",
+            "experiment_id": "r",
+            "attempt": 1,
+            "grade_condition_id": "g1",
+            "grade_condition_slug": "g1",
+            "gen_condition_id": "c1",
+            "item_id": "1",
+            "epoch": 1,
+            "grade_kind": "judge",
+            "parse_ok": True,
+            "created_at": "t0",
+        }
+    )
+    upsert_parquet(paths.gradings, [row], GRADING_KEY, old_schema)
+    assert "solution_hash" not in pd.read_parquet(paths.gradings).columns
+
+    grad = read_gradings(paths)
+    assert "solution_hash" in grad.columns and grad["solution_hash"].isna().all()
+    # The null-hash done row counts as matching -> the cell is not re-graded.
+    solutions = _sol_df([_sol_row("c1", "1", 1, solution="anything")])
+    assert pending_solutions(solutions, grad, "g1", force=False).empty
+
+
 def test_items_to_run_require_solution_reruns_empties():
     df = _sol_df(
         [
@@ -482,7 +544,7 @@ def test_items_to_run_require_solution_reruns_empties():
     assert items_to_run(df, "c1", ["1"], 2, require_solution=True) == ["1"]
 
 
-def _grading_row(grade_cond, gen_cond, item, epoch, error=None, parse_ok=True):
+def _grading_row(grade_cond, gen_cond, item, epoch, error=None, parse_ok=True, solution_hash=None):
     return {
         "study": "t",
         "experiment_id": "r",
@@ -494,6 +556,7 @@ def _grading_row(grade_cond, gen_cond, item, epoch, error=None, parse_ok=True):
         "epoch": epoch,
         "grade_kind": "judge",
         "parse_ok": parse_ok,
+        "solution_hash": solution_hash,
         "error": error,
         "created_at": "t0",
     }

@@ -143,6 +143,9 @@ def _base_row(
         "grader_model": cond.grader_model,
         "rubric_name": cond.rubric_name,
         "rubric_hash": cond.rubric_hash,
+        # Fingerprint of the solution being graded (grade-solution-fingerprint), so
+        # this grade self-invalidates if the solution at this key is later overwritten.
+        "solution_hash": _gradings.solution_fingerprint(getattr(sol_row, "solution", None)),
         "scorer_name": cond.scorer,
         "created_at": now,
     }

@@ -825,10 +825,11 @@ def _cmd_status(args) -> int:
             f"{c.completed}/{c.expected}",
             str(c.errors),
             str(c.parse_failures),
+            str(c.stale),
         ]
         for c in report.grade
     ]
-    print(_fmt_table(["condition", "grader", "rubric", "done", "err", "parse_fail"], rows))
+    print(_fmt_table(["condition", "grader", "rubric", "done", "err", "parse_fail", "stale"], rows))
     print()
     print(
         f"spend: generate {_fmt_usd(report.spend_generate_usd)} | "

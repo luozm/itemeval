@@ -99,6 +99,21 @@ All notable changes to itemeval are documented here. Format follows
   re-running `grade` with `--force`.
 
 ### Added
+- **Grades now self-invalidate when their solution changes.** A grading row was keyed
+  on `(grade_cond, gen_cond, item, epoch)` with no solution-content component, so if a
+  solution was ever overwritten at a fixed key its grade silently went stale — the
+  export joins grade↔solution on that key and showed a score computed against text that
+  no longer exists. Gradings now carry a `solution_hash` (sha256 of the graded solution
+  text), and a cell counts as graded only when a grading row exists **and** its hash
+  matches the current solution; otherwise it is pending again and auto-re-grades. The
+  cost projection inherits this for free (the cache probe / estimate already route
+  through the same predicate, so a stale cell reads as fresh work and the money gate
+  accounts for the re-grade), and `status` reports a `stale` count, dropping stale
+  grades from `done` instead of claiming them complete. The column is additive: an old
+  store backfills it to null on read, and a null hash reads as "unknown → matches", so a
+  pre-existing study never force-re-grades. This is the complementary *detection* layer
+  to the recently-fixed overwrite *triggers* (`cell-granular-resume`, `cache_prompt`).
+  Closes: grade-solution-fingerprint
 - **The `--json`/silenced run heartbeat now surfaces stalled cells.** The shipped
   liveness line is paced by sample *completions*, so a hung cell (no `SampleEnd` —
   e.g. a provider call wedged for minutes) froze the line with no clue which cell was
