@@ -85,9 +85,14 @@ CHANGELOG `Closes: <key>`.
 
 ## Add a feature
 
-1. **Find or declare the key.** If it's in [docs/BACKLOG.md](docs/BACKLOG.md),
-   use that `**Key:**`. If not, add a backlog section first (motivation, design
-   sketch, a new key — or `/brainstorm` it) so there's something to point at.
+1. **Sync, then find or declare the key.** First `git fetch origin` and confirm
+   local `main` is at `origin/main` — a stale local `main` missing a merged PR
+   makes an already-shipped feature still look live in your local BACKLOG, so you
+   redo it and diverge from real `main` (check no `Closes: <key>` on
+   `origin/main`, no merged `feat/<key>` PR). Then: if the key is in
+   [docs/BACKLOG.md](docs/BACKLOG.md), use that `**Key:**`. If not, add a backlog
+   section first (motivation, design sketch, a new key — or `/brainstorm` it) so
+   there's something to point at.
 2. **Plan it.** Copy [docs/plans/TEMPLATE.md](docs/plans/TEMPLATE.md) to
    `docs/plans/<key>.md`; that file tracks work status (NOT STARTED → IN
    PROGRESS → IMPLEMENTED). Scheduling stays in ROADMAP, not the plan.
