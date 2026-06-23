@@ -568,6 +568,17 @@ upgrade pipeline already runs (`DEVELOPMENT.md` — batch/caching changes). Same
 instinct as `midcell-resume`: lean on inspect's machinery rather than build
 checkpointing.
 
+**Scope boundary (not this feature).** Route A is a *reconnect/persistence* fix at
+the shared `Batcher` base, so it covers every batch provider for **resume** — but
+it does **not** touch batch *request serialization*, which is per-provider and has
+its own upstream bugs (e.g. native Gemini batch 400s because inspect's
+`_google_batch.batch_request_dict` emits `system_instruction` as a JSON array
+instead of `{parts:[…]}`, an unreported upstream defect). Only Route B would fix such
+a bug here, by owning serialization — which is precisely the no-extension-seam
+layer "wrap, don't fork" keeps out of itemeval, so that serialization bug is
+**evidence against Route B**, not a reason to merge the two. Keep them as two
+separate upstream PRs.
+
 **Open questions.** Whether inspect takes the persistence upstream (preferred) or
 ever exposes the id through a published extension point that avoids a fork. Until
 either exists, the interim story is the heartbeat that keeps a batched run alive
