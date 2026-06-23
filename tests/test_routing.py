@@ -8,6 +8,7 @@ from itemeval.budget._routing import (
     NATIVE_API_KEY_ENV,
     active_native_routes,
     eligible_native_routes,
+    native_batch_broken,
     native_id,
     native_key_present,
 )
@@ -53,9 +54,10 @@ def _plan(batch) -> EffectivePlan:
         # Anthropic: dots -> dashes (the only provider that needs it).
         ("openrouter/anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4-5"),
         ("openrouter/anthropic/claude-opus-4.8", "anthropic/claude-opus-4-8"),
-        # OpenAI / Google keep dots; only the provider segment is validated.
+        # OpenAI keeps dots; only the provider segment is validated.
         ("openrouter/openai/gpt-5.1", "openai/gpt-5.1"),
-        ("openrouter/google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview"),
+        # (google is intentionally not here — its native batch is broken upstream,
+        #  so it is routed off native batch; see test_google_native_batch_not_routed.)
         # x-ai -> grok (the one provider-segment rename).
         ("openrouter/x-ai/grok-4", "grok/grok-4"),
     ],
@@ -79,6 +81,64 @@ def test_native_id_maps(sampled, expected):
 )
 def test_native_id_none(sampled):
     assert native_id(sampled) is None
+
+
+# --- google native batch is broken upstream (inspect_ai GoogleBatcher) -------
+# inspect_ai's batch_request_dict serializes system_instruction as a JSON array,
+# but Gemini's batch REST schema wants a {parts:[...]} object, so every batch line
+# 400s. itemeval must not submit a Google batch job: it routes google off the
+# native-batch path and falls back to interactive for a directly-named google id.
+
+
+def test_google_native_batch_not_routed():
+    # prefer_native_batch must not route an openrouter/google model to native
+    # google batch (it would 400) — google is no longer a native-batch target.
+    assert native_id("openrouter/google/gemini-3.1-pro-preview") is None
+
+
+@pytest.mark.parametrize(
+    "model_id,broken",
+    [
+        ("google/gemini-3.1-pro-preview", True),  # directly-named native google
+        ("google/gemini-2.5-flash", True),
+        ("anthropic/claude-opus-4-8", False),  # other native batch providers work
+        ("openai/gpt-5", False),
+        ("openrouter/google/gemini-3.1-pro-preview", False),  # via OpenRouter: not a native batch
+        ("mockllm/judge", False),
+    ],
+)
+def test_native_batch_broken(model_id, broken):
+    assert native_batch_broken(model_id) is broken
+
+
+def test_no_batch_discount_for_broken_native_batch():
+    # A broken-native-batch model runs interactively, so cost accounting must NOT
+    # apply the 50% batch discount to it (else the ledger/gate under-count) — while
+    # a working native-batch provider keeps the discount.
+    from inspect_ai.model import ModelUsage
+
+    from itemeval.budget._pricing import ModelPrice, PricingTable
+    from itemeval.generate._run import usd_for_usage
+
+    pricing = PricingTable(
+        updated_at="t",
+        source="file",
+        models={
+            "google/gemini-3.1-pro-preview": ModelPrice(
+                input_usd_per_mtok=10.0, output_usd_per_mtok=10.0
+            ),
+            "anthropic/claude-opus-4-8": ModelPrice(
+                input_usd_per_mtok=10.0, output_usd_per_mtok=10.0
+            ),
+        },
+    )
+    usage = ModelUsage(input_tokens=1_000_000, output_tokens=0, total_tokens=1_000_000)
+    assert usd_for_usage(  # google: full price under a batch plan
+        pricing, "google/gemini-3.1-pro-preview", usage, batch=True
+    ) == pytest.approx(10.0)
+    assert usd_for_usage(  # anthropic: keeps the batch discount
+        pricing, "anthropic/claude-opus-4-8", usage, batch=True
+    ) == pytest.approx(5.0)
 
 
 # --- native_key_present ------------------------------------------------------
@@ -105,7 +165,7 @@ def test_grok_accepts_either_key(monkeypatch):
 def test_eligible_routes_key_gate(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     monkeypatch.setenv("OPENAI_API_KEY", "x")
-    # GOOGLE_API_KEY deliberately unset.
+    # XAI/GROK keys deliberately unset.
     cfg = _config(
         models=[
             "openrouter/anthropic/claude-opus-4.8",
@@ -113,14 +173,14 @@ def test_eligible_routes_key_gate(monkeypatch):
             "openrouter/deepseek/deepseek-v3.2",  # not eligible
             "mockllm/x",  # not eligible
         ],
-        grader_model="openrouter/google/gemini-3.1-pro-preview",  # eligible but keyless
+        grader_model="openrouter/x-ai/grok-4",  # eligible but keyless
     )
     routes, unavailable = eligible_native_routes(cfg)
     assert routes == {
         "openrouter/anthropic/claude-opus-4.8": "anthropic/claude-opus-4-8",
         "openrouter/openai/gpt-5.1": "openai/gpt-5.1",
     }
-    assert unavailable == ["openrouter/google/gemini-3.1-pro-preview"]
+    assert unavailable == ["openrouter/x-ai/grok-4"]
 
 
 # --- active_native_routes: the batch + knob gate -----------------------------

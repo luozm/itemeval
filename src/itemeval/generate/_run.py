@@ -36,7 +36,7 @@ from itemeval.budget._pricing import (
     provider_of,
 )
 from itemeval.budget._endpoint_windows import load_endpoint_windows, user_endpoints_path
-from itemeval.budget._routing import NativeRoute
+from itemeval.budget._routing import NativeRoute, native_batch_broken
 from itemeval.design._grid import GenCondition
 from itemeval.generate._params import (
     effective_context,
@@ -319,7 +319,11 @@ def usd_for_usage(
         usage.input_tokens_cache_write,
         model=model,
     )
-    if batch is not None and provider_of(exec_model or model) in BATCH_PROVIDERS:
+    if (
+        batch is not None
+        and provider_of(exec_model or model) in BATCH_PROVIDERS
+        and not native_batch_broken(exec_model or model)  # broken native batch ran interactively
+    ):
         value *= 0.5  # documented approximation; provider invoices authoritative
     return value
 
@@ -410,7 +414,7 @@ def ledger_row(
         "cache_write_tokens": total("cache_write_tokens"),
         "usd": sum(usd_vals) if usd_vals else 0.0,
         "priced": bool(usd_vals),
-        "batch": batch is not None,
+        "batch": batch is not None and not native_batch_broken(exec_model or model),
         "created_at": utc_now_iso(),
         "epoch_offset": epoch_offset,
     }
@@ -878,6 +882,7 @@ def run_generate(
     # task (with its own model) for each condition that has work; report skips.
     planned: list[tuple[GenCondition, list[Item], str, Any]] = []
     clamped_models: dict[str, tuple[int, int, int]] = {}  # model -> (requested, effective, ctx)
+    batch_suppressed: set[str] = set()  # models forced interactive (native batch broken upstream)
     for cond in selected:
         if force:
             to_run = list(item_ids)
@@ -923,6 +928,12 @@ def run_generate(
         eff_max_tokens, clamped = fit_max_tokens(cond.gen_params.max_tokens, ctx_len, max_input)
         if clamped:
             clamped_models[cond.model] = (cond.gen_params.max_tokens, eff_max_tokens, ctx_len)
+        # Native batch is broken upstream for some providers (e.g. google): run
+        # them interactively even under a batch plan rather than 400 mid-run.
+        gen_batch = prep.plan.batch
+        if prep.plan.batch is not None and native_batch_broken(cond.model):
+            gen_batch = None
+            batch_suppressed.add(cond.model)
         task = build_generate_task(
             items,
             cond,
@@ -931,7 +942,7 @@ def run_generate(
             prep.plan.replications,
             prep.config.cache,
             prep.origins,
-            batch=prep.plan.batch,
+            batch=gen_batch,
             cache_prompt=cache_prompt,
             cache_schedule=cache_schedule,
             epoch_offset=epoch_offset,
@@ -1122,6 +1133,9 @@ def run_generate(
     # Execution ids (native under routing) drive batch_providers; routed_models
     # records the sampled->native switch for the conditions that actually ran.
     exec_models = [prep.native_routes.get(m, m) for m in run_models]
+    # Models whose native batch is broken upstream ran interactively (see
+    # batch_suppressed): no batch discount, and excluded from batch provenance.
+    batched_execs = [m for m in exec_models if not native_batch_broken(m)] if batch_on else []
     routed_models = [
         NativeRoute(
             sampled=m, execution=prep.native_routes[m], provider=provider_of(prep.native_routes[m])
@@ -1140,6 +1154,13 @@ def run_generate(
             f"max_tokens clamped to fit context window for {len(clamped_models)} "
             f"model(s) — would have errored (HTTP 400) otherwise: {parts}"
         )
+    batch_fallback_warnings: list[str] = []
+    if batch_suppressed:
+        batch_fallback_warnings.append(
+            f"native batch unavailable for {len(batch_suppressed)} model(s) — ran "
+            f"interactively (inspect_ai serialization bug; no batch discount): "
+            f"{', '.join(sorted(batch_suppressed))}"
+        )
     return GenerateResult(
         experiment_id=ident.experiment_id,
         attempt=ident.attempt,
@@ -1154,7 +1175,7 @@ def run_generate(
         reroute_unresolved=reroute_unresolved,
         manifest_path=rel_to_study(prep.paths, manifest_path),
         hints=hints,
-        warnings=drift_warnings + clamp_warnings,
+        warnings=drift_warnings + clamp_warnings + batch_fallback_warnings,
         datasets=dataset_provenance(prep.datasets),
         model_sample=prep.model_sample,
         local_cache_rows=local_total,
@@ -1166,8 +1187,8 @@ def run_generate(
             if (endpoint_stats.fetched or endpoint_stats.reused)
             else None
         ),
-        batch=batch_on,
-        batch_providers=batch_providers_used(exec_models) if batch_on else [],
+        batch=bool(batched_execs),
+        batch_providers=batch_providers_used(batched_execs),
         routed_models=routed_models,
         wave=wave_num,
         wave_label=wave,

@@ -7,6 +7,24 @@ All notable changes to itemeval are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **A native Google/Gemini judge under a batch plan no longer fails the run
+  mid-flight.** inspect_ai's `GoogleBatcher` serializes `system_instruction` as a
+  JSON array, but Gemini's batch REST schema requires a `{parts:[…]}` object, so
+  every batch line was rejected with `400 INVALID_ARGUMENT` ("unexpected character
+  '['; expected '{'") — confirmed unfixed through inspect_ai 0.3.240 (latest) and
+  HEAD. itemeval now treats Google as having **no working native batch endpoint**
+  (a new `NATIVE_BATCH_BROKEN` set in `budget/_routing.py`): a directly-named
+  `google/*` model runs **interactively** even under `policy: full-batch` (the
+  judge or solver is auto-set `batch=None`), and `budget.prefer_native_batch` no
+  longer routes an `openrouter/google/*` model to native Google batch. The
+  fallback is **announced** (a `warnings[]` line — `native batch unavailable for N
+  model(s) — ran interactively (inspect_ai serialization bug; no batch discount)`)
+  and kept **honest in cost accounting**: the 50% batch discount is not applied to
+  a Google row in the ledger (`usd_for_usage`), the estimate (`_batch_discount`),
+  the stored `batch` provenance flag, or the run summary's `batch`/`batch_providers`
+  — so the money gate never under-counts a Google judge. Other native-batch
+  providers (anthropic/openai/grok/together) are unchanged. Remove `"google"` from
+  `NATIVE_BATCH_BROKEN` (and bump the `inspect-ai` floor) when upstream ships a fix.
 - **A batched `--json` run no longer goes dark, and inspect's batch prints no longer
   corrupt its JSON.** The stderr heartbeat is paced by `on_sample_end`, which in
   provider-batch mode fires only when a whole batch *resolves* (minutes–hours apart),

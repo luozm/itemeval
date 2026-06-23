@@ -52,6 +52,18 @@ NATIVE_API_KEY_ENV = {
     "together": ("TOGETHER_API_KEY",),
 }
 
+# Native providers whose batch endpoint is broken in the installed inspect_ai, so
+# itemeval must never submit a batch job to them — it routes them off native batch
+# and falls back to interactive (announced) rather than failing the run mid-flight.
+# google: inspect_ai's GoogleBatcher (model/_providers/_google_batch.py
+# ::batch_request_dict) serializes `system_instruction` as a JSON array, but
+# Gemini's batch REST schema requires a {parts:[...]} object, so every batch line
+# 400s with INVALID_ARGUMENT ("unexpected character '['; expected '{'"). Confirmed
+# unfixed through inspect_ai 0.3.240 (latest) and HEAD. Remove "google" here when
+# upstream ships a fix (then bump the inspect-ai floor in pyproject.toml).
+# https://github.com/UKGovernmentBEIS/inspect_ai
+NATIVE_BATCH_BROKEN = {"google"}
+
 
 class NativeRoute(BaseModel):
     """One sampled->native routing decision (append-only result/manifest field).
@@ -101,7 +113,19 @@ def native_id(sampled: str) -> "str | None":
     native_provider = OPENROUTER_TO_NATIVE_PROVIDER.get(inner)
     if native_provider is None or native_provider not in BATCH_PROVIDERS:
         return None
+    if native_provider in NATIVE_BATCH_BROKEN:
+        return None  # native batch is broken upstream — don't route here (see NATIVE_BATCH_BROKEN)
     return f"{native_provider}/{_native_name(inner, name)}"
+
+
+def native_batch_broken(model_id: str) -> bool:
+    """Whether ``model_id`` executes on a native provider whose batch endpoint is
+    broken in the installed inspect_ai (see ``NATIVE_BATCH_BROKEN``). A caller
+    running a batch plan must force this model interactive (``batch=None``) and
+    announce the fallback. Reads the *execution* id, so a directly-named
+    ``google/*`` model is caught while an ``openrouter/google/*`` (served through
+    OpenRouter, which has no batch API) is not."""
+    return provider_of(model_id) in NATIVE_BATCH_BROKEN
 
 
 def native_key_present(native_provider: str) -> bool:

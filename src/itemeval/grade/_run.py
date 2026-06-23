@@ -27,7 +27,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
-from itemeval.budget._routing import NativeRoute
+from itemeval.budget._routing import NativeRoute, native_batch_broken
 from itemeval._classify import labeled
 from itemeval._mockmodels import resolve_model
 from itemeval._identity import invocation_handle, resolve_identity
@@ -602,6 +602,7 @@ def run_grade(
     # 5th tuple slot carries any oversized-skip rows already written for the
     # condition, so Phase 3 folds them into its report's row count.
     planned: list[tuple[GradeCondition, Any, str, Any, list[dict]]] = []
+    batch_suppressed: set[str] = set()  # judges forced interactive (native batch broken upstream)
     for cond in selected:
         pending = _gradings.pending_solutions(
             scoped, gradings_df, cond.id, force, include_empty=include_empty
@@ -688,6 +689,12 @@ def run_grade(
         # recorded); the model rides on the Task so all judges run in one eval.
         grader_routing = prep.config.grader_spec(cond.grader_name).provider_routing
         exec_grader = prep.native_routes.get(cond.grader_model, cond.grader_model)
+        # Native batch is broken upstream for some providers (e.g. google): run
+        # the judge interactively even under a batch plan rather than 400 mid-run.
+        grade_batch = prep.plan.batch
+        if prep.plan.batch is not None and native_batch_broken(exec_grader):
+            grade_batch = None
+            batch_suppressed.add(cond.grader_model)
         task = build_judge_task(
             pending,
             prep.items_by_id,
@@ -695,7 +702,7 @@ def run_grade(
             prep.rubric_templates[cond.rubric_name],
             prep.config.study,
             prep.config.cache,
-            batch=prep.plan.batch,
+            batch=grade_batch,
             cache_schedule=scheduled,
             rubric_texts=rubric_texts_by_rubric.get(cond.rubric_name),
             attempt_timeout=prep.config.grader_spec(cond.grader_name).attempt_timeout,
@@ -728,6 +735,13 @@ def run_grade(
             continue
         planned.append((cond, pending, exec_grader, task, oversized_rows))
 
+    # Judges that actually batch (a broken-native-batch judge ran interactively):
+    # the source of truth for batch display + provenance below.
+    grade_batched_execs = (
+        [ex for _, _, ex, _, _ in planned if not native_batch_broken(ex)]
+        if prep.plan.batch is not None
+        else []
+    )
     # Phase 2: one eval over all judge tasks — graders run concurrently.
     log_by_cond, fatal = run_condition_evals(
         [task for _, _, _, task, _ in planned],
@@ -738,7 +752,7 @@ def run_grade(
         display=display,
         log_dir=str(prep.paths.logs_stage_dir("grade")),
         max_tasks=max_tasks_for([ex for _, _, ex, _, _ in planned]),
-        batch=prep.plan.batch is not None,
+        batch=bool(grade_batched_execs),
     )
 
     # Phase 3: harvest each judge condition from its log (mapped by metadata).
@@ -818,6 +832,13 @@ def run_grade(
         )
         if h is not None
     ]
+    batch_fallback_warnings: list[str] = []
+    if batch_suppressed:
+        batch_fallback_warnings.append(
+            f"native batch unavailable for {len(batch_suppressed)} judge(s) — ran "
+            f"interactively (inspect_ai serialization bug; no batch discount): "
+            f"{', '.join(sorted(batch_suppressed))}"
+        )
     return GradeResult(
         experiment_id=ident.experiment_id,
         attempt=ident.attempt,
@@ -839,17 +860,13 @@ def run_grade(
         materialize_empty=int(mat_stats["empty"]),
         materialize_model=mat_stats["model"],
         hints=hints,
-        warnings=drift_warnings,
+        warnings=drift_warnings + batch_fallback_warnings,
         datasets=dataset_provenance(prep.datasets),
         model_sample=prep.model_sample,
         local_cache_rows=sum(r.local_cache_rows for r in reports),
         local_cache_dir=(local_cache_dir() if any(r.local_cache_rows for r in reports) else None),
-        batch=prep.plan.batch is not None,
-        batch_providers=(
-            batch_providers_used([prep.native_routes.get(m, m) for m in judge_models])
-            if prep.plan.batch is not None
-            else []
-        ),
+        batch=bool(grade_batched_execs),
+        batch_providers=batch_providers_used(grade_batched_execs),
         routed_models=[
             NativeRoute(
                 sampled=m,

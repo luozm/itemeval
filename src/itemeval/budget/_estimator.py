@@ -27,7 +27,7 @@ from itemeval.budget._pricing import (
     lookup_price,
     provider_of,
 )
-from itemeval.budget._routing import NativeRoute, eligible_native_routes
+from itemeval.budget._routing import NativeRoute, eligible_native_routes, native_batch_broken
 from itemeval.grade._judge import build_judge_input, judge_head_text
 
 if TYPE_CHECKING:
@@ -198,7 +198,11 @@ class Estimate(BaseModel):
 
 
 def _batch_discount(prep: "PreparedStudy", model: str) -> bool:
-    return prep.plan.batch is not None and provider_of(model) in BATCH_PROVIDERS
+    return (
+        prep.plan.batch is not None
+        and provider_of(model) in BATCH_PROVIDERS
+        and not native_batch_broken(model)  # broken native batch runs interactively, full price
+    )
 
 
 def _stats_by(
