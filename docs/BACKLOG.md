@@ -382,6 +382,10 @@ facet can't be crossed with a heterogeneous roster: a single value can't toggle
 reasoning per provider, non-reasoning models error or no-op, and there is no way
 to mark a (model, config) cell as structurally absent. The cleanest "same base
 model, two modes" comparison is currently inexpressible over a mixed object set.
+The same per-model gap also blocks **cost control**: a premium anchor's
+`max_tokens` / `reasoning_tokens` (sonnet/opus) can today be reined in only by
+lowering the *global* value for the whole roster — so one expensive model's
+runaway budget can't be capped without shrinking everyone's.
 
 **Design sketch.**
 
@@ -390,13 +394,17 @@ facets:
   model_config:
     - name: think
       reasoning_effort: high
-      overrides:                       # per-model reasoning settings
-        openrouter/anthropic/claude-opus-4.8: {reasoning_tokens: 8000}
+      overrides:                       # per-model generation params: any of
+                                       # reasoning_effort / reasoning_tokens / max_tokens
+        openrouter/anthropic/claude-opus-4.8: {reasoning_tokens: 8000, max_tokens: 64000}
       skip_models: [openrouter/openai/gpt-3.5-turbo]   # cell recorded as missing
 ```
 
-A facet keeps its global default and gains optional per-model `overrides` and a
-`skip_models` set. Skipped (model, config) cells are recorded as structurally
+A facet keeps its global default and gains optional per-model `overrides` — any
+generation param it sets globally (`reasoning_effort` / `reasoning_tokens` /
+`max_tokens`), so a premium anchor's budget can be capped without lowering the
+global value (the cost-control case) — and a `skip_models` set. Skipped
+(model, config) cells are recorded as structurally
 missing (not run, not errored) so the grid and downstream analysis see an
 explicit hole, not a silent gap.
 
