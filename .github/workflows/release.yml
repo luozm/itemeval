@@ -18,7 +18,7 @@ jobs:
       id-token: write   # mint the OIDC token PyPI trusted publishing verifies
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Refuse to publish a half-prepared release: version final + consistent
       # across pyproject/README/CHANGELOG, and [Unreleased] consumed. Stdlib
